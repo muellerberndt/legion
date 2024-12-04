@@ -1,0 +1,13 @@
+sqlalchemy
+psycopg2
+aiohttp
+click
+pytest
+pytest-asyncio
+pytest-mock
+pydantic
+requests==2.32.3
+pyyaml
+openai>=1.0.0
+pgvector
+semgrep
