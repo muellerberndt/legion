@@ -54,10 +54,9 @@ class WatcherManager:
             self.logger.info("No active watchers configured")
             return
         
-        # Initialize webhook server if needed
+        # Get webhook server instance first
         webhook_port = watcher_config.get("webhook_port", 8080)
         self.webhook_server = await WebhookServer.get_instance()
-        await self.webhook_server.start(webhook_port)
         
         # Discover and initialize enabled watchers
         watcher_classes = self._discover_watchers()
@@ -73,6 +72,9 @@ class WatcherManager:
             else:
                 self.logger.warning(f"Watcher {watcher_name} not found")
                 
+        # Start webhook server after all endpoints are registered
+        await self.webhook_server.start(webhook_port)
+        
     async def stop(self) -> None:
         """Stop all running watchers"""
         stop_tasks = []

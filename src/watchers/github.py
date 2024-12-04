@@ -4,6 +4,7 @@ from src.util.logging import Logger
 from src.config.config import Config
 from src.handlers.base import HandlerTrigger
 from aiohttp import web
+from src.watchers.webhook_server import WebhookServer
 import json
 
 class GitHubWatcher(WatcherJob):
@@ -14,22 +15,18 @@ class GitHubWatcher(WatcherJob):
         self.logger = Logger("GitHubWatcher")
         self.config = Config()
         self.webhook_secret = self.config.get('github', {}).get('webhook_secret')
-        self.webhook_port = self.config.get('github', {}).get('webhook_port', 8080)
-        self.app = web.Application()
-        self.app.router.add_post('/webhook/github', self.handle_webhook)
-        self.runner = None
         
     async def initialize(self) -> None:
         """Initialize the webhook server"""
         if not self.webhook_secret:
             raise ValueError("GitHub webhook secret not configured")
             
-        # Start webhook server
-        self.runner = web.AppRunner(self.app)
-        await self.runner.setup()
-        site = web.TCPSite(self.runner, '0.0.0.0', self.webhook_port)
-        await site.start()
-        self.logger.info(f"GitHub webhook server listening on port {self.webhook_port}")
+        # Get shared webhook server instance
+        webhook_server = await WebhookServer.get_instance()
+        
+        # Register our endpoint
+        webhook_server.register_endpoint('/github', self.handle_webhook)
+        self.logger.info("Registered GitHub webhook endpoint")
         
     async def check(self) -> List[Dict[str, Any]]:
         """Not used since we're webhook-based"""
@@ -38,14 +35,35 @@ class GitHubWatcher(WatcherJob):
     async def handle_webhook(self, request: web.Request) -> web.Response:
         """Handle incoming GitHub webhook events"""
         try:
+            # Log headers for debugging
+            self.logger.info(f"Received GitHub webhook headers: {dict(request.headers)}")
+            
             # Verify webhook signature
             if not await self.verify_signature(request):
                 return web.Response(status=401, text="Invalid signature")
-                
-            # Parse event data
-            event_type = request.headers.get('X-GitHub-Event')
-            payload = await request.json()
             
+            # Handle both JSON and form-encoded payloads
+            content_type = request.headers.get('Content-Type', '')
+            
+            if 'application/x-www-form-urlencoded' in content_type:
+                # Parse form data
+                form_data = await request.post()
+                if 'payload' not in form_data:
+                    return web.Response(status=400, text="Missing payload in form data")
+                try:
+                    payload = json.loads(form_data['payload'])
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"Failed to parse form payload JSON: {e}")
+                    return web.Response(status=400, text=f"Invalid JSON in form payload: {str(e)}")
+            else:
+                # Handle direct JSON payload
+                try:
+                    payload = await request.json()
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"Failed to parse JSON payload: {e}")
+                    return web.Response(status=400, text=f"Invalid JSON payload: {str(e)}")
+            
+            event_type = request.headers.get('X-GitHub-Event')
             self.logger.info(f"Received GitHub webhook: {event_type}")
             
             # Handle different event types
@@ -62,8 +80,10 @@ class GitHubWatcher(WatcherJob):
             return web.Response(status=200, text="OK")
             
         except Exception as e:
-            self.logger.error(f"Error handling webhook: {e}")
-            return web.Response(status=500, text="Internal error")
+            self.logger.error(f"Error handling webhook: {str(e)}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return web.Response(status=500, text=f"Internal error: {str(e)}")
             
     async def verify_signature(self, request: web.Request) -> bool:
         """Verify GitHub webhook signature"""
@@ -137,5 +157,4 @@ class GitHubWatcher(WatcherJob):
         
     async def stop(self) -> None:
         """Stop the webhook server"""
-        if self.runner:
-            await self.runner.cleanup()
+        # No need to stop the webhook server as it's managed by WebhookServer
