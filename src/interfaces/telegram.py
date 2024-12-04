@@ -8,6 +8,7 @@ from src.util.logging import Logger
 from src.config.config import Config
 from src.services.telegram import TelegramService
 from src.agents.conversation import ConversationAgent
+import shlex
 
 class TelegramInterface(Interface):
     """Telegram bot interface"""
@@ -21,6 +22,69 @@ class TelegramInterface(Interface):
         self._agents = {}  # Session ID -> ConversationAgent
         self._polling_task = None
         
+    def _parse_command_args(self, message: str) -> list:
+        """Parse command arguments, preserving quoted strings"""
+        try:
+            # Split into command and args
+            parts = message.split(None, 1)
+            if len(parts) < 2:
+                return []  # No arguments
+                
+            args_str = parts[1]
+            # For single argument that looks like JSON, return as is without stripping quotes
+            if args_str.startswith('{') and args_str.endswith('}'):
+                return [args_str]
+                
+            # For quoted strings, strip quotes and return as single arg
+            if (args_str.startswith("'") and args_str.endswith("'")) or \
+               (args_str.startswith('"') and args_str.endswith('"')):
+                return [args_str[1:-1]]
+                
+            # Otherwise use shlex to parse
+            return shlex.split(args_str)
+        except ValueError as e:
+            self.logger.error(f"Error parsing arguments: {str(e)}")
+            # Return raw split as fallback
+            return args_str.split()
+        except IndexError:
+            return []  # No arguments provided
+        
+    def _create_command_handler(self, command_name: str, action_handler):
+        """Create a command handler function for a specific command"""
+        async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            try:
+                # Parse arguments from the full message text
+                args = self._parse_command_args(update.message.text)
+                
+                # Create message object for action
+                from src.interfaces.base import Message as BaseMessage
+                action_message = BaseMessage(
+                    session_id=str(update.message.chat.id),
+                    content=command_name,
+                    arguments=args
+                )
+                
+                # Execute the action
+                result = await action_handler(action_message, *args)
+                
+                if result:
+                    # Handle ActionResult objects
+                    if hasattr(result, 'content'):
+                        content = result.content
+                    else:
+                        content = str(result)
+                        
+                    await update.message.reply_text(
+                        text=content,
+                        parse_mode='HTML'
+                    )
+            except Exception as e:
+                self.logger.error(f"Error executing command {command_name}: {e}")
+                await update.message.reply_text(
+                    text=f"Error executing command: {str(e)}"
+                )
+        return handler
+            
     async def start(self) -> None:
         """Start the Telegram bot"""
         try:
@@ -93,39 +157,6 @@ class TelegramInterface(Interface):
             
         except Exception as e:
             self.logger.error(f"Failed to register commands: {e}")
-            
-    def _create_command_handler(self, command_name: str, action_handler):
-        """Create a command handler function for a specific command"""
-        async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            try:
-                # Create message object for action
-                from src.interfaces.base import Message as BaseMessage
-                action_message = BaseMessage(
-                    session_id=str(update.message.chat.id),
-                    content=command_name,
-                    arguments=context.args  # Args are already strings
-                )
-                
-                # Execute the action
-                result = await action_handler(action_message, *context.args)
-                
-                if result:
-                    # Handle ActionResult objects
-                    if hasattr(result, 'content'):
-                        content = result.content
-                    else:
-                        content = str(result)
-                        
-                    await update.message.reply_text(
-                        text=content,
-                        parse_mode='HTML'
-                    )
-            except Exception as e:
-                self.logger.error(f"Error executing command {command_name}: {e}")
-                await update.message.reply_text(
-                    text=f"Error executing command: {str(e)}"
-                )
-        return handler
             
     async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Internal handler for Telegram messages"""

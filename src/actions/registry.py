@@ -6,7 +6,6 @@ from src.actions.result import ActionResult
 
 # Import all actions
 from src.actions.help import HelpAction
-from src.actions.database_search import DatabaseSearchAction
 from src.actions.semantic_search import SemanticSearchAction
 from src.actions.generate_embeddings import GenerateEmbeddingsAction
 from src.actions.delete_embeddings import DeleteEmbeddingsAction
@@ -14,6 +13,7 @@ from src.actions.agent import AgentAction
 from src.actions.job import GetJobResultAction, StopJobAction
 from src.actions.sync.immunefi import ImmunefiSyncAction
 from src.actions.file_search import FileSearchAction
+from src.actions.db_query import DBQueryAction
 
 class ActionRegistry:
     """Registry for all available actions"""
@@ -31,7 +31,7 @@ class ActionRegistry:
         
         # Register built-in actions
         self.register_action("help", HelpAction)
-        self.register_action("db_search", DatabaseSearchAction)
+        self.register_action("db_query", DBQueryAction)
         self.register_action("sem_search", SemanticSearchAction)
         self.register_action("embeddings", GenerateEmbeddingsAction)
         self.register_action("delete_embeddings", DeleteEmbeddingsAction)
@@ -52,8 +52,9 @@ class ActionRegistry:
         async def handler(message: Message, *args, **kwargs) -> str:
             try:
                 action = action_class()
-                # For search actions, prepend "search" to the query
-                if action_class in [DatabaseSearchAction, SemanticSearchAction]:
+                
+                # For semantic search, prepend "search" to the query
+                if action_class == SemanticSearchAction:
                     query = f"search {' '.join(args)}"
                     result = await action.execute(query)
                 # For agent action, join all args into a single prompt

@@ -12,6 +12,7 @@ class AssetType(str, enum.Enum):
     DEPLOYED_CONTRACT = "deployed_contract"
 
 class LogLevel(str, enum.Enum):
+    DEBUG = "DEBUG"
     INFO = "INFO"
     WARNING = "WARNING"
     ERROR = "ERROR"

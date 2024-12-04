@@ -4,6 +4,7 @@ import click
 import json
 from src.models.base import LogEntry, LogLevel
 from src.backend.database import DBSessionMixin
+import enum
 
 class ModelJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder for SQLAlchemy models"""
@@ -35,6 +36,12 @@ class LogConfig:
     def is_db_logging_enabled(cls) -> bool:
         return cls._db_logging
 
+class LogLevel(str, enum.Enum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
 class Logger(DBSessionMixin):
     """
     Central logging service that handles both database and console logging
@@ -56,7 +63,7 @@ class Logger(DBSessionMixin):
             if LogConfig.is_verbose():
                 click.secho(
                     f"[{datetime.utcnow().isoformat()}] {level.value} - {self.source} - {message}",
-                    fg={'INFO': None, 'WARNING': 'yellow', 'ERROR': 'red'}[level.value],
+                    fg={'DEBUG': 'blue', 'INFO': None, 'WARNING': 'yellow', 'ERROR': 'red'}[level.value],
                     err=(level == LogLevel.ERROR)
                 )
             return
@@ -85,7 +92,7 @@ class Logger(DBSessionMixin):
             if LogConfig.is_verbose():
                 click.secho(
                     f"[{datetime.utcnow().isoformat()}] {level.value} - {self.source} - {message}",
-                    fg={'INFO': None, 'WARNING': 'yellow', 'ERROR': 'red'}[level.value],
+                    fg={'DEBUG': 'blue', 'INFO': None, 'WARNING': 'yellow', 'ERROR': 'red'}[level.value],
                     err=(level == LogLevel.ERROR)
                 )
 
@@ -93,6 +100,10 @@ class Logger(DBSessionMixin):
             # Fallback to print on logging error
             if LogConfig.is_verbose():
                 print(f"[{datetime.utcnow().isoformat()}] {level.value} - {self.source} - {message}")
+
+    def debug(self, message: str, extra_data: Optional[Dict[str, Any]] = None) -> None:
+        """Log a debug message"""
+        self._log(LogLevel.DEBUG, message, extra_data)
 
     def info(self, message: str, extra_data: Optional[Dict[str, Any]] = None) -> None:
         """Log an info message"""
