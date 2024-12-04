@@ -29,18 +29,14 @@ class Server:
         self.shutting_down = False
         
     async def start(self, enabled_interfaces: List[str] = ['telegram']) -> None:
-        """Start the server and all its components"""
-        self.logger.info("Starting server...")
-        
-        # Register signal handlers
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self.handle_signal(s)))
-            
+        """Start the server"""
         try:
-            # Load and register extensions
-            self.extension_loader.load_extensions()
-            self.extension_loader.register_components()
+            # Import here to avoid circular imports
+            from src.jobs.notification import JobNotifier
+            from src.services.telegram import TelegramService
+            
+            # Register notification services
+            JobNotifier.register_service(TelegramService.get_instance())
             
             # Initialize interfaces
             if 'telegram' in enabled_interfaces:
@@ -48,19 +44,21 @@ class Server:
                 self.interfaces['telegram'] = telegram
                 await telegram.start()
                 self.logger.info("Started Telegram interface")
-            
+                
             # Start job manager
             await self.job_manager.start()
             
             # Start watcher manager if enabled
-            if self.config.get("watchers", {}).get("enabled", True):
+            if self.config.get('watchers', {}).get('enabled', False):
                 await self.watcher_manager.start()
                 
+            self.logger.info("Server started successfully")
+            
             # Wait for shutdown signal
             await self.shutdown_event.wait()
             
         except Exception as e:
-            self.logger.error(f"Server error: {e}")
+            self.logger.error(f"Failed to start server: {e}")
             raise
         finally:
             # Ensure cleanup happens even on error

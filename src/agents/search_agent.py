@@ -17,7 +17,8 @@ Required JSON Response Format:
             "spec": {
                 "from": "table_name",
                 "select": ["field1", "field2"],
-                "where": [{"field": "field_name", "op": "operator", "value": "value"}]
+                "where": [{"field": "field_name", "op": "operator", "value": "value"}],
+                "order_by": [{"field": "field_name", "direction": "asc"}]
             }
         }
     ],
@@ -55,6 +56,8 @@ Query Format Rules:
 3. For text fields:
    - Use 'ilike' for case-insensitive text search
    - Use 'like' for case-sensitive text search
+4. For random ordering:
+   - Use order_by: [{"field": "RANDOM()", "direction": "asc"}]
 
 Example JSON Search Strategies:
 1. Find Cairo projects:
@@ -67,7 +70,9 @@ Example JSON Search Strategies:
             "select": ["projects.name", "projects.description", "projects.project_type"],
             "where": [
                 {"field": "projects.keywords", "op": "?*", "value": "cairo"}
-            ]
+            ],
+            "order_by": [{"field": "RANDOM()", "direction": "asc"}],
+            "limit": 5
         }
     }],
     "combine_results": "List the projects with their descriptions",
@@ -85,7 +90,9 @@ Example JSON Search Strategies:
             "where": [
                 {"field": "assets.asset_type", "op": "=", "value": "github_file"},
                 {"field": "assets.keywords", "op": "?*", "value": "contract"}
-            ]
+            ],
+            "order_by": [{"field": "assets.file_url", "direction": "asc"}],
+            "limit": 10
         }
     }],
     "combine_results": "List the files with their URLs",

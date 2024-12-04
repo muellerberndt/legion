@@ -41,17 +41,25 @@ class NaturalSearchAction(BaseAction):
             Human-readable text response
         """
         try:
-            # Create and run search job
+            # Import JobManager here to avoid circular imports
+            from src.jobs.manager import JobManager
+            
+            # Create and submit search job
             job = NaturalSearchJob()
             job.query = query
+            
+            job_manager = JobManager()
+            job_id = await job_manager.submit_job(job)
+            
+            # Wait for initial results
             await job.start()
             
-            # Return text response directly
+            # Format and return results
             if "text" in job.results:
-                return job.results["text"]
+                return f"Search completed (Job ID: {job_id})\n\n{job.results['text']}"
                 
             # Format results as text if not already formatted
-            text_lines = []
+            text_lines = [f"Search completed (Job ID: {job_id})\n"]
             
             # Add explanation if available
             if "explanation" in job.results:

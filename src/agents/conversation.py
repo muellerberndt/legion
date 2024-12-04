@@ -39,15 +39,13 @@ class ConversationAgent:
             "issues in bug bounty programs and audit contests.\n\n"
             "IMPORTANT: You MUST respond with JSON. Every response MUST be a valid JSON object.\n\n"
             f"Available actions:\n{actions}\n\n"
-            "Database Search Examples (all responses must be JSON):\n"
-            "1. To find high-value bounties:\n"
-            '{"action": "database_search", "args": {"query": "search projects type=immunefi"}}\n\n'
-            "2. To find Cairo smart contracts:\n"
-            '{"action": "database_search", "args": {"query": "search assets local_path=%.cairo"}}\n\n'
-            "3. To list all GitHub repositories:\n"
-            '{"action": "database_search", "args": {"query": "search assets type=github_repo"}}\n\n'
-            "4. To find deployed contracts:\n"
-            '{"action": "database_search", "args": {"query": "search assets type=deployed_contract"}}\n\n'
+            "For any questions about finding or searching through projects, assets, or files, use the natural language search command:\n"
+            '{"action": "search", "args": ["your natural language query here"]}\n\n'
+            "Example search queries:\n"
+            '1. {"action": "search", "args": ["Find all projects with high-value bounties"]}\n'
+            '2. {"action": "search", "args": ["Show me Cairo smart contracts"]}\n'
+            '3. {"action": "search", "args": ["List GitHub repositories with reentrancy vulnerabilities"]}\n'
+            '4. {"action": "search", "args": ["Find deployed contracts that use delegatecall"]}\n\n'
             "For normal conversation, respond with JSON:\n"
             '{"response": "your message here"}\n\n'
             "Remember:\n"
@@ -58,6 +56,8 @@ class ConversationAgent:
             "- Suggest relevant vulnerability patterns to look for\n"
             "- Help prioritize high-value targets\n"
             "- Keep track of context and suggest relevant follow-up searches\n"
+            "- For ANY query about finding, searching, or listing data, use the search command\n"
+            "- The search command understands natural language, so pass the user's query directly\n"
             "\nIMPORTANT: Remember that EVERY response MUST be a valid JSON object."
         )
         
@@ -169,33 +169,35 @@ class ConversationAgent:
             self.logger.error(f"Error in conversation: {e}")
             return f"Sorry, I encountered an error: {str(e)}"
             
-    async def _execute_action(self, action_name: str, args: Dict[str, Any]) -> str:
-        """Execute an action through the registry"""
-        from src.interfaces.base import Message
-        
+    async def _execute_action(self, action: str, args: List[str]) -> str:
+        """Execute an action with the given arguments"""
         try:
-            if action_name not in self.action_registry.actions:
-                return f"I don't know how to {action_name}"
+            if not self.action_registry:
+                self.action_registry = ActionRegistry()
                 
-            handler, spec = self.action_registry.actions[action_name]
+            # Get the action handler
+            action_tuple = self.action_registry.get_action(action)
+            if not action_tuple:
+                return f"Unknown action: {action}"
+                
+            handler, spec = action_tuple
             
-            # Create message for action
+            # Create message object
+            from src.interfaces.base import Message
             message = Message(
                 session_id=self.session_id,
-                content=action_name,
-                arguments=[]
+                content=action,
+                arguments=args
             )
             
-            # Extract arguments in the order specified by the spec
-            action_args = []
-            if spec and spec.arguments:
-                for arg in spec.arguments:
-                    if arg.name in args:
-                        action_args.append(args[arg.name])
-            
-            # Execute action with ordered arguments
-            result = await handler(message, *action_args)
-            return str(result)
+            # Special handling for search action to pass query parameter
+            if action == "search":
+                query = " ".join(args)  # Join all args into a single query string
+                return await handler(message, query)
+                
+            # Default handling for other actions
+            return await handler(message, *args)
             
         except Exception as e:
-            return f"Failed to execute {action_name}: {str(e)}" 
+            self.logger.error(f"Action failed: {str(e)}")
+            return str(e) 

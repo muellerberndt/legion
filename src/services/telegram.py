@@ -3,8 +3,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from typing import Optional
 from src.config.config import Config
 from src.util.logging import Logger
+from src.services.notification_service import NotificationService
 
-class TelegramService:
+class TelegramService(NotificationService):
     """Service for interacting with Telegram"""
     _instance: Optional['TelegramService'] = None
     

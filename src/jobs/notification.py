@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Optional, List
 from datetime import datetime
 from src.util.logging import Logger
-from src.interfaces.notification import NotificationService
+from src.services.notification_service import NotificationService
 
 @dataclass
 class JobNotification:

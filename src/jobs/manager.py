@@ -76,17 +76,33 @@ class JobManager(DBSessionMixin):
             return False
             
         try:
+            # Import here to avoid circular imports
+            from src.jobs.notification import JobNotifier
+            
             self.logger.info(f"Stopping job {job_id}")
             await job.stop()
             job.status = JobStatus.CANCELLED
+            job.completed_at = datetime.utcnow()
             
             # Update job record in database
             with self.get_session() as session:
                 job_record = session.query(JobRecord).filter(JobRecord.id == job_id).first()
                 if job_record:
                     job_record.status = JobStatus.CANCELLED.value
+                    job_record.completed_at = job.completed_at
                     session.commit()
-                    
+            
+            # Send cancellation notification
+            notifier = JobNotifier()
+            await notifier.notify_completion(
+                job_id=job.id,
+                job_type=job.type.value,
+                status=JobStatus.CANCELLED.value,
+                message="Job cancelled by user",
+                started_at=job.started_at,
+                completed_at=job.completed_at
+            )
+            
             return True
             
         except Exception as e:
@@ -150,6 +166,9 @@ class JobManager(DBSessionMixin):
             The job ID
         """
         try:
+            # Import here to avoid circular imports
+            from src.jobs.notification import JobNotifier
+            
             # Create database record and register job in a single transaction
             with self.get_session() as session:
                 # Create and register job record
@@ -183,6 +202,17 @@ class JobManager(DBSessionMixin):
                 
                 # Commit all changes in one transaction
                 session.commit()
+                
+                # Send completion notification
+                notifier = JobNotifier()
+                await notifier.notify_completion(
+                    job_id=job.id,
+                    job_type=job.type.value,
+                    status=job.status.value,
+                    message=job.result.message if job.result else job.error or "No result",
+                    started_at=job.started_at,
+                    completed_at=job.completed_at
+                )
             
             return job.id
             
@@ -191,4 +221,54 @@ class JobManager(DBSessionMixin):
             # Clean up registration if start failed
             if job.id in self._jobs:
                 del self._jobs[job.id]
+            raise
+        
+    async def update_job_status(self, job_id: str, status: JobStatus) -> None:
+        """Update job status and send notification
+        
+        Args:
+            job_id: ID of the job to update
+            status: New job status
+        """
+        job = self._jobs.get(job_id)
+        if not job:
+            self.logger.warning(f"Job {job_id} not found")
+            return
+            
+        try:
+            # Import here to avoid circular imports
+            from src.jobs.notification import JobNotifier
+            
+            # Update job status
+            job.status = status
+            if status == JobStatus.COMPLETED:
+                job.completed_at = datetime.utcnow()
+            
+            # Update database record
+            with self.get_session() as session:
+                job_record = session.query(JobRecord).filter(JobRecord.id == job_id).first()
+                if job_record:
+                    job_record.status = status.value
+                    job_record.completed_at = job.completed_at
+                    job_record.error = job.error
+                    if job.result:
+                        job_record.success = job.result.success
+                        job_record.message = job.result.message
+                        job_record.data = job.result.data
+                        job_record.outputs = job.result.outputs
+                    session.commit()
+            
+            # Send notification
+            notifier = JobNotifier()
+            await notifier.notify_completion(
+                job_id=job.id,
+                job_type=job.type.value,
+                status=status.value,
+                message=job.result.message if job.result else job.error or "No result",
+                started_at=job.started_at,
+                completed_at=job.completed_at
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update job status: {str(e)}")
             raise
