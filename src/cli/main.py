@@ -9,6 +9,7 @@ import signal
 import atexit
 import concurrent.futures
 import threading
+from src.server.initialization import Initializer
 
 def cleanup_thread_pools():
     """Clean up any remaining thread pools"""
@@ -103,19 +104,36 @@ async def server_start(ctx, interface):
         logger.error(f"Failed to start server: {e}")
         raise
 
-@cli.command(name='init-db')
+@cli.command()
+@click.option('-v', '--verbose', is_flag=True, help='Enable verbose logging')
 @click.pass_context
-def init_db(ctx):
+@async_command
+async def init_db(ctx, verbose):
     """Initialize the database"""
-    from src.actions.init_db import InitDBAction
     logger = ctx.obj['logger']
     
     try:
-        action = InitDBAction()
-        asyncio.run(action.execute())
-        logger.info("Database initialized successfully")
+        initializer = Initializer()
+        result = await initializer.init_db()
+        logger.info(result)
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
+        raise
+
+@cli.command()
+@click.option('-v', '--verbose', is_flag=True, help='Enable verbose logging')
+@click.pass_context
+@async_command
+async def initial_sync(ctx, verbose):
+    """Perform initial data sync"""
+    logger = ctx.obj['logger']
+    
+    try:
+        initializer = Initializer()
+        result = await initializer.initial_sync()
+        logger.info(result)
+    except Exception as e:
+        logger.error(f"Failed to perform initial sync: {e}")
         raise
 
 if __name__ == '__main__':
