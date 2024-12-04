@@ -1,12 +1,13 @@
 import asyncio
 from telegram import Bot, Update, Message, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from src.interfaces.base import Interface
+from src.interfaces.base import Interface, Message
 from src.actions.registry import ActionRegistry
 from src.jobs.notification import NotificationService
 from src.util.logging import Logger
 from src.config.config import Config
-from src.jobs.agent import ConversationAgent
+from src.services.telegram import TelegramService
+from src.agents.conversation import ConversationAgent
 
 class TelegramInterface(Interface):
     """Telegram bot interface"""

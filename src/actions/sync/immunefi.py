@@ -1,8 +1,7 @@
-from src.actions.base import BaseAction, ActionSpec, ActionArgument, AsyncAction
+from src.actions.base import BaseAction, ActionSpec
 from src.jobs.indexer import IndexerJob
 import asyncio
 
-@AsyncAction
 class ImmunefiSyncAction(BaseAction):
     """Action to sync Immunefi data"""
     

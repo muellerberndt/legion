@@ -1,9 +1,7 @@
-from typing import Optional
-from src.actions.base import BaseAction, ActionSpec, ActionArgument, AsyncAction
+from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.manager import JobManager
 import asyncio
 
-@AsyncAction
 class AgentAction(BaseAction):
     """Action to spawn a new AI agent"""
     
@@ -17,6 +15,7 @@ class AgentAction(BaseAction):
     
     async def execute(self, prompt: str) -> str:
         """Execute the agent action"""
+        # Import here to avoid circular imports
         from src.jobs.agent import AgentJob
         
         # Clean up the prompt - remove quotes and extra whitespace

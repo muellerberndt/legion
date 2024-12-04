@@ -1,11 +1,10 @@
-from src.actions.base import BaseAction, ActionSpec, AsyncAction
+from src.actions.base import BaseAction, ActionSpec
 from src.backend.database import DBSessionMixin
 from src.util.logging import Logger
 from src.models.base import Asset
 from src.util.embeddings import update_asset_embedding
 import asyncio
 
-@AsyncAction
 class GenerateEmbeddingsAction(BaseAction, DBSessionMixin):
     """Action to generate embeddings for all assets"""
     
