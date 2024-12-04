@@ -41,7 +41,7 @@ class ActionRegistry:
         self.register_action("stop", StopJobAction)
         self.register_action("sync", ImmunefiSyncAction)
         self.register_action("file_search", FileSearchAction)
-        self.register_action("natural_search", NaturalSearchAction)
+        self.register_action("search", NaturalSearchAction)
         
     def register_action(self, name: str, action_class: Type[BaseAction]) -> None:
         """Register an action class"""

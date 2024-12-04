@@ -61,6 +61,15 @@ class QueryBuilder:
         
         # Set table
         builder.from_table(table_name)
+        
+        # Add join if specified
+        if "join" in spec:
+            if not isinstance(spec["join"], dict):
+                raise ValueError("'join' must be a dictionary")
+            if "table" not in spec["join"] or "on" not in spec["join"]:
+                raise ValueError("Join specification must include 'table' and 'on' fields")
+            builder.logger.debug(f"Adding join: {spec['join']}")
+            builder.join(spec["join"]["table"], spec["join"]["on"])
             
         # Add select fields
         if "select" in spec:
