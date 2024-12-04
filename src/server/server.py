@@ -9,6 +9,7 @@ from src.config.config import Config
 from src.interfaces.base import Interface
 from src.interfaces.telegram import TelegramInterface
 from src.actions.registry import ActionRegistry
+from src.server.extension_loader import ExtensionLoader
 import concurrent.futures
 import threading
 
@@ -22,6 +23,7 @@ class Server:
         self.watcher_manager = WatcherManager()
         self.handler_registry = HandlerRegistry()
         self.action_registry = ActionRegistry()
+        self.extension_loader = ExtensionLoader()
         self.interfaces: Dict[str, Interface] = {}
         self.shutdown_event = asyncio.Event()
         self.shutting_down = False
@@ -36,6 +38,10 @@ class Server:
             loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self.handle_signal(s)))
             
         try:
+            # Load and register extensions
+            self.extension_loader.load_extensions()
+            self.extension_loader.register_components()
+            
             # Initialize interfaces
             if 'telegram' in enabled_interfaces:
                 telegram = TelegramInterface(action_registry=self.action_registry)
