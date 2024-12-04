@@ -13,6 +13,7 @@ from src.actions.delete_embeddings import DeleteEmbeddingsAction
 from src.actions.agent import AgentAction
 from src.actions.job import GetJobResultAction, StopJobAction
 from src.actions.sync.immunefi import ImmunefiSyncAction
+from src.actions.file_search import FileSearchAction
 
 class ActionRegistry:
     """Registry for all available actions"""
@@ -38,6 +39,7 @@ class ActionRegistry:
         self.register_action("job", GetJobResultAction)
         self.register_action("stop", StopJobAction)
         self.register_action("sync", ImmunefiSyncAction)
+        self.register_action("file_search", FileSearchAction)
         
     def register_action(self, name: str, action_class: Type[BaseAction]) -> None:
         """Register an action class"""

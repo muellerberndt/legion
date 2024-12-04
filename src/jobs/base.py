@@ -32,7 +32,8 @@ class JobResult:
     
     def add_output(self, output: str) -> None:
         """Add output to the result history"""
-        self.outputs.append(output)
+        if output:  # Only add non-empty outputs
+            self.outputs.append(output)
     
     def to_dict(self) -> Dict[str, Any]:
         return {

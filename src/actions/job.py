@@ -78,7 +78,27 @@ class GetJobResultAction(BaseAction):
             "\nOutputs:"
         ]
         
-        for output in job.result.outputs:
-            lines.append(f"- {output}")
+        # Handle outputs with pagination
+        MAX_OUTPUTS = 10  # Maximum number of outputs to show
+        MAX_LENGTH = 500  # Maximum length per output
+        
+        outputs = job.result.outputs
+        if outputs:
+            if len(outputs) > MAX_OUTPUTS:
+                lines.append(f"\nShowing first {MAX_OUTPUTS} of {len(outputs)} matches:")
+                outputs = outputs[:MAX_OUTPUTS]
+            
+            for output in outputs:
+                # Truncate long outputs
+                if len(output) > MAX_LENGTH:
+                    truncated = output[:MAX_LENGTH] + "..."
+                    lines.append(f"\n{truncated}")
+                else:
+                    lines.append(f"\n{output}")
+                    
+            if len(outputs) > MAX_OUTPUTS:
+                lines.append(f"\n... and {len(job.result.outputs) - MAX_OUTPUTS} more matches")
+        else:
+            lines.append("\nNo matches found")
             
         return "\n".join(lines) 

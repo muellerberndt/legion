@@ -29,9 +29,11 @@ def mock_job():
     mock_result.success = True
     mock_result.message = "Test result"
     mock_result.outputs = []
+    mock_result.data = {}
     mock_result.to_dict.return_value = {
         'success': True,
         'message': "Test result",
+        'data': {},
         'outputs': []
     }
     job.result = mock_result

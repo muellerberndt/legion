@@ -2,8 +2,11 @@ from typing import Dict, List, Type
 from src.jobs.base import Job, JobStatus
 from src.util.logging import Logger
 import asyncio
+from src.backend.database import DBSessionMixin
+from src.models.job import JobRecord
+from datetime import datetime
 
-class JobManager:
+class JobManager(DBSessionMixin):
     """Manages all running jobs"""
     
     _instance = None
@@ -76,20 +79,46 @@ class JobManager:
             self.logger.info(f"Stopping job {job_id}")
             await job.stop()
             job.status = JobStatus.CANCELLED
+            
+            # Update job record in database
+            with self.get_session() as session:
+                job_record = session.query(JobRecord).filter(JobRecord.id == job_id).first()
+                if job_record:
+                    job_record.status = JobStatus.CANCELLED.value
+                    session.commit()
+                    
             return True
             
         except Exception as e:
             self.logger.error(f"Failed to stop job {job_id}: {e}")
             return False
         
-    def register_job(self, job: Job) -> None:
-        """Register a job with the manager"""
+    def register_job(self, job: Job) -> JobRecord:
+        """Register a job with the manager and create database record
+        
+        Args:
+            job: The job to register
+            
+        Returns:
+            The created job record
+        """
         if job.id in self._jobs:
             self.logger.warning(f"Job {job.id} already registered")
-            return
+            return None
             
         self._jobs[job.id] = job
         self.logger.info(f"Registered job: {job.id}")
+        
+        # Create job record in database
+        with self.get_session() as session:
+            job_record = JobRecord(
+                id=job.id,
+                type=job.type.value,
+                status=job.status.value,
+                created_at=datetime.utcnow()
+            )
+            session.add(job_record)
+            return job_record
         
     def get_job(self, name: str) -> Job:
         """Get a registered job by name"""
@@ -121,11 +150,39 @@ class JobManager:
             The job ID
         """
         try:
-            # Register the job first
-            self.register_job(job)
-            
-            # Start the job
-            await job.start()
+            # Create database record and register job in a single transaction
+            with self.get_session() as session:
+                # Create and register job record
+                job_record = JobRecord(
+                    id=job.id,
+                    type=job.type.value,
+                    status=job.status.value,
+                    created_at=datetime.utcnow()
+                )
+                session.add(job_record)
+                
+                # Register job in memory
+                if job.id in self._jobs:
+                    self.logger.warning(f"Job {job.id} already registered")
+                else:
+                    self._jobs[job.id] = job
+                    self.logger.info(f"Registered job: {job.id}")
+                
+                # Start the job
+                await job.start()
+                
+                # Update record with completion status
+                job_record.status = job.status.value
+                job_record.completed_at = datetime.utcnow() if job.status == JobStatus.COMPLETED else None
+                job_record.error = job.error
+                if job.result:
+                    job_record.success = job.result.success
+                    job_record.message = job.result.message
+                    job_record.data = job.result.data
+                    job_record.outputs = job.result.outputs  # Save outputs to database
+                
+                # Commit all changes in one transaction
+                session.commit()
             
             return job.id
             
