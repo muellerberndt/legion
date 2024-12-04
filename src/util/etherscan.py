@@ -1,6 +1,7 @@
 import os
 import aiohttp
 import json
+import aiofiles
 from src.config.config import Config
 
 async def fetch_verified_sources(etherscan_url: str, target_path: str) -> None:
@@ -62,10 +63,10 @@ async def fetch_verified_sources(etherscan_url: str, target_path: str) -> None:
                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
                 
                 # Write the content to the file
-                with open(file_path, 'w') as f:
-                    f.write(file_content)
+                async with aiofiles.open(file_path, 'w') as f:
+                    await f.write(file_content)
                     
         except json.JSONDecodeError as e:
             # If not JSON, it might be a single file
-            with open(os.path.join(target_path, f"{address}.sol"), 'w') as f:
-                f.write(source_code)
+            async with aiofiles.open(os.path.join(target_path, f"{address}.sol"), 'w') as f:
+                await f.write(source_code)
