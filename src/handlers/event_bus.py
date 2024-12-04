@@ -32,7 +32,8 @@ class EventBus:
         
         for handler_class in self._handlers[trigger]:
             try:
-                handler = handler_class(trigger, context)
+                handler = handler_class()
+                handler.set_context(context)
                 handler.handle()
             except Exception as e:
                 self.logger.error(

@@ -130,23 +130,11 @@ class GitHubWatcher(WatcherJob):
         events = []
         
         try:
-            action = payload['action']
-            pr = payload['pull_request']
-            repo_name = payload['repository']['full_name']
-            
-            # Create event for PR updates
+            # Create event with full payload
             events.append({
                 'trigger': HandlerTrigger.GITHUB_PR,
                 'data': {
-                    'repository': repo_name,
-                    'action': action,
-                    'pull_request': {
-                        'number': pr['number'],
-                        'title': pr['title'],
-                        'body': pr['body'],
-                        'state': pr['state'],
-                        'url': pr['html_url']
-                    }
+                    'payload': payload
                 }
             })
             
