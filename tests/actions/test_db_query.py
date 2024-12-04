@@ -1,7 +1,10 @@
 import pytest
 from src.actions.db_query import DBQueryAction
 import json
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
+from src.util.logging import Logger
+
+logger = Logger("TestDBQuery")
 
 @pytest.fixture
 def mock_session():
@@ -10,13 +13,21 @@ def mock_session():
         session.__enter__ = Mock(return_value=session)
         session.__exit__ = Mock(return_value=None)
         
-        # Mock query results
+        # Mock query results with proper _mapping attribute
         result_row = Mock()
-        result_row._asdict.return_value = {
+        mapping_dict = {
             "id": "test-id",
             "asset_type": "github_file",
             "source_url": "https://github.com/test/repo"
         }
+        # Create a MagicMock that behaves like a dict
+        mapping = MagicMock()
+        mapping.__getitem__.side_effect = mapping_dict.__getitem__
+        mapping.keys.return_value = mapping_dict.keys()
+        mapping.items.return_value = mapping_dict.items()
+        mapping.get.side_effect = mapping_dict.get
+        result_row._mapping = mapping
+        
         session.execute.return_value.all.return_value = [result_row]
         
         mock.return_value = session
@@ -34,7 +45,14 @@ async def test_db_query_action(mock_session):
         ]
     }
     
+    logger.info(f"Executing query with spec: {query_spec}")
     result = await action.execute(json.dumps(query_spec))
+    logger.info(f"Got result: {result}")
+    
+    if not result:
+        logger.error("Result is empty!")
+        raise ValueError("Empty result from action")
+        
     result_data = json.loads(result)
     
     assert result_data["count"] == 1
@@ -43,11 +61,15 @@ async def test_db_query_action(mock_session):
     
     # Test invalid JSON
     result = await action.execute("invalid json")
-    assert "Error: Invalid JSON" in result
+    result_data = json.loads(result)
+    assert "error" in result_data
+    assert "Invalid JSON" in result_data["error"]
     
     # Test invalid query spec
     result = await action.execute('{"invalid": "spec"}')
-    assert "Error building query" in result
+    result_data = json.loads(result)
+    assert "error" in result_data
+    assert "Error building query" in result_data["error"]
     
     # Test query with no results
     mock_session.execute.return_value.all.return_value = []
@@ -57,13 +79,23 @@ async def test_db_query_action(mock_session):
     assert len(result_data["results"]) == 0
     
     # Test query with many results
-    many_results = [Mock() for _ in range(150)]
-    for r in many_results:
-        r._asdict.return_value = {"id": "test"}
+    many_results = []
+    for i in range(150):
+        row = Mock()
+        mapping_dict = {"id": f"test-{i}"}
+        # Create a MagicMock that behaves like a dict
+        mapping = MagicMock()
+        mapping.__getitem__.side_effect = mapping_dict.__getitem__
+        mapping.keys.return_value = mapping_dict.keys()
+        mapping.items.return_value = mapping_dict.items()
+        mapping.get.side_effect = mapping_dict.get
+        row._mapping = mapping
+        many_results.append(row)
+        
     mock_session.execute.return_value.all.return_value = many_results
     
     result = await action.execute(json.dumps(query_spec))
     result_data = json.loads(result)
     assert result_data["count"] == 150
     assert len(result_data["results"]) == 100  # Limited to 100
-    assert "note" in result_data  # Should have note about limited results 
+    assert "note" in result_data  # Should have note about limited results

@@ -1,7 +1,7 @@
-from typing import List, Any, Dict, Optional, Union, Set
+from typing import List, Any, Dict, Optional, Union, Set, Type
 from sqlalchemy import select, and_, or_, not_, text, join
 from sqlalchemy.sql import Select
-from src.models.base import Asset, Project
+from src.models.base import Asset, Project, Base
 from src.util.logging import Logger
 
 class QueryBuilder:
@@ -48,78 +48,70 @@ class QueryBuilder:
         self._selected_fields = set()
         
     @classmethod
-    def from_spec(cls, spec: Dict) -> 'QueryBuilder':
-        """Create a QueryBuilder from a query specification
-        
-        Args:
-            spec: Query specification dictionary
-            
-        Returns:
-            Configured QueryBuilder instance
-            
-        Example:
-            spec = {
-                "from": "assets",
-                "join": {
-                    "table": "projects",
-                    "on": {"project_id": "id"}
-                },
-                "select": ["assets.id", "projects.name"],
-                "where": [
-                    {"field": "assets.asset_type", "op": "=", "value": "github_file"},
-                    {"field": "projects.platform", "op": "=", "value": "github"}
-                ],
-                "order_by": [
-                    {"field": "assets.created_at", "direction": "desc"}
-                ],
-                "limit": 10
-            }
-        """
+    def from_spec(cls, spec: Dict[str, Any]) -> 'QueryBuilder':
+        """Create QueryBuilder from specification"""
         builder = cls()
+        builder.logger.debug(f"Building query from spec: {spec}")
         
-        # Validate and set base table
+        # Get table name
         if "from" not in spec:
             raise ValueError("Query specification must include 'from' field")
-        builder.from_table(spec["from"])
+        table_name = spec["from"]
+        builder.logger.debug(f"Using table: {table_name}")
         
-        # Handle join if specified
-        if "join" in spec:
-            join_spec = spec["join"]
-            if not isinstance(join_spec, dict) or "table" not in join_spec or "on" not in join_spec:
-                raise ValueError("Join specification must include 'table' and 'on' fields")
-            builder.join(join_spec["table"], join_spec["on"])
-        
-        # Handle field selection
+        # Set table
+        builder.from_table(table_name)
+            
+        # Add select fields
         if "select" in spec:
             if not isinstance(spec["select"], list):
                 raise ValueError("'select' must be a list of fields")
+            builder.logger.debug(f"Adding select fields: {spec['select']}")
             builder.select(*spec["select"])
-        
-        # Handle where conditions
+                
+        # Add where conditions
         if "where" in spec:
             if not isinstance(spec["where"], list):
                 raise ValueError("'where' must be a list of conditions")
+            builder.logger.debug(f"Adding where conditions: {spec['where']}")
             for condition in spec["where"]:
-                if not isinstance(condition, dict) or "field" not in condition or "op" not in condition:
-                    raise ValueError("Each where condition must include 'field' and 'op'")
+                if not isinstance(condition, dict):
+                    raise ValueError(f"Invalid where condition: {condition}")
+                if "field" not in condition or "op" not in condition:
+                    raise ValueError(f"Missing field or operator in condition: {condition}")
+                    
+                field = condition["field"]
+                op = condition["op"]
                 value = condition.get("value")
-                builder.where(condition["field"], condition["op"], value)
-        
-        # Handle ordering
+                
+                builder.where(field, op, value)
+                
+        # Add order by
         if "order_by" in spec:
-            if not isinstance(spec["order_by"], list):
-                raise ValueError("'order_by' must be a list of ordering specifications")
-            for order_spec in spec["order_by"]:
-                if not isinstance(order_spec, dict) or "field" not in order_spec:
-                    raise ValueError("Each order_by spec must include 'field'")
-                direction = order_spec.get("direction", "asc")
-                builder.order_by(order_spec["field"], direction)
-        
-        # Handle limit and offset
+            builder.logger.debug(f"Adding order by: {spec['order_by']}")
+            if isinstance(spec["order_by"], list):
+                for order in spec["order_by"]:
+                    if isinstance(order, dict):
+                        if "field" not in order:
+                            raise ValueError("Each order_by spec must include 'field'")
+                        field = order["field"]
+                        direction = order.get("direction", "asc")
+                        builder.order_by(field, direction)
+                    else:
+                        builder.order_by(str(order))
+            else:
+                # Handle string format for RANDOM()
+                builder.order_by(str(spec["order_by"]))
+                
+        # Add limit
         if "limit" in spec:
-            builder.limit(int(spec["limit"]))
+            builder.logger.debug(f"Setting limit: {spec['limit']}")
+            builder.limit(spec["limit"])
+            
+        # Add offset
         if "offset" in spec:
-            builder.offset(int(spec["offset"]))
+            builder.logger.debug(f"Setting offset: {spec['offset']}")
+            builder.offset(spec["offset"])
             
         return builder
         
@@ -144,14 +136,17 @@ class QueryBuilder:
             "limit": 10
         }
         
-    def from_table(self, table_name: str) -> 'QueryBuilder':
-        """Set the table to query from"""
-        if table_name.lower() == "assets":
-            self._table = Asset
-        elif table_name.lower() == "projects":
-            self._table = Project
+    def from_table(self, table: Union[str, Type[Base]]) -> 'QueryBuilder':
+        """Set the base table for the query"""
+        if isinstance(table, str):
+            if table.lower() == "assets":
+                self._table = Asset
+            elif table.lower() == "projects":
+                self._table = Project
+            else:
+                raise ValueError(f"Invalid table name: {table}")
         else:
-            raise ValueError(f"Invalid table name: {table_name}. Only 'assets' and 'projects' are allowed.")
+            self._table = table
         return self
         
     def join(self, table_name: str, on: Dict[str, str]) -> 'QueryBuilder':
@@ -191,31 +186,34 @@ class QueryBuilder:
         return self
         
     def select(self, *fields: str) -> 'QueryBuilder':
-        """Select specific fields from the query
+        """Add fields to select
         
         Args:
             fields: Field names to select, e.g. "assets.id", "projects.name"
         """
+        if not self._table:
+            raise ValueError("No table selected. Call from_table() first.")
+            
         for field in fields:
-            # Parse table and field name
+            # Require table.field format
+            if "." not in field:
+                raise ValueError(f"Invalid field format: {field}. Use format 'table.field'")
+                
             try:
                 table_name, field_name = field.split(".")
             except ValueError:
                 raise ValueError(f"Invalid field format: {field}. Use format 'table.field'")
-                
-            # Get the table class
-            if table_name == "assets":
+            
+            if table_name.lower() == "assets":
                 table = Asset
-            elif table_name == "projects":
+            elif table_name.lower() == "projects":
                 table = Project
             else:
                 raise ValueError(f"Invalid table name: {table_name}")
                 
-            # Validate field exists
             if not hasattr(table, field_name):
                 raise ValueError(f"Field {field_name} does not exist in {table.__name__}")
                 
-            # Add to selected fields
             self._selected_fields.add(getattr(table, field_name))
             
         return self
@@ -234,7 +232,9 @@ class QueryBuilder:
             "in": lambda f, v: f.in_(v if isinstance(v, (list, tuple)) else [v]),
             "not in": lambda f, v: ~f.in_(v if isinstance(v, (list, tuple)) else [v]),
             "is null": lambda f, _: f.is_(None),
-            "is not null": lambda f, _: f.isnot(None)
+            "is not null": lambda f, _: f.isnot(None),
+            "?": lambda f, v: text(f"{f.key} ? :value").bindparams(value=v),
+            "?*": lambda f, v: text(f"EXISTS (SELECT 1 FROM json_array_elements_text({f.key}::json) as elem WHERE lower(elem) = lower(:value))").bindparams(value=v)
         }
         
         if operator not in allowed_operators:
@@ -243,9 +243,9 @@ class QueryBuilder:
         # Handle table.field format
         if "." in field:
             table_name, field_name = field.split(".")
-            if table_name == "assets":
+            if table_name.lower() == "assets":
                 table = Asset
-            elif table_name == "projects":
+            elif table_name.lower() == "projects":
                 table = Project
             else:
                 raise ValueError(f"Invalid table name: {table_name}")
@@ -259,18 +259,31 @@ class QueryBuilder:
             raise ValueError(f"Invalid field: {field_name}. Field does not exist in table {table.__name__}")
             
         table_field = getattr(table, field_name)
-        condition = allowed_operators[operator](table_field, value)
-        self._conditions.append(condition)
+        self._conditions.append(allowed_operators[operator](table_field, value))
+            
         return self
         
     def order_by(self, field: str, direction: str = "asc") -> 'QueryBuilder':
-        """Add ORDER BY clause"""
+        """Add an ORDER BY clause
+        
+        Args:
+            field: Field name or SQL function (e.g. "created_at" or "RANDOM()")
+            direction: Sort direction ("asc" or "desc")
+        """
+        if direction.lower() not in ("asc", "desc"):
+            raise ValueError("Direction must be either 'asc' or 'desc'")
+            
+        # Handle SQL functions
+        if field.upper().endswith("()"):
+            self._order_by.append(text(field))
+            return self
+            
         # Handle table.field format
         if "." in field:
             table_name, field_name = field.split(".")
-            if table_name == "assets":
+            if table_name.lower() == "assets":
                 table = Asset
-            elif table_name == "projects":
+            elif table_name.lower() == "projects":
                 table = Project
             else:
                 raise ValueError(f"Invalid table name: {table_name}")
@@ -284,12 +297,11 @@ class QueryBuilder:
             raise ValueError(f"Invalid field: {field_name}. Field does not exist in table {table.__name__}")
             
         table_field = getattr(table, field_name)
-        if direction.lower() not in ["asc", "desc"]:
-            raise ValueError("Direction must be either 'asc' or 'desc'")
+        if direction.lower() == "asc":
+            self._order_by.append(table_field.asc())
+        else:
+            self._order_by.append(table_field.desc())
             
-        self._order_by.append(
-            table_field.desc() if direction.lower() == "desc" else table_field.asc()
-        )
         return self
         
     def limit(self, limit: int) -> 'QueryBuilder':

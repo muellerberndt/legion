@@ -66,18 +66,13 @@ def async_command(f):
 @click.option('-v', '--verbose', is_flag=True, help='Enable verbose logging')
 @click.pass_context
 def cli(ctx, verbose):
-    """r4dar CLI - Web3 Security Research Assistant
-    
-    Available commands:
-    - server start: Start the server
-    - init-db: Initialize the database
-    """
+    """R4dar CLI"""
     ctx.ensure_object(dict)
     ctx.obj['verbose'] = verbose
     ctx.obj['logger'] = Logger("CLI")
     
-    # Configure logging based on verbosity
-    LogConfig.set_verbose(verbose)
+    # Enable verbose logging by default, but allow override
+    LogConfig.set_verbose(verbose if verbose is not None else True)
     
     # Load config
     Config()

@@ -28,7 +28,6 @@ class DBQueryAction(BaseAction, DBSessionMixin):
     )
     
     def __init__(self):
-        super().__init__()
         DBSessionMixin.__init__(self)
         self.logger = Logger("DBQueryAction")
         
@@ -38,40 +37,90 @@ class DBQueryAction(BaseAction, DBSessionMixin):
             # Parse query specification
             try:
                 spec = json.loads(query_spec)
+                self.logger.debug(f"Parsed query spec: {spec}")
             except json.JSONDecodeError:
-                return "Error: Invalid JSON query specification"
+                self.logger.error("Failed to parse JSON query spec")
+                return json.dumps({
+                    "error": "Invalid JSON query specification",
+                    "count": 0,
+                    "results": []
+                })
                 
             # Build and execute query
             try:
                 query = QueryBuilder.from_spec(spec).build()
+                self.logger.debug(f"Built query: {query}")
+                sql = str(query.compile(compile_kwargs={'literal_binds': True}))
+                self.logger.info(f"Executing SQL: {sql}")
             except ValueError as e:
-                return f"Error building query: {str(e)}"
+                self.logger.error(f"Failed to build query: {str(e)}")
+                return json.dumps({
+                    "error": f"Error building query: {str(e)}",
+                    "count": 0,
+                    "results": []
+                })
                 
             # Execute query
-            with self.get_session() as session:
-                results = session.execute(query).all()
+            try:
+                with self.get_session() as session:
+                    self.logger.debug("Executing query...")
+                    results = session.execute(query).all()
+                    self.logger.info(f"Got {len(results)} results")
+                    
+                    if results:
+                        first_result = results[0]
+                        self.logger.debug(f"First result type: {type(first_result)}")
+                        if hasattr(first_result, "_mapping"):
+                            self.logger.debug(f"First result mapping: {dict(first_result._mapping)}")
+                        elif hasattr(first_result, "_asdict"):
+                            self.logger.debug(f"First result dict: {first_result._asdict()}")
+                        elif hasattr(first_result, "__table__"):
+                            self.logger.debug(f"First result columns: {[c.name for c in first_result.__table__.columns]}")
+                        else:
+                            self.logger.debug(f"First result raw: {first_result}")
+                    else:
+                        self.logger.warning("Query returned no results")
+            except Exception as e:
+                self.logger.error(f"Database error: {str(e)}")
+                return json.dumps({
+                    "error": f"Database error: {str(e)}",
+                    "count": 0,
+                    "results": []
+                })
                 
             # Format results
             formatted_results = []
             for row in results:
-                if hasattr(row, "_mapping"):  # SQLAlchemy 1.4+ result rows
-                    result_dict = dict(row._mapping)
-                    # Convert any SQLAlchemy objects in the result
-                    for key, value in result_dict.items():
-                        if hasattr(value, "__table__"):  # SQLAlchemy model object
-                            result_dict[key] = {
-                                col.name: getattr(value, col.name)
-                                for col in value.__table__.columns
-                            }
-                    formatted_results.append(result_dict)
-                elif hasattr(row, "__table__"):  # SQLAlchemy model object
-                    result_dict = {}
-                    for column in row.__table__.columns:
-                        value = getattr(row, column.name)
-                        result_dict[column.name] = value
-                    formatted_results.append(result_dict)
-                else:  # Regular tuple
-                    formatted_results.append(tuple(str(value) for value in row))
+                try:
+                    if hasattr(row, "_mapping"):  # SQLAlchemy 1.4+ result rows
+                        result_dict = dict(row._mapping)
+                        # Convert any SQLAlchemy objects in the result
+                        for key, value in result_dict.items():
+                            if hasattr(value, "__table__"):  # SQLAlchemy model object
+                                result_dict[key] = {
+                                    col.name: getattr(value, col.name)
+                                    for col in value.__table__.columns
+                                }
+                        formatted_results.append(result_dict)
+                    elif hasattr(row, "_asdict"):  # Row with _asdict method (including mocks)
+                        result_dict = row._asdict()
+                        self.logger.debug(f"Got dict from _asdict: {result_dict}")
+                        formatted_results.append(result_dict)
+                    elif hasattr(row, "__table__"):  # SQLAlchemy model object
+                        result_dict = {}
+                        for column in row.__table__.columns:
+                            value = getattr(row, column.name)
+                            result_dict[column.name] = value
+                        formatted_results.append(result_dict)
+                    else:  # Regular tuple
+                        formatted_results.append(tuple(str(value) for value in row))
+                except Exception as e:
+                    self.logger.error(f"Error formatting row {row}: {str(e)}")
+                    return json.dumps({
+                        "error": f"Error formatting results: {str(e)}",
+                        "count": 0,
+                        "results": []
+                    })
                     
             # Build response
             response = {
@@ -82,11 +131,16 @@ class DBQueryAction(BaseAction, DBSessionMixin):
             if len(formatted_results) > 100:
                 response["note"] = f"Showing first 100 of {len(formatted_results)} results"
                 
+            self.logger.debug(f"Final response: {response}")
             return json.dumps(response, indent=2, cls=DateTimeEncoder)
             
         except Exception as e:
             self.logger.error(f"Error executing query: {str(e)}")
-            return f"Error executing query: {str(e)}"
+            return json.dumps({
+                "error": f"Error executing query: {str(e)}",
+                "count": 0,
+                "results": []
+            })
             
     @classmethod
     def example(cls) -> str:
