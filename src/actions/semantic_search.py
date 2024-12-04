@@ -42,12 +42,19 @@ class SemanticSearchAction(BaseAction, DBSessionMixin):
             lines.append(f"Asset: {asset['id']}")
             lines.append(f"Type: {asset['asset_type']}")
             lines.append(f"Projects: {projects}")
-            if asset.get('file_url'):
-                lines.append(f"File: {asset['file_url']}")
-            if asset.get('repo_url'):
-                lines.append(f"Repo: {asset['repo_url']}")
-            if asset.get('explorer_url'):
-                lines.append(f"Explorer: {asset['explorer_url']}")
+            if asset.get('source_url'):
+                lines.append(f"Source: {asset['source_url']}")
+            
+            # Add any extra URLs from extra_data
+            if asset.get('extra_data'):
+                extra = asset['extra_data']
+                if extra.get('file_url'):
+                    lines.append(f"File: {extra['file_url']}")
+                if extra.get('repo_url'):
+                    lines.append(f"Repo: {extra['repo_url']}")
+                if extra.get('explorer_url'):
+                    lines.append(f"Explorer: {extra['explorer_url']}")
+                    
             lines.append(f"Similarity: {asset['similarity']}%")
             lines.append("")  # Empty line between assets
             

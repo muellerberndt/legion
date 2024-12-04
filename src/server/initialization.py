@@ -26,10 +26,10 @@ class Initializer(DBSessionMixin):
             # Create array to vector conversion function
             with self.get_session() as session:
                 session.execute(text('''
-                    CREATE OR REPLACE FUNCTION array_to_vector(array double precision[])
+                    CREATE OR REPLACE FUNCTION array_to_vector(IN array_input double precision[])
                     RETURNS vector
                     AS $$
-                    SELECT array::vector
+                    SELECT array_input::vector
                     $$
                     LANGUAGE SQL
                     IMMUTABLE

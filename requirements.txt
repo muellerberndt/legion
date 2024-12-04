@@ -11,3 +11,4 @@ pyyaml
 openai>=1.0.0
 pgvector
 semgrep
+aiofiles

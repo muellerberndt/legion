@@ -125,18 +125,40 @@ class ImmunefiIndexer:
         current_asset_urls = {asset['url'] for asset in bounty_data.get('assets', []) if asset.get('url')}
         
         if not existing_project:
+            # Collect all keywords from various fields
+            keywords = set()
+            
+            # Add ecosystem items
+            if bounty_data.get('ecosystem'):
+                keywords.update(bounty_data['ecosystem'])
+                
+            # Add product types
+            if bounty_data.get('productType'):
+                keywords.update(bounty_data['productType'])
+                
+            # Add program types
+            if bounty_data.get('programType'):
+                keywords.update(bounty_data['programType'])
+                
+            # Add project types
+            if bounty_data.get('projectType'):
+                keywords.update(bounty_data['projectType'])
+                
+            # Add languages
+            if bounty_data.get('language'):
+                keywords.update(bounty_data['language'])
+                
+            # Add features
+            if bounty_data.get('features'):
+                keywords.update(bounty_data['features'])
+            
             new_project = Project(
                 name=bounty_data['project'],
                 description=bounty_data['description'],
                 project_type="immunefi",
-                languages=bounty_data.get('language', []),
-                features=bounty_data.get('features', []),
+                keywords=list(keywords),  # Convert set to list for JSON storage
                 extra_data={
                     'assets': bounty_data.get('assets', []),
-                    'ecosystem': bounty_data.get('ecosystem', []),
-                    'productType': bounty_data.get('productType', []),
-                    'programType': bounty_data.get('programType', []),
-                    'projectType': bounty_data.get('projectType', []),
                     'launchDate': bounty_data.get('launchDate'),
                     'updatedDate': bounty_data.get('updatedDate')
                 }
@@ -264,6 +286,7 @@ class ImmunefiIndexer:
                 # Update asset metadata
                 asset_record.extra_data = asset_record.extra_data or {}
                 asset_record.extra_data['revision'] = revision
+                asset_record.source_url = url
 
                 # Download based on URL type
                 if 'github.com' in parsed_url.netloc:
@@ -272,20 +295,20 @@ class ImmunefiIndexer:
                         await fetch_github_file(url, target_dir)
                         asset_record.asset_type = asset_type
                         asset_record.local_path = target_dir
-                        asset_record.file_url = url
+                        asset_record.extra_data['file_url'] = url
                     else:
                         asset_type = AssetType.GITHUB_REPO
                         await fetch_github_repo(url, target_dir)
                         asset_record.asset_type = asset_type
                         asset_record.local_path = target_dir
-                        asset_record.repo_url = url
+                        asset_record.extra_data['repo_url'] = url
                 elif 'etherscan.io' in url:
                     try:
                         asset_type = AssetType.DEPLOYED_CONTRACT
                         await fetch_verified_sources(url, target_dir)
                         asset_record.asset_type = asset_type
                         asset_record.local_path = target_dir
-                        asset_record.explorer_url = url
+                        asset_record.extra_data['explorer_url'] = url
                     except Exception as e:
                         self.logger.warning(f"Failed to fetch Etherscan contract at {url}: {str(e)}")
                         continue

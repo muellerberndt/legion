@@ -32,8 +32,8 @@ class Project(Base):
     name = Column(String, nullable=False)
     description = Column(String)
     project_type = Column(String, nullable=False)  # e.g., "immunefi"
-    languages = Column(JSON)  # List of programming languages
-    features = Column(JSON)  # Project features/tags
+    source_url = Column(String)  # URL to project source/listing
+    keywords = Column(JSON)  # Project keywords/tags
     extra_data = Column(JSON)  # Additional platform-specific data
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -48,8 +48,8 @@ class Project(Base):
             'name': self.name,
             'description': self.description,
             'project_type': self.project_type,
-            'languages': self.languages,
-            'features': self.features,
+            'source_url': self.source_url,
+            'keywords': self.keywords,
             'extra_data': self.extra_data,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
@@ -61,11 +61,9 @@ class Asset(Base):
     
     id = Column(String, primary_key=True)  # URL or unique identifier
     asset_type = Column(String)  # Type of asset (repo, file, contract)
-    file_url = Column(String)  # For individual files
-    repo_url = Column(String)  # For repositories
-    explorer_url = Column(String)  # For deployed contracts
+    source_url = Column(String)  # URL to asset source
     local_path = Column(String)  # Path to downloaded content
-    extra_data = Column(JSON)  # Additional metadata
+    extra_data = Column(JSON)  # Additional metadata including asset-specific URLs
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -80,9 +78,7 @@ class Asset(Base):
         return {
             'id': self.id,
             'asset_type': self.asset_type,
-            'file_url': self.file_url,
-            'repo_url': self.repo_url,
-            'explorer_url': self.explorer_url,
+            'source_url': self.source_url,
             'local_path': self.local_path,
             'extra_data': self.extra_data,
             'created_at': self.created_at.isoformat() if self.created_at else None,

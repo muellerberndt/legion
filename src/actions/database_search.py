@@ -73,9 +73,7 @@ Available filters for projects:
         select_clause = "COUNT(*)" if count else """
             a.id, 
             a.asset_type,
-            a.file_url,
-            a.repo_url,
-            a.explorer_url,
+            a.source_url,
             array_agg(p.name) as project_names
         """
         
@@ -103,13 +101,7 @@ Available filters for projects:
         # Apply URL filter
         if 'url' in filters:
             url = f"%{filters['url']}%"
-            query += """ 
-                AND (
-                    a.file_url ILIKE :url OR 
-                    a.repo_url ILIKE :url OR 
-                    a.explorer_url ILIKE :url
-                )
-            """
+            query += " AND a.source_url ILIKE :url"
             params['url'] = url
             
         # Apply project filter
@@ -123,9 +115,7 @@ Available filters for projects:
                 GROUP BY 
                     a.id,
                     a.asset_type,
-                    a.file_url,
-                    a.repo_url,
-                    a.explorer_url
+                    a.source_url
                 ORDER BY a.id
             """
             
@@ -185,25 +175,32 @@ Available filters for projects:
                     lines.append(f"Description: {item['description']}")
                 if item.get('project_type'):
                     lines.append(f"Type: {item['project_type']}")
+                if item.get('source_url'):
+                    lines.append(f"Source: {item['source_url']}")
                 if 'asset_count' in item:
                     lines.append(f"Assets: {item['asset_count']}")
             else:  # Asset
                 lines.append(f"\nAsset: {item['id']}")
                 if item.get('asset_type'):
                     lines.append(f"Type: {item['asset_type']}")
-                if item.get('file_url'):
-                    lines.append(f"File: {item['file_url']}")
-                if item.get('repo_url'):
-                    lines.append(f"Repo: {item['repo_url']}")
-                if item.get('explorer_url'):
-                    lines.append(f"Explorer: {item['explorer_url']}")
+                if item.get('source_url'):
+                    lines.append(f"Source: {item['source_url']}")
                 # Format project names
                 project_names = item.get('project_names', [])
                 if project_names and None in project_names:
                     project_names.remove(None)
                 if project_names:
                     lines.append(f"Projects: {', '.join(project_names)}")
-                    
+                # Add any extra URLs from extra_data
+                if item.get('extra_data'):
+                    extra = item['extra_data']
+                    if extra.get('file_url'):
+                        lines.append(f"File: {extra['file_url']}")
+                    if extra.get('repo_url'):
+                        lines.append(f"Repo: {extra['repo_url']}")
+                    if extra.get('explorer_url'):
+                        lines.append(f"Explorer: {extra['explorer_url']}")
+                        
         return "\n".join(lines)
     
     async def execute(self, query: str, limit: int = 50) -> str:

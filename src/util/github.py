@@ -1,8 +1,9 @@
 import os
-import requests
+import aiohttp
 import json
+import aiofiles
 
-def fetch_github_file(url: str, target_path: str) -> None:
+async def fetch_github_file(url: str, target_path: str) -> None:
     """
     Fetch a single file from GitHub and store it locally.
     
@@ -14,18 +15,20 @@ def fetch_github_file(url: str, target_path: str) -> None:
     raw_url = url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
     
     # Fetch file content
-    response = requests.get(raw_url)
-    if response.status_code != 200:
-        raise Exception(f"GitHub fetch error: Status code {response.status_code}")
+    async with aiohttp.ClientSession() as session:
+        async with session.get(raw_url) as response:
+            if response.status != 200:
+                raise Exception(f"GitHub fetch error: Status code {response.status}")
+            content = await response.text()
     
     # Create target directory if it doesn't exist
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
     
     # Write the content to the file
-    with open(target_path, 'w') as f:
-        f.write(response.text)
+    async with aiofiles.open(target_path, 'w') as f:
+        await f.write(content)
 
-def fetch_github_repo(url: str, target_path: str) -> None:
+async def fetch_github_repo(url: str, target_path: str) -> None:
     """
     Fetch an entire GitHub repository and store it locally.
     
@@ -42,9 +45,11 @@ def fetch_github_repo(url: str, target_path: str) -> None:
     api_url = f"https://api.github.com/repos/{owner}/{repo}/zipball"
     
     # Fetch repository content
-    response = requests.get(api_url)
-    if response.status_code != 200:
-        raise Exception(f"GitHub fetch error: Status code {response.status_code}")
+    async with aiohttp.ClientSession() as session:
+        async with session.get(api_url) as response:
+            if response.status != 200:
+                raise Exception(f"GitHub fetch error: Status code {response.status}")
+            content = await response.read()
     
     # Create target directory if it doesn't exist
     os.makedirs(target_path, exist_ok=True)
@@ -52,7 +57,7 @@ def fetch_github_repo(url: str, target_path: str) -> None:
     # Save zip file temporarily
     zip_path = os.path.join(target_path, 'repo.zip')
     with open(zip_path, 'wb') as f:
-        f.write(response.content)
+        f.write(content)
     
     # Extract zip file
     import zipfile

@@ -1,9 +1,9 @@
 import os
-import requests
+import aiohttp
 import json
 from src.config.config import Config
 
-def fetch_verified_sources(etherscan_url: str, target_path: str) -> None:
+async def fetch_verified_sources(etherscan_url: str, target_path: str) -> None:
     """
     Fetch verified sources from Etherscan and store them locally.
     
@@ -27,8 +27,9 @@ def fetch_verified_sources(etherscan_url: str, target_path: str) -> None:
     api_url = f"https://api.etherscan.io/api?module=contract&action=getsourcecode&address={address}&apikey={api_key}"
     
     # Fetch source code
-    response = requests.get(api_url)
-    data = response.json()
+    async with aiohttp.ClientSession() as session:
+        async with session.get(api_url) as response:
+            data = await response.json()
     
     if data["status"] != "1":
         raise Exception(f"Etherscan API error: {data.get('message', 'Unknown error')}")
