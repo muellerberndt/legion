@@ -65,7 +65,7 @@ def async_command(f):
 @click.group()
 @click.option('-v', '--verbose', is_flag=True, help='Enable verbose logging (same as --log-level DEBUG)')
 @click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), 
-              default='INFO', help='Set logging level')
+              default='WARNING', help='Set logging level')
 @click.pass_context
 def cli(ctx, verbose, log_level):
     """R4dar CLI"""
