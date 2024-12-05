@@ -1,5 +1,6 @@
 import yaml
 import os
+import logging
 from typing import Dict, Any
 from jsonschema import validate
 from src.config.schema import CONFIG_SCHEMA
@@ -15,20 +16,63 @@ class Config:
     
     def __init__(self):
         if self._config is None:
+            self.logger = logging.getLogger("Config")
             self.load_config()
     
     def load_config(self):
-        """Load configuration from file."""
+        """Load configuration from main and extra config files."""
+        # Load main config
         config_path = os.getenv('R4DAR_CONFIG', 'config.yml')
-        
-        with open(config_path, 'r') as f:
-            self._config = yaml.safe_load(f)
-            
-        # Validate against schema
         try:
-            validate(instance=self._config, schema=CONFIG_SCHEMA)
+            with open(config_path, 'r') as f:
+                try:
+                    self._config = yaml.safe_load(f)
+                except yaml.YAMLError as e:
+                    raise ValueError(f"Invalid configuration: YAML parsing error - {str(e)}")
+                
+            if not isinstance(self._config, dict):
+                raise ValueError("Invalid configuration: Root must be a dictionary")
+                
+            # Validate against schema
+            try:
+                validate(instance=self._config, schema=CONFIG_SCHEMA)
+            except Exception as e:
+                raise ValueError(f"Invalid configuration: Schema validation failed - {str(e)}")
+                
+        except FileNotFoundError:
+            raise ValueError(f"Invalid configuration: Config file not found at {config_path}")
         except Exception as e:
-            raise ValueError(f"Invalid configuration: {str(e)}")
+            if not isinstance(e, ValueError):
+                raise ValueError(f"Invalid configuration: {str(e)}")
+            raise
+            
+        # Load and merge extra config if it exists
+        extra_config_path = os.path.join("extensions", "extra_config.yml")
+        if os.path.exists(extra_config_path):
+            try:
+                with open(extra_config_path, 'r') as f:
+                    try:
+                        extra_config = yaml.safe_load(f)
+                    except yaml.YAMLError as e:
+                        self.logger.error(f"Failed to parse extra config: {e}")
+                        return
+                        
+                    if extra_config:
+                        self.logger.info("Loaded extra configuration")
+                        # Deep merge extra config into main config
+                        self._merge_configs(self._config, extra_config)
+            except Exception as e:
+                self.logger.error(f"Failed to load extra config: {e}")
+    
+    def _merge_configs(self, base: Dict, update: Dict) -> None:
+        """Deep merge update dict into base dict."""
+        for key, value in update.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                # Recursively merge nested dicts
+                self._merge_configs(base[key], value)
+            else:
+                # Update or add new value
+                base[key] = value
     
     @property
     def database_url(self) -> str:
@@ -49,10 +93,13 @@ class Config:
             value = self._config
             for k in keys:
                 if isinstance(value, dict):
-                    value = value.get(k, default)
+                    value = value.get(k)
                 else:
-                    return default
-            return value
+                    value = None
+                if value is None:
+                    break
+            return value if value is not None else default
+            
         return self._config.get(key, default)
     
     @property

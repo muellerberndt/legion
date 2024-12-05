@@ -1,6 +1,6 @@
 import pytest
 import os
-from unittest.mock import patch
+from unittest.mock import patch, mock_open
 from src.config.config import Config
 import yaml
 
@@ -48,6 +48,22 @@ def test_config_loading(test_config_path):
 def test_invalid_config():
     Config._instance = None  # Reset singleton
     Config._config = None
+    
+    # Mock an invalid YAML file
+    invalid_yaml = "invalid: yaml: content: - ["
+    
+    with patch('builtins.open', mock_open(read_data=invalid_yaml)), \
+         pytest.raises(ValueError) as exc_info:
+        Config().load_config()
+    
+    assert "Invalid configuration" in str(exc_info.value)
+
+def test_missing_config():
+    Config._instance = None  # Reset singleton
+    Config._config = None
+    
     with patch('builtins.open', side_effect=FileNotFoundError()), \
-         pytest.raises(FileNotFoundError):
-        Config().load_config() 
+         pytest.raises(ValueError) as exc_info:
+        Config().load_config()
+    
+    assert "Invalid configuration" in str(exc_info.value)

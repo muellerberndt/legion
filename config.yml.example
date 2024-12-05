@@ -34,6 +34,11 @@ watchers:
     # - github  # Uncomment to enable GitHub watcher
     # - immunefi  # Uncomment to enable Immunefi watcher
 
+# Extension configuration
+extensions_dir: extensions  # Directory containing extensions
+active_extensions:  # List of extensions to load
+  - semgrep  # Enable semgrep extension
+
 telegram:
   bot_token: "your-bot-token"
   chat_id: "your-chat-id" 

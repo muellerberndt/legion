@@ -19,6 +19,7 @@ class JobType(Enum):
     AGENT = "agent"
     INDEXER = "indexer"
     WATCHER = "watcher"
+    SCAN = "scan"  # For security scanning jobs
     # Add more job types as needed
 
 class JobResult:

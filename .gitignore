@@ -6,3 +6,4 @@ _pycache__/
 data/
 extensions
 tools
+tests/extensions
