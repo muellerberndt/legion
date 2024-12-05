@@ -2,12 +2,14 @@
 
 import tempfile
 import os
+import asyncio
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.manager import JobManager
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 from src.models.job import JobRecord
 from src.services.telegram import TelegramService
+from src.jobs.base import JobStatus
 
 class ListJobsAction(BaseAction):
     """Action to list running jobs"""
@@ -69,7 +71,28 @@ class GetJobResultAction(BaseAction, DBSessionMixin):
             job = job_manager.get_job(job_id)
             
             if job:
-                job_dict = job.to_dict()
+                # If job is still in memory, wait a bit for it to complete
+                if job.status == JobStatus.RUNNING:
+                    await asyncio.sleep(0.5)
+                    # Try to get from database after waiting
+                    with self.get_session() as session:
+                        job_record = session.query(JobRecord).filter(JobRecord.id == job_id).first()
+                        if job_record:
+                            job_dict = {
+                                'id': job_record.id,
+                                'type': job_record.type,
+                                'status': job_record.status,
+                                'started_at': job_record.started_at,
+                                'completed_at': job_record.completed_at,
+                                'success': job_record.success,
+                                'message': job_record.message,
+                                'outputs': job_record.outputs,
+                                'data': job_record.data
+                            }
+                        else:
+                            job_dict = job.to_dict()
+                else:
+                    job_dict = job.to_dict()
             else:
                 # If not active, try to get from database
                 with self.get_session() as session:
@@ -86,8 +109,7 @@ class GetJobResultAction(BaseAction, DBSessionMixin):
                         'success': job_record.success,
                         'message': job_record.message,
                         'outputs': job_record.outputs,
-                        'data': job_record.data,
-                        'error': job_record.error
+                        'data': job_record.data
                     }
             
             # Format job details
@@ -99,53 +121,54 @@ class GetJobResultAction(BaseAction, DBSessionMixin):
                 f"Completed: {job_dict['completed_at'] or 'Not completed'}"
             ]
             
-            # Add result or error
-            if job_dict.get('error'):
-                lines.append(f"\nError: {job_dict['error']}")
-            else:
+            # Add result based on status
+            if job_dict['status'] == JobStatus.FAILED.value:
+                lines.append("\nJob failed")
+            elif job_dict['status'] == JobStatus.COMPLETED.value:
                 if job_dict.get('message'):
                     lines.append(f"\nMessage: {job_dict['message']}")
                 
-                # Combine outputs and data into a single result text
-                result_parts = []
+                # Check if we have outputs or data
+                has_results = bool(job_dict.get('outputs') or job_dict.get('data'))
                 
-                if job_dict.get('outputs'):
-                    result_parts.extend(job_dict['outputs'])
+                if has_results:
+                    # Always send detailed results as a file
+                    result_parts = []
                     
-                if job_dict.get('data'):
-                    result_parts.append("\nData:")
-                    result_parts.append(str(job_dict['data']))
-                
-                if result_parts:
+                    if job_dict.get('outputs'):
+                        result_parts.extend(job_dict['outputs'])
+                        
+                    if job_dict.get('data'):
+                        result_parts.append("\nData:")
+                        result_parts.append(str(job_dict['data']))
+                    
                     result_text = "\n".join(result_parts)
                     
-                    # If result is too long, send as file
-                    if len(result_text) > self.MAX_MESSAGE_LENGTH:
-                        # Create temporary file
-                        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-                            f.write(result_text)
-                            temp_path = f.name
+                    # Create temporary file
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                        f.write(result_text)
+                        temp_path = f.name
+                    
+                    try:
+                        # Send file via Telegram
+                        telegram = TelegramService.get_instance()
+                        await telegram.send_file(
+                            file_path=temp_path,
+                            caption=f"Job output for {job_dict['id']}"
+                        )
                         
-                        try:
-                            # Send file via Telegram
-                            telegram = TelegramService.get_instance()
-                            await telegram.send_file(
-                                file_path=temp_path,
-                                caption=f"Job output for {job_dict['id']}"
-                            )
-                            
-                            # Add note about file being sent
-                            lines.append("\nOutput has been sent as a file due to length.")
-                            
-                        finally:
-                            # Clean up temp file
-                            os.unlink(temp_path)
-                    else:
-                        # Add output directly to message
-                        lines.append("\nResults:")
-                        lines.append(result_text)
+                        # Add note about file being sent
+                        lines.append("\nDetailed results have been sent as a file.")
+                        
+                    finally:
+                        # Clean up temp file
+                        os.unlink(temp_path)
                 else:
                     lines.append("\nNo results available.")
+            elif job_dict['status'] == JobStatus.CANCELLED.value:
+                lines.append("\nJob was cancelled")
+            elif job_dict['status'] == JobStatus.RUNNING.value:
+                lines.append("\nJob is still running")
                 
             return "\n".join(lines)
             

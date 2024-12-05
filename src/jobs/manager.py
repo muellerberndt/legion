@@ -186,7 +186,12 @@ class JobManager(DBSessionMixin):
                     id=job.id,
                     type=job.type.value,
                     status=job.status.value,
-                    created_at=datetime.utcnow()
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                    success=None,
+                    message=None,
+                    data=None,
+                    outputs=[]
                 )
                 session.add(job_record)
                 
@@ -235,10 +240,15 @@ class JobManager(DBSessionMixin):
                     self.logger.info(f"Task for job {job_id} was cancelled")
                 elif task.exception():
                     self.logger.error(f"Task for job {job_id} failed with error: {task.exception()}")
-                    
-                # Only clean up task, keep job in memory
+                
+                # Clean up task
                 if job_id in self._tasks:
                     del self._tasks[job_id]
+                
+                # Clean up job only if it's completed or failed
+                job = self._jobs.get(job_id)
+                if job and job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
+                    del self._jobs[job_id]
                     
             except Exception as e:
                 self.logger.error(f"Error in task completion callback for job {job_id}: {e}")
@@ -271,12 +281,12 @@ class JobManager(DBSessionMixin):
                     job_record.status = job.status.value
                     job_record.started_at = job.started_at
                     job_record.completed_at = job.completed_at
-                    job_record.error = job.error
                     if job.result:
                         job_record.success = job.result.success
                         job_record.message = job.result.message
                         job_record.data = job.result.data
                         job_record.outputs = job.result.outputs
+                        self.logger.info(f"Storing job results: success={job.result.success}, outputs={len(job.result.outputs) if job.result.outputs else 0} items")
                     session.commit()
             
             # Send completion notification
@@ -288,7 +298,6 @@ class JobManager(DBSessionMixin):
                 message=job.result.message if job.result else None,
                 outputs=job.result.outputs if job.result else None,
                 data=job.result.data if job.result else None,
-                error=job.error,
                 started_at=job.started_at,
                 completed_at=job.completed_at
             )
@@ -300,9 +309,10 @@ class JobManager(DBSessionMixin):
             raise
             
         except Exception as e:
-            self.logger.error(f"Error running job {job.id}: {e}")
+            error_msg = str(e)
+            self.logger.error(f"Error running job {job.id}: {error_msg}")
             job.status = JobStatus.FAILED
-            job.error = str(e)
+            job.error = error_msg  # Set error on job object
             job.completed_at = datetime.utcnow()
             
             # Update record with error status
@@ -312,7 +322,8 @@ class JobManager(DBSessionMixin):
                     job_record.status = JobStatus.FAILED.value
                     job_record.started_at = job.started_at
                     job_record.completed_at = job.completed_at
-                    job_record.error = str(e)
+                    job_record.message = error_msg  # Store error in message field
+                    job_record.success = False
                     session.commit()
                     
             # Send failure notification
@@ -322,8 +333,7 @@ class JobManager(DBSessionMixin):
                     job_id=job.id,
                     job_type=job.type.value,
                     status=JobStatus.FAILED.value,
-                    message=str(e),
-                    error=str(e),
+                    message=error_msg,
                     started_at=job.started_at,
                     completed_at=job.completed_at
                 )
@@ -340,7 +350,6 @@ class JobManager(DBSessionMixin):
                 message=job.result.message if job.result else None,
                 outputs=job.result.outputs if job.result else None,
                 data=job.result.data if job.result else None,
-                error=job.error,
                 started_at=job.started_at,
                 completed_at=job.completed_at
             )
