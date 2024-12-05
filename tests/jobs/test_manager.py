@@ -36,17 +36,23 @@ def mock_job():
     mock_result.message = "Test result"
     mock_result.outputs = []
     mock_result.data = {}
-    mock_result.to_dict.return_value = {
-        'success': True,
-        'message': "Test result",
-        'data': {},
-        'outputs': []
-    }
+    mock_result.get_output.return_value = "Test result"
     job.result = mock_result
     
     # Mock methods
     job.start = AsyncMock()
     job.stop = AsyncMock()
+    
+    # Add to_dict method
+    job.to_dict.return_value = {
+        'id': job.id,
+        'type': job.type.value,
+        'status': job.status.value,
+        'started_at': job.started_at,
+        'completed_at': job.completed_at,
+        'result': mock_result.get_output(),
+        'error': job.error
+    }
     
     return job
 
@@ -263,30 +269,37 @@ async def test_list_jobs(job_manager, mock_job, mock_session):
     """Test listing jobs"""
     # Add some test jobs
     job1 = mock_job
-    job1.to_dict.return_value = {
-        'id': job1.id,
-        'type': job1.type.value,
-        'status': job1.status.value,
-        'started_at': None,
-        'completed_at': None,
-        'result': job1.result.to_dict(),
-        'error': None
-    }
     
     job2 = Mock(spec=Job)
     job2.id = "test-job-2"
     job2.type = JobType.INDEXER
     job2.status = JobStatus.RUNNING
+    job2.error = None
+    job2.started_at = None
+    job2.completed_at = None
+    
+    # Set up result for job2
+    mock_result2 = Mock(spec=JobResult)
+    mock_result2.success = True
+    mock_result2.message = "Test result 2"
+    mock_result2.outputs = []
+    mock_result2.data = {}
+    mock_result2.get_output.return_value = "Test result 2"
+    job2.result = mock_result2
+    
+    # Mock methods
     job2.start = AsyncMock()
     job2.stop = AsyncMock()
+    
+    # Set up to_dict for job2
     job2.to_dict.return_value = {
         'id': job2.id,
         'type': job2.type.value,
         'status': job2.status.value,
-        'started_at': None,
-        'completed_at': None,
-        'result': None,
-        'error': None
+        'started_at': job2.started_at,
+        'completed_at': job2.completed_at,
+        'result': mock_result2.get_output() if mock_result2 else None,
+        'error': job2.error
     }
     
     # Submit jobs

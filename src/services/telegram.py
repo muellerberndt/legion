@@ -4,6 +4,7 @@ from typing import Optional
 from src.config.config import Config
 from src.util.logging import Logger
 from src.services.notification_service import NotificationService
+import os
 
 class TelegramService(NotificationService):
     """Service for interacting with Telegram"""
@@ -35,22 +36,36 @@ class TelegramService(NotificationService):
     
     async def send_message(self, message: str) -> None:
         """Send a message to the configured chat"""
-        if not self.chat_id:
-            self.logger.warning("No chat ID configured, skipping message")
-            return
+        if not self.bot:
+            raise RuntimeError("Bot not initialized")
             
         try:
-            # Use app.bot if available, otherwise use direct bot instance
-            bot = self.app.bot if self.app else self.bot
-            await bot.send_message(
+            await self.bot.send_message(
                 chat_id=self.chat_id,
                 text=message,
                 parse_mode='HTML'
             )
-            self.logger.debug(f"Sent message: {message}")
         except Exception as e:
-            self.logger.error(f"Failed to send Telegram message: {str(e)}")
+            self.logger.error(f"Failed to send message: {e}")
+            raise
             
+    async def send_file(self, file_path: str, caption: str = None) -> None:
+        """Send a file to the configured chat"""
+        if not self.bot:
+            raise RuntimeError("Bot not initialized")
+            
+        try:
+            with open(file_path, 'rb') as f:
+                await self.bot.send_document(
+                    chat_id=self.chat_id,
+                    document=f,
+                    caption=caption,
+                    filename=os.path.basename(file_path)
+                )
+        except Exception as e:
+            self.logger.error(f"Failed to send file: {e}")
+            raise
+
     async def start_bot(self):
         """Start the Telegram bot"""
         app = Application.builder().token(self.bot_token).build()

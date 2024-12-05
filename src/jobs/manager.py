@@ -269,6 +269,7 @@ class JobManager(DBSessionMixin):
                 job_record = session.query(JobRecord).filter(JobRecord.id == job.id).first()
                 if job_record:
                     job_record.status = job.status.value
+                    job_record.started_at = job.started_at
                     job_record.completed_at = job.completed_at
                     job_record.error = job.error
                     if job.result:
@@ -284,7 +285,10 @@ class JobManager(DBSessionMixin):
                 job_id=job.id,
                 job_type=job.type.value,
                 status=job.status.value,
-                message=job.result.message if job.result else job.error or "No result",
+                message=job.result.message if job.result else None,
+                outputs=job.result.outputs if job.result else None,
+                data=job.result.data if job.result else None,
+                error=job.error,
                 started_at=job.started_at,
                 completed_at=job.completed_at
             )
@@ -306,6 +310,7 @@ class JobManager(DBSessionMixin):
                 job_record = session.query(JobRecord).filter(JobRecord.id == job.id).first()
                 if job_record:
                     job_record.status = JobStatus.FAILED.value
+                    job_record.started_at = job.started_at
                     job_record.completed_at = job.completed_at
                     job_record.error = str(e)
                     session.commit()
@@ -318,8 +323,26 @@ class JobManager(DBSessionMixin):
                     job_type=job.type.value,
                     status=JobStatus.FAILED.value,
                     message=str(e),
+                    error=str(e),
                     started_at=job.started_at,
                     completed_at=job.completed_at
                 )
             except Exception as notify_error:
                 self.logger.error(f"Failed to send failure notification for job {job.id}: {notify_error}")
+        
+    async def _notify_completion(self, job) -> None:
+        """Send notification about job completion"""
+        try:
+            await self.notifier.notify_completion(
+                job_id=job.id,
+                job_type=job.type.value,
+                status=job.status.value,
+                message=job.result.message if job.result else None,
+                outputs=job.result.outputs if job.result else None,
+                data=job.result.data if job.result else None,
+                error=job.error,
+                started_at=job.started_at,
+                completed_at=job.completed_at
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to send job completion notification: {e}")

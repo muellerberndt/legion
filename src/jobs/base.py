@@ -6,6 +6,9 @@ import uuid
 from dataclasses import dataclass
 from src.util.logging import Logger
 from src.models.job import JobRecord
+import os
+from src.config.config import Config
+from src.backend.database import DBSessionMixin
 
 class JobStatus(str, Enum):
     PENDING = "pending"
@@ -21,44 +24,36 @@ class JobType(Enum):
     SCAN = "scan"  # For security scanning jobs
     # Add more job types as needed
 
-class JobResult:
+class JobResult(DBSessionMixin):
     """Result of a job execution"""
-    def __init__(self, success: bool, message: str, data: Optional[Dict[str, Any]] = None):
+    
+    # Maximum length for Telegram messages
+    MAX_MESSAGE_LENGTH = 4096
+    
+    def __init__(self, success: bool = True, message: str = "", data: Dict = None):
+        DBSessionMixin.__init__(self)
         self.success = success
         self.message = message
         self.data = data or {}
-        self.outputs: List[str] = []  # Store chronological outputs
-        self.created_at = datetime.utcnow()
-    
+        self.outputs: List[str] = []
+        self.logger = Logger("JobResult")
+        
     def add_output(self, output: str) -> None:
-        """Add output to the result history"""
-        if output:  # Only add non-empty outputs
-            self.outputs.append(output)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            'success': self.success,
-            'message': self.message,
-            'data': self.data,
-            'outputs': self.outputs,
-            'created_at': self.created_at.isoformat()
-        }
+        """Add an output line"""
+        self.outputs.append(output)
+        
+    def get_output(self) -> str:
+        """Get the complete output"""
+        if not self.outputs:
+            return self.message or "No output"
+            
+        return "\n".join(self.outputs)
 
-    @classmethod
-    def from_record(cls, record: JobRecord) -> 'JobResult':
-        """Create JobResult from database record"""
-        result = cls(
-            success=record.success or False,
-            message=record.message or "",
-            data=record.data or {}
-        )
-        result.outputs = record.outputs or []
-        return result
-
-class Job(ABC):
-    """Base class for long-running jobs"""
+class Job(DBSessionMixin):
+    """Base class for background jobs"""
     
     def __init__(self, job_type: JobType):
+        DBSessionMixin.__init__(self)
         self.id = str(uuid.uuid4())
         self.type = job_type
         self.status = JobStatus.PENDING
@@ -68,26 +63,69 @@ class Job(ABC):
         self.error: Optional[str] = None
         self.logger = Logger(self.__class__.__name__)
         
-    @abstractmethod
-    async def start(self) -> None:
-        """Start the job"""
-        pass
+    def _store_in_db(self) -> None:
+        """Store job details in database"""
+        try:
+            with self.get_session() as session:
+                job_record = session.query(JobRecord).filter(JobRecord.id == self.id).first()
+                if not job_record:
+                    job_record = JobRecord()
+                    job_record.id = self.id
+                    session.add(job_record)
+                
+                job_record.type = self.type.value
+                job_record.status = self.status.value
+                job_record.started_at = self.started_at
+                job_record.completed_at = self.completed_at
+                job_record.success = self.result.success if self.result else None
+                job_record.message = self.result.message if self.result else None
+                job_record.data = self.result.data if self.result else None
+                job_record.outputs = self.result.outputs if self.result else []
+                
+                session.commit()
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to store job in database: {e}")
         
-    @abstractmethod
-    async def stop(self) -> None:
-        """Stop the job"""
-        pass
+    def start(self) -> None:
+        """Mark job as started"""
+        self.started_at = datetime.utcnow()
+        self.status = JobStatus.RUNNING
+        self._store_in_db()
+        
+    def complete(self, result: JobResult) -> None:
+        """Mark job as completed with result"""
+        self.completed_at = datetime.utcnow()
+        self.status = JobStatus.COMPLETED
+        self.result = result
+        self._store_in_db()
+        
+    def fail(self, error: str) -> None:
+        """Mark job as failed with error"""
+        self.completed_at = datetime.utcnow()
+        self.status = JobStatus.FAILED
+        self.error = error
+        self._store_in_db()
+        
+    def cancel(self) -> None:
+        """Mark job as cancelled"""
+        self.completed_at = datetime.utcnow()
+        self.status = JobStatus.CANCELLED
+        self._store_in_db()
         
     def to_dict(self) -> Dict[str, Any]:
-        """Convert job to dictionary for status reporting"""
+        """Convert job to dictionary"""
         return {
             'id': self.id,
-            'type': self.type,
-            'status': self.status,
+            'type': self.type.value,
+            'status': self.status.value,
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
-            'result': self.result.to_dict() if self.result else None,
-            'error': self.error
+            'result': self.result.get_output() if self.result else None,
+            'error': self.error,
+            'outputs': self.result.outputs if self.result else None,
+            'message': self.result.message if self.result else None,
+            'data': self.result.data if self.result else None
         }
 
     @classmethod
