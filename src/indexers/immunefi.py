@@ -9,7 +9,7 @@ from src.config.config import Config
 from src.util.etherscan import fetch_verified_sources
 from urllib.parse import urlparse
 import os
-import aiofiles
+import asyncio
 from src.util.github import fetch_github_file, fetch_github_repo
 import shutil
 from src.util.logging import Logger
@@ -86,7 +86,7 @@ class ImmunefiIndexer:
                         # Trigger event for asset removal if not in initialize mode
                         if not self.initialize_mode and self.handler_registry:
                             self.handler_registry.trigger_event(
-                                HandlerTrigger.ASSET_UPDATED,
+                                HandlerTrigger.ASSET_UPDATE,
                                 {
                                     'asset': asset,
                                     'old_revision': asset.extra_data.get('revision'),
@@ -101,7 +101,7 @@ class ImmunefiIndexer:
                     # Trigger event for project removal if not in initialize mode
                     if not self.initialize_mode and self.handler_registry:
                         self.handler_registry.trigger_event(
-                            HandlerTrigger.PROJECT_UPDATED,
+                            HandlerTrigger.PROJECT_UPDATE,
                             {
                                 'project': project,
                                 'removed': True
@@ -213,7 +213,7 @@ class ImmunefiIndexer:
                     # Trigger event if not in initialize mode
                     if not self.initialize_mode and self.handler_registry:
                         self.handler_registry.trigger_event(
-                            HandlerTrigger.ASSET_UPDATED,
+                            HandlerTrigger.ASSET_UPDATE,
                             {
                                 'asset': asset,
                                 'old_revision': asset.extra_data.get('revision'),
@@ -329,7 +329,7 @@ class ImmunefiIndexer:
                         old_revision = existing_asset.extra_data.get('revision')
                         if old_revision != revision:
                             self.handler_registry.trigger_event(
-                                HandlerTrigger.ASSET_UPDATED,
+                                HandlerTrigger.ASSET_UPDATE,
                                 {
                                     'asset': asset_record,
                                     'old_revision': old_revision,
