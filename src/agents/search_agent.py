@@ -28,7 +28,7 @@ Database Schema Knowledge:
 - Projects table:
   - name: Project name
   - description: Project description
-  - project_type: High-level type (e.g. 'immunefi', 'github')
+  - project_type: High-level type (e.g. 'bounty')
   - keywords: Array of tags including programming languages, frameworks, and features
   - source_url: URL to project source/listing
   - extra_data: JSONB field with additional metadata

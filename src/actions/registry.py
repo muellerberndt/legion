@@ -15,6 +15,7 @@ from src.actions.file_search import FileSearchAction
 from src.actions.db_query import DBQueryAction
 from src.actions.natural_search import NaturalSearchAction
 from src.actions.sync.immunefi import ImmunefiSyncAction
+from src.actions.sync.initial_sync import InitialSyncAction
 
 class ActionRegistry:
     """Registry for all available actions"""
@@ -42,6 +43,7 @@ class ActionRegistry:
         self.register_action("file_search", FileSearchAction)
         self.register_action("search", NaturalSearchAction)
         self.register_action("sync", ImmunefiSyncAction)
+        self.register_action("initial_sync", InitialSyncAction)
         
     def register_action(self, name: str, action_class: Type[BaseAction]) -> None:
         """Register an action class"""

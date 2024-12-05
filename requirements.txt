@@ -13,3 +13,4 @@ pgvector
 semgrep
 aiofiles
 chardet
+alembic

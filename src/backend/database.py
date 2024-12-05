@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from sqlalchemy import create_engine, inspect
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from src.config.config import Config
 
@@ -22,8 +22,8 @@ class Database:
             config = Config()
             db_config = config.get('database', {})
             database_url = f"postgresql://{db_config.get('user')}:{db_config.get('password')}@{db_config.get('host')}:{db_config.get('port')}/{db_config.get('name')}"
-            self._engine = create_engine(database_url)
-            self._SessionLocal = sessionmaker(bind=self._engine)
+            self._engine = create_engine(database_url, future=True)
+            self._SessionLocal = sessionmaker(bind=self._engine, expire_on_commit=False)
 
     @contextmanager
     def session(self):
@@ -64,5 +64,4 @@ class DBSessionMixin:
             yield self._session
         else:
             with db.session() as session:
-                session.expire_on_commit = False
                 yield session

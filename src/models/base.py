@@ -32,7 +32,8 @@ class Project(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(String)
-    project_type = Column(String, nullable=False)  # e.g., "immunefi"
+    project_type = Column(String, nullable=False)  # e.g., "bounty"
+    project_source = Column(String, nullable=False)  # e.g., "immunefi"
     source_url = Column(String)  # URL to project source/listing
     keywords = Column(JSON)  # Project keywords/tags
     extra_data = Column(JSON)  # Additional platform-specific data
@@ -49,6 +50,7 @@ class Project(Base):
             'name': self.name,
             'description': self.description,
             'project_type': self.project_type,
+            'project_source': self.project_source,
             'source_url': self.source_url,
             'keywords': self.keywords,
             'extra_data': self.extra_data,

@@ -67,8 +67,21 @@ class ImmunefiIndexer:
         try:
             # Get all Immunefi projects from database
             projects = self.session.query(Project).filter(
-                Project.project_type == "immunefi"
+                Project.project_type == "bounty",
+                Project.project_source == "immunefi"
             ).all()
+            
+            # Update any old projects that might not have project_source set
+            old_projects = self.session.query(Project).filter(
+                Project.project_type == "immunefi"  # Old value
+            ).all()
+            
+            if old_projects:
+                self.logger.info(f"Found {len(old_projects)} projects to update with new fields")
+                for project in old_projects:
+                    project.project_type = "bounty"
+                    project.project_source = "immunefi"
+                self.session.commit()
             
             for project in projects:
                 if project.name not in current_projects:
@@ -114,7 +127,8 @@ class ImmunefiIndexer:
         
         existing_project = self.session.query(Project).filter(
             Project.name == bounty_data['project'],
-            Project.project_type == "immunefi"
+            Project.project_type == "bounty",
+            Project.project_source == "immunefi"
         ).first()
         
         # Get current asset URLs from bounty data
@@ -153,7 +167,8 @@ class ImmunefiIndexer:
             new_project = Project(
                 name=bounty_data['project'],
                 description=bounty_data['description'],
-                project_type="immunefi",
+                project_type="bounty",
+                project_source="immunefi",
                 keywords=list(keywords),  # Convert set to list for JSON storage
                 extra_data={
                     'assets': bounty_data.get('assets', []),
@@ -213,12 +228,10 @@ class ImmunefiIndexer:
                     # Trigger event if not in initialize mode
                     if not self.initialize_mode and self.handler_registry:
                         self.handler_registry.trigger_event(
-                            HandlerTrigger.ASSET_UPDATE,
+                            HandlerTrigger.ASSET_REMOVE,
                             {
                                 'asset': asset,
-                                'old_revision': asset.extra_data.get('revision'),
-                                'new_revision': None,
-                                'removed': True
+                                'project': project
                             }
                         )
             
@@ -261,12 +274,10 @@ class ImmunefiIndexer:
 
                 # Check if asset already exists
                 existing_asset = self.session.query(Asset).filter(Asset.id == url).first()
-                self.logger.info(f"Existing asset found: {existing_asset is not None}")
 
                 # If asset exists, check if we need to update based on revision
                 if existing_asset:
                     existing_revision = existing_asset.extra_data.get('revision')
-                    self.logger.info(f"Comparing revisions - existing: {existing_revision}, new: {revision}")
                     if existing_revision == revision:
                         self.logger.info(f"Skipping {url} - revision {revision} already downloaded")
                         continue
@@ -297,7 +308,6 @@ class ImmunefiIndexer:
                     # Update the existing asset record
                     asset_record = existing_asset
                 else:
-                    self.logger.info("Creating new asset record")
                     # Create a new asset record
                     asset_record = Asset(id=url)
 
@@ -309,14 +319,12 @@ class ImmunefiIndexer:
                 # Download based on URL type
                 if 'github.com' in parsed_url.netloc:
                     if '/blob/' in url:
-                        self.logger.info("Processing as GitHub file")
                         asset_type = AssetType.GITHUB_FILE
                         await fetch_github_file(url, target_dir)
                         asset_record.asset_type = asset_type
                         asset_record.local_path = target_dir
                         asset_record.extra_data['file_url'] = url
                     else:
-                        self.logger.info("Processing as GitHub repo")
                         asset_type = AssetType.GITHUB_REPO
                         await fetch_github_repo(url, target_dir)
                         asset_record.asset_type = asset_type
@@ -324,7 +332,6 @@ class ImmunefiIndexer:
                         asset_record.extra_data['repo_url'] = url
                 elif 'etherscan.io' in url:
                     try:
-                        self.logger.info("Processing as Etherscan contract")
                         asset_type = AssetType.DEPLOYED_CONTRACT
                         await fetch_verified_sources(url, target_dir)
                         asset_record.asset_type = asset_type
