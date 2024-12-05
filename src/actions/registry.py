@@ -7,8 +7,7 @@ from src.actions.result import ActionResult
 # Import all actions
 from src.actions.help import HelpAction
 from src.actions.semantic_search import SemanticSearchAction
-from src.actions.generate_embeddings import GenerateEmbeddingsAction
-from src.actions.delete_embeddings import DeleteEmbeddingsAction
+from src.actions.embeddings import EmbeddingsAction
 from src.actions.agent import AgentAction
 from src.actions.job import GetJobResultAction, StopJobAction
 from src.actions.file_search import FileSearchAction
@@ -35,8 +34,7 @@ class ActionRegistry:
         self.register_action("help", HelpAction)
         self.register_action("db_query", DBQueryAction)
         self.register_action("sem_search", SemanticSearchAction)
-        self.register_action("embeddings", GenerateEmbeddingsAction)
-        self.register_action("delete_embeddings", DeleteEmbeddingsAction)
+        self.register_action("embeddings", EmbeddingsAction)
         self.register_action("agent", AgentAction)
         self.register_action("job", GetJobResultAction)
         self.register_action("stop", StopJobAction)
