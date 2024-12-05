@@ -1,7 +1,9 @@
+"""Job manager for handling background jobs"""
+
+import asyncio
 from typing import Dict, List, Type
 from src.jobs.base import Job, JobStatus
 from src.util.logging import Logger
-import asyncio
 from src.backend.database import DBSessionMixin
 from src.models.job import JobRecord
 from datetime import datetime
@@ -21,24 +23,21 @@ class JobManager(DBSessionMixin):
         """Initialize the job manager"""
         self.logger = Logger("JobManager")
         self._jobs: Dict[str, Job] = {}
+        self._tasks: Dict[str, asyncio.Task] = {}
         self._running = False
         
     async def start(self) -> None:
-        """Start the job manager and all registered jobs"""
+        """Start the job manager"""
         if self._running:
             return
             
         self.logger.info("Starting job manager")
         self._running = True
         
-        # Start all registered jobs
-        for name, job in self._jobs.items():
-            try:
-                self.logger.info(f"Starting job: {name}")
-                await job.start()
-            except Exception as e:
-                self.logger.error(f"Failed to start job {name}: {e}")
-                
+        # Clean up any stale jobs from previous runs
+        self._jobs.clear()
+        self._tasks.clear()
+        
     async def stop(self) -> None:
         """Stop all running jobs"""
         if not self._running:
@@ -46,20 +45,32 @@ class JobManager(DBSessionMixin):
             
         self.logger.info("Stopping job manager")
         
-        # Stop all jobs
-        stop_tasks = []
-        for name, job in self._jobs.items():
-            try:
-                self.logger.info(f"Stopping job: {name}")
-                stop_tasks.append(job.stop())
-            except Exception as e:
-                self.logger.error(f"Failed to stop job {name}: {e}")
+        # Cancel all running tasks
+        for job_id, task in list(self._tasks.items()):
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    self.logger.error(f"Error cancelling task {job_id}: {e}")
+                finally:
+                    if job_id in self._tasks:
+                        del self._tasks[job_id]
                 
-        if stop_tasks:
-            await asyncio.gather(*stop_tasks)
+        # Stop all jobs
+        for job_id, job in list(self._jobs.items()):
+            try:
+                self.logger.info(f"Stopping job: {job_id}")
+                await job.stop()
+            except Exception as e:
+                self.logger.error(f"Failed to stop job {job_id}: {e}")
+            finally:
+                if job_id in self._jobs:
+                    del self._jobs[job_id]
             
         self._running = False
-        self._jobs.clear()
         
     async def stop_job(self, job_id: str) -> bool:
         """Stop a specific job
@@ -80,6 +91,23 @@ class JobManager(DBSessionMixin):
             from src.jobs.notification import JobNotifier
             
             self.logger.info(f"Stopping job {job_id}")
+            
+            # Cancel the task if it exists
+            if job_id in self._tasks:
+                task = self._tasks[job_id]
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception as e:
+                        self.logger.error(f"Error cancelling task {job_id}: {e}")
+                    finally:
+                        if job_id in self._tasks:
+                            del self._tasks[job_id]
+            
+            # Stop the job
             await job.stop()
             job.status = JobStatus.CANCELLED
             job.completed_at = datetime.utcnow()
@@ -103,39 +131,21 @@ class JobManager(DBSessionMixin):
                 completed_at=job.completed_at
             )
             
+            # Clean up job from memory
+            if job_id in self._jobs:
+                del self._jobs[job_id]
+            
             return True
             
         except Exception as e:
             self.logger.error(f"Failed to stop job {job_id}: {e}")
+            # Ensure cleanup even on error
+            if job_id in self._jobs:
+                del self._jobs[job_id]
+            if job_id in self._tasks:
+                del self._tasks[job_id]
             return False
-        
-    def register_job(self, job: Job) -> JobRecord:
-        """Register a job with the manager and create database record
-        
-        Args:
-            job: The job to register
             
-        Returns:
-            The created job record
-        """
-        if job.id in self._jobs:
-            self.logger.warning(f"Job {job.id} already registered")
-            return None
-            
-        self._jobs[job.id] = job
-        self.logger.info(f"Registered job: {job.id}")
-        
-        # Create job record in database
-        with self.get_session() as session:
-            job_record = JobRecord(
-                id=job.id,
-                type=job.type.value,
-                status=job.status.value,
-                created_at=datetime.utcnow()
-            )
-            session.add(job_record)
-            return job_record
-        
     def get_job(self, name: str) -> Job:
         """Get a registered job by name"""
         return self._jobs.get(name)
@@ -165,10 +175,10 @@ class JobManager(DBSessionMixin):
         Returns:
             The job ID
         """
-        try:
-            # Import here to avoid circular imports
-            from src.jobs.notification import JobNotifier
+        if not self._running:
+            raise RuntimeError("Job manager is not running")
             
+        try:
             # Create database record and register job in a single transaction
             with self.get_session() as session:
                 # Create and register job record
@@ -183,36 +193,20 @@ class JobManager(DBSessionMixin):
                 # Register job in memory
                 if job.id in self._jobs:
                     self.logger.warning(f"Job {job.id} already registered")
-                else:
-                    self._jobs[job.id] = job
-                    self.logger.info(f"Registered job: {job.id}")
+                    return job.id
+                    
+                self._jobs[job.id] = job
+                self.logger.info(f"Registered job: {job.id}")
                 
-                # Start the job
-                await job.start()
+                # Create background task for job
+                task = asyncio.create_task(self._run_job(job))
+                self._tasks[job.id] = task
                 
-                # Update record with completion status
-                job_record.status = job.status.value
-                job_record.completed_at = datetime.utcnow() if job.status == JobStatus.COMPLETED else None
-                job_record.error = job.error
-                if job.result:
-                    job_record.success = job.result.success
-                    job_record.message = job.result.message
-                    job_record.data = job.result.data
-                    job_record.outputs = job.result.outputs  # Save outputs to database
+                # Add task cleanup callback
+                task.add_done_callback(self._create_task_done_callback(job.id))
                 
-                # Commit all changes in one transaction
+                # Commit the initial record
                 session.commit()
-                
-                # Send completion notification
-                notifier = JobNotifier()
-                await notifier.notify_completion(
-                    job_id=job.id,
-                    job_type=job.type.value,
-                    status=job.status.value,
-                    message=job.result.message if job.result else job.error or "No result",
-                    started_at=job.started_at,
-                    completed_at=job.completed_at
-                )
             
             return job.id
             
@@ -221,34 +215,60 @@ class JobManager(DBSessionMixin):
             # Clean up registration if start failed
             if job.id in self._jobs:
                 del self._jobs[job.id]
+            if job.id in self._tasks:
+                del self._tasks[job.id]
             raise
-        
-    async def update_job_status(self, job_id: str, status: JobStatus) -> None:
-        """Update job status and send notification
+            
+    def _create_task_done_callback(self, job_id: str):
+        """Create a callback for task completion that properly handles the event loop
         
         Args:
-            job_id: ID of the job to update
-            status: New job status
-        """
-        job = self._jobs.get(job_id)
-        if not job:
-            self.logger.warning(f"Job {job_id} not found")
-            return
+            job_id: ID of the job
             
+        Returns:
+            Callback function
+        """
+        def callback(task):
+            try:
+                # Get task exception if any
+                if task.cancelled():
+                    self.logger.info(f"Task for job {job_id} was cancelled")
+                elif task.exception():
+                    self.logger.error(f"Task for job {job_id} failed with error: {task.exception()}")
+                    
+                # Only clean up task, keep job in memory
+                if job_id in self._tasks:
+                    del self._tasks[job_id]
+                    
+            except Exception as e:
+                self.logger.error(f"Error in task completion callback for job {job_id}: {e}")
+        return callback
+        
+    async def _run_job(self, job: Job) -> None:
+        """Run a job and handle its completion
+        
+        Args:
+            job: The job to run
+        """
         try:
             # Import here to avoid circular imports
             from src.jobs.notification import JobNotifier
             
-            # Update job status
-            job.status = status
-            if status == JobStatus.COMPLETED:
+            # Start the job
+            job.status = JobStatus.RUNNING
+            job.started_at = datetime.utcnow()
+            await job.start()
+            
+            # If job completed successfully
+            if job.status != JobStatus.FAILED:
+                job.status = JobStatus.COMPLETED
                 job.completed_at = datetime.utcnow()
             
-            # Update database record
+            # Update record with completion status
             with self.get_session() as session:
-                job_record = session.query(JobRecord).filter(JobRecord.id == job_id).first()
+                job_record = session.query(JobRecord).filter(JobRecord.id == job.id).first()
                 if job_record:
-                    job_record.status = status.value
+                    job_record.status = job.status.value
                     job_record.completed_at = job.completed_at
                     job_record.error = job.error
                     if job.result:
@@ -258,17 +278,48 @@ class JobManager(DBSessionMixin):
                         job_record.outputs = job.result.outputs
                     session.commit()
             
-            # Send notification
+            # Send completion notification
             notifier = JobNotifier()
             await notifier.notify_completion(
                 job_id=job.id,
                 job_type=job.type.value,
-                status=status.value,
+                status=job.status.value,
                 message=job.result.message if job.result else job.error or "No result",
                 started_at=job.started_at,
                 completed_at=job.completed_at
             )
             
-        except Exception as e:
-            self.logger.error(f"Failed to update job status: {str(e)}")
+        except asyncio.CancelledError:
+            self.logger.info(f"Job {job.id} was cancelled")
+            job.status = JobStatus.CANCELLED
+            job.completed_at = datetime.utcnow()
             raise
+            
+        except Exception as e:
+            self.logger.error(f"Error running job {job.id}: {e}")
+            job.status = JobStatus.FAILED
+            job.error = str(e)
+            job.completed_at = datetime.utcnow()
+            
+            # Update record with error status
+            with self.get_session() as session:
+                job_record = session.query(JobRecord).filter(JobRecord.id == job.id).first()
+                if job_record:
+                    job_record.status = JobStatus.FAILED.value
+                    job_record.completed_at = job.completed_at
+                    job_record.error = str(e)
+                    session.commit()
+                    
+            # Send failure notification
+            try:
+                notifier = JobNotifier()
+                await notifier.notify_completion(
+                    job_id=job.id,
+                    job_type=job.type.value,
+                    status=JobStatus.FAILED.value,
+                    message=str(e),
+                    started_at=job.started_at,
+                    completed_at=job.completed_at
+                )
+            except Exception as notify_error:
+                self.logger.error(f"Failed to send failure notification for job {job.id}: {notify_error}")

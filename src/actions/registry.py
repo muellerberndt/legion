@@ -11,10 +11,10 @@ from src.actions.generate_embeddings import GenerateEmbeddingsAction
 from src.actions.delete_embeddings import DeleteEmbeddingsAction
 from src.actions.agent import AgentAction
 from src.actions.job import GetJobResultAction, StopJobAction
-from src.actions.sync.immunefi import ImmunefiSyncAction
 from src.actions.file_search import FileSearchAction
 from src.actions.db_query import DBQueryAction
 from src.actions.natural_search import NaturalSearchAction
+from src.actions.sync.immunefi import ImmunefiSyncAction
 
 class ActionRegistry:
     """Registry for all available actions"""
@@ -30,7 +30,7 @@ class ActionRegistry:
         self.logger = Logger("ActionRegistry")
         self.actions: Dict[str, Tuple[Callable, ActionSpec]] = {}
         
-        # Register built-in actions
+        # Register only essential actions by default
         self.register_action("help", HelpAction)
         self.register_action("db_query", DBQueryAction)
         self.register_action("sem_search", SemanticSearchAction)
@@ -39,9 +39,9 @@ class ActionRegistry:
         self.register_action("agent", AgentAction)
         self.register_action("job", GetJobResultAction)
         self.register_action("stop", StopJobAction)
-        self.register_action("sync", ImmunefiSyncAction)
         self.register_action("file_search", FileSearchAction)
         self.register_action("search", NaturalSearchAction)
+        self.register_action("sync", ImmunefiSyncAction)
         
     def register_action(self, name: str, action_class: Type[BaseAction]) -> None:
         """Register an action class"""

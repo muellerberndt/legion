@@ -6,6 +6,8 @@ from src.handlers.base import HandlerTrigger
 from aiohttp import web
 from src.watchers.webhook_server import WebhookServer
 import json
+import asyncio
+from datetime import datetime
 
 class GitHubWatcher(WatcherJob):
     """Watcher that handles GitHub webhook events"""
@@ -15,18 +17,24 @@ class GitHubWatcher(WatcherJob):
         self.logger = Logger("GitHubWatcher")
         self.config = Config()
         self.webhook_secret = self.config.get('github', {}).get('webhook_secret')
+        self.webhook_server = None
         
     async def initialize(self) -> None:
         """Initialize the webhook server"""
         if not self.webhook_secret:
             raise ValueError("GitHub webhook secret not configured")
             
-        # Get shared webhook server instance
-        webhook_server = await WebhookServer.get_instance()
-        
-        # Register our endpoint
-        webhook_server.register_endpoint('/github', self.handle_webhook)
-        self.logger.info("Registered GitHub webhook endpoint")
+        try:
+            # Get shared webhook server instance
+            self.webhook_server = await WebhookServer.get_instance()
+            
+            # Register our endpoint
+            self.webhook_server.register_endpoint('/github', self.handle_webhook)
+            self.logger.info("Registered GitHub webhook endpoint")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize GitHub webhook server: {str(e)}")
+            raise
         
     async def check(self) -> List[Dict[str, Any]]:
         """Not used since we're webhook-based"""
@@ -145,4 +153,5 @@ class GitHubWatcher(WatcherJob):
         
     async def stop(self) -> None:
         """Stop the webhook server"""
-        # No need to stop the webhook server as it's managed by WebhookServer
+        # Stop the base watcher first
+        await super().stop()

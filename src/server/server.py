@@ -12,6 +12,7 @@ from src.actions.registry import ActionRegistry
 from src.server.extension_loader import ExtensionLoader
 import concurrent.futures
 import threading
+import os
 
 class Server:
     """Main server that manages jobs, watchers, and handlers"""
@@ -38,6 +39,10 @@ class Server:
             loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self.handle_signal(s)))
             
         try:
+            # Start job manager first
+            self.logger.info("Starting job manager...")
+            await self.job_manager.start()
+            
             # Load and register extensions
             self.extension_loader.load_extensions()
             self.extension_loader.register_components()
@@ -47,37 +52,36 @@ class Server:
                 telegram = TelegramInterface(action_registry=self.action_registry)
                 self.interfaces['telegram'] = telegram
                 await telegram.start()
+                
+                # Register TelegramService for job notifications
+                from src.jobs.notification import JobNotifier
+                telegram_service = telegram.service
+                JobNotifier.register_service(telegram_service)
+                
                 self.logger.info("Started Telegram interface")
-            
-            # Start job manager
-            await self.job_manager.start()
             
             # Start watcher manager if enabled
             if self.config.get("watchers", {}).get("enabled", True):
                 await self.watcher_manager.start()
                 
-            # Wait for shutdown signal
-            await self.shutdown_event.wait()
+            self.logger.info("Server started successfully")
             
         except Exception as e:
             self.logger.error(f"Server error: {e}")
             raise
-        finally:
-            # Ensure cleanup happens even on error
-            await self.shutdown()
             
     async def handle_signal(self, sig: signal.Signals) -> None:
         """Handle shutdown signals"""
         if self.shutting_down:
             self.logger.warning("Received another shutdown signal, forcing immediate shutdown")
-            # Clear any remaining thread pools
-            concurrent.futures.thread._threads_queues.clear()
-            if hasattr(threading, '_threads'):
-                threading._threads.clear()
+            # Force exit
+            os._exit(1)
             return
             
         self.logger.info(f"Received signal {sig.name}, initiating shutdown...")
-        self.shutdown_event.set()
+        await self.shutdown()
+        # Force exit after shutdown attempt
+        os._exit(0)
             
     async def shutdown(self) -> None:
         """Gracefully shutdown the server"""
@@ -87,32 +91,27 @@ class Server:
         self.shutting_down = True
         self.logger.info("Shutting down server...")
         
-        shutdown_tasks = []
-        
         try:
             # Stop interfaces first
             for name, interface in self.interfaces.items():
                 self.logger.info(f"Stopping interface: {name}")
-                shutdown_tasks.append(interface.stop())
+                try:
+                    await asyncio.wait_for(interface.stop(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    self.logger.error(f"Timeout stopping interface: {name}")
             
             # Stop watchers
-            shutdown_tasks.append(self.watcher_manager.stop())
+            try:
+                await asyncio.wait_for(self.watcher_manager.stop(), timeout=2.0)
+            except asyncio.TimeoutError:
+                self.logger.error("Timeout stopping watcher manager")
             
-            # Stop job manager
-            shutdown_tasks.append(self.job_manager.stop())
-            
-            # Wait for all shutdown tasks with timeout
-            if shutdown_tasks:
-                try:
-                    await asyncio.wait_for(asyncio.gather(*shutdown_tasks), timeout=5.0)
-                except asyncio.TimeoutError:
-                    self.logger.error("Some components did not shut down gracefully")
-                    
-            # Clear any remaining thread pools
-            concurrent.futures.thread._threads_queues.clear()
-            if hasattr(threading, '_threads'):
-                threading._threads.clear()
-            
+            # Stop job manager last
+            try:
+                await asyncio.wait_for(self.job_manager.stop(), timeout=2.0)
+            except asyncio.TimeoutError:
+                self.logger.error("Timeout stopping job manager")
+                
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
         
@@ -122,5 +121,13 @@ class Server:
         server = cls()
         try:
             await server.start(enabled_interfaces)
+            # Keep the server running
+            while True:
+                try:
+                    await asyncio.sleep(1)
+                except asyncio.CancelledError:
+                    break
         except KeyboardInterrupt:
+            await server.shutdown()
+        finally:
             await server.shutdown()

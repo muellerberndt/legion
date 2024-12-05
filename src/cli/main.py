@@ -63,16 +63,19 @@ def async_command(f):
     return wrapper
 
 @click.group()
-@click.option('-v', '--verbose', is_flag=True, help='Enable verbose logging')
+@click.option('-v', '--verbose', is_flag=True, help='Enable verbose logging (same as --log-level DEBUG)')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), 
+              default='INFO', help='Set logging level')
 @click.pass_context
-def cli(ctx, verbose):
+def cli(ctx, verbose, log_level):
     """R4dar CLI"""
     ctx.ensure_object(dict)
     ctx.obj['verbose'] = verbose
+    ctx.obj['log_level'] = 'DEBUG' if verbose else log_level
     ctx.obj['logger'] = Logger("CLI")
     
-    # Enable verbose logging by default, but allow override
-    LogConfig.set_verbose(verbose if verbose is not None else True)
+    # Configure logging
+    LogConfig.set_log_level(ctx.obj['log_level'])
     
     # Load config
     Config()
@@ -91,8 +94,8 @@ async def server_start(ctx, interface):
     logger = ctx.obj['logger']
     
     try:
-        # Set logging level based on verbosity
-        LogConfig.set_verbose(ctx.obj['verbose'])
+        # Set logging level
+        LogConfig.set_log_level(ctx.obj['log_level'])
         await Server.run([interface])
         
     except Exception as e:
@@ -100,14 +103,17 @@ async def server_start(ctx, interface):
         raise
 
 @cli.command()
-@click.option('-v', '--verbose', is_flag=True, help='Enable verbose logging')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), 
+              default='INFO', help='Set logging level')
 @click.pass_context
 @async_command
-async def init_db(ctx, verbose):
+async def init_db(ctx, log_level):
     """Initialize the database"""
     logger = ctx.obj['logger']
     
     try:
+        # Set logging level
+        LogConfig.set_log_level(log_level)
         initializer = Initializer()
         result = await initializer.init_db()
         logger.info(result)
@@ -116,14 +122,17 @@ async def init_db(ctx, verbose):
         raise
 
 @cli.command()
-@click.option('-v', '--verbose', is_flag=True, help='Enable verbose logging')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR'], case_sensitive=False), 
+              default='INFO', help='Set logging level')
 @click.pass_context
 @async_command
-async def initial_sync(ctx, verbose):
+async def initial_sync(ctx, log_level):
     """Perform initial data sync"""
     logger = ctx.obj['logger']
     
     try:
+        # Set logging level
+        LogConfig.set_log_level(log_level)
         initializer = Initializer()
         result = await initializer.initial_sync()
         logger.info(result)

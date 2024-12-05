@@ -20,16 +20,25 @@ class LogConfig:
     """Global logging configuration"""
     _verbose = False
     _db_logging = True  # New flag to control database logging
+    _log_level = logging.INFO
     
     @classmethod
-    def configure_logging(cls, verbose: bool = False):
+    def configure_logging(cls, level: str = "INFO"):
         """Configure logging globally"""
-        cls._verbose = verbose
+        # Map string levels to logging constants
+        level_map = {
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "ERROR": logging.ERROR
+        }
+        
+        # Set level, defaulting to INFO if invalid
+        cls._log_level = level_map.get(level.upper(), logging.INFO)
         
         # Configure Python's logging
-        level = logging.INFO if verbose else logging.WARNING
         logging.basicConfig(
-            level=level,
+            level=cls._log_level,
             format='[%(asctime)s] %(levelname)s - %(name)s - %(message)s',
             datefmt='%Y-%m-%dT%H:%M:%S.%f'
         )
@@ -37,7 +46,12 @@ class LogConfig:
     @classmethod
     def set_verbose(cls, verbose: bool):
         cls._verbose = verbose
-        cls.configure_logging(verbose)
+        cls.configure_logging("DEBUG" if verbose else "INFO")
+
+    @classmethod
+    def set_log_level(cls, level: str):
+        """Set the log level directly"""
+        cls.configure_logging(level)
 
     @classmethod
     def is_verbose(cls) -> bool:
@@ -50,12 +64,6 @@ class LogConfig:
     @classmethod
     def is_db_logging_enabled(cls) -> bool:
         return cls._db_logging
-
-class LogLevel(str, enum.Enum):
-    DEBUG = "DEBUG"
-    INFO = "INFO"
-    WARNING = "WARNING"
-    ERROR = "ERROR"
 
 class Logger(DBSessionMixin):
     """

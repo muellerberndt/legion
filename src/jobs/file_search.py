@@ -8,6 +8,7 @@ from src.models.base import Asset
 from sqlalchemy import select
 import traceback
 import chardet
+import asyncio
 
 def is_binary_file(file_path: str) -> bool:
     """Check if a file is binary by reading its first few bytes"""
@@ -20,7 +21,7 @@ def is_binary_file(file_path: str) -> bool:
             textchars = bytearray({7,8,9,10,12,13,27} | set(range(0x20, 0x100)) - {0x7f})
             return bool(chunk.translate(None, textchars))
     except Exception:
-        return True  # If we can't read the file, treat it as binary
+        return True
 
 class FileSearchJob(Job, DBSessionMixin):
     """Job to search local files using regex and retrieve associated asset info"""
@@ -79,7 +80,7 @@ class FileSearchJob(Job, DBSessionMixin):
             return file_matches
                 
         except Exception as e:
-            self.logger.error(f"Error reading file {file_path}: {str(e)}")
+            self.logger.error(f"Error searching file {file_path}: {str(e)}")
             return []
             
     def _search_directory(self, directory: str, pattern: re.Pattern) -> List[Dict]:
@@ -100,9 +101,20 @@ class FileSearchJob(Job, DBSessionMixin):
                         self.logger.error(f"Error processing file {file_path}: {str(e)}")
                         continue
         except Exception as e:
-            self.logger.error(f"Error walking directory {directory}: {str(e)}")
+            self.logger.error(f"Error searching directory {directory}: {str(e)}")
+            return []
         return matches
         
+    async def _search_file_async(self, file_path: str, pattern: re.Pattern) -> List[Dict]:
+        """Search a single file for regex matches asynchronously"""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._search_file, file_path, pattern)
+
+    async def _search_directory_async(self, directory: str, pattern: re.Pattern) -> List[Dict]:
+        """Recursively search a directory for regex matches asynchronously"""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._search_directory, directory, pattern)
+
     async def start(self) -> None:
         """Execute the file search job"""
         try:
@@ -126,7 +138,7 @@ class FileSearchJob(Job, DBSessionMixin):
                 try:
                     # Handle both files and directories
                     if os.path.isfile(local_path):
-                        file_matches = self._search_file(local_path, pattern)
+                        file_matches = await self._search_file_async(local_path, pattern)
                         if file_matches:
                             results.append({
                                 "asset": {
@@ -139,7 +151,7 @@ class FileSearchJob(Job, DBSessionMixin):
                                 "matches": file_matches
                             })
                     else:  # Directory
-                        dir_matches = self._search_directory(local_path, pattern)
+                        dir_matches = await self._search_directory_async(local_path, pattern)
                         if dir_matches:
                             # Flatten directory matches
                             all_matches = []
@@ -185,26 +197,26 @@ class FileSearchJob(Job, DBSessionMixin):
                 data={"results": results}
             )
             
-            # Add formatted results as outputs
+            # Add formatted outputs
             for match in formatted_results:
                 output = (
                     f"Match in {match['asset_id']} ({match['asset_type']}):\n"
                     f"Source: {match['source_url']}\n"
                     f"File: {match['local_path']}\n"
                     f"Match: {match['match']}\n"
-                    f"Context: ..{match['context']}..\n"
-                    f"----------------------------------------\n"
+                    f"Context: {match['context']}\n"
                 )
                 self.result.add_output(output)
-            
+                
+            # Set final status
             self.status = JobStatus.COMPLETED
             
         except Exception as e:
-            self.error = str(e)
+            self.logger.error(f"Error in file search: {str(e)}")
             self.status = JobStatus.FAILED
-            self.logger.error(f"File search job failed: {str(e)}")
+            self.error = str(e)
             raise
             
     async def stop(self) -> None:
-        """Stop the job"""
-        self.status = JobStatus.CANCELLED
+        """Stop the job - nothing to do for search"""
+        pass

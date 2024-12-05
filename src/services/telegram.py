@@ -14,6 +14,7 @@ class TelegramService(NotificationService):
         self.logger = Logger("TelegramService")
         self.bot_token = self.config.get('telegram', {}).get('bot_token')
         self.chat_id = self.config.get('telegram', {}).get('chat_id')
+        self.app = None
         
         if not self.bot_token:
             raise ValueError("Telegram bot token not configured")
@@ -27,6 +28,11 @@ class TelegramService(NotificationService):
             cls._instance = cls()
         return cls._instance
     
+    def set_app(self, app: Application) -> None:
+        """Set the application instance"""
+        self.app = app
+        self.logger.info("Telegram application instance set")
+    
     async def send_message(self, message: str) -> None:
         """Send a message to the configured chat"""
         if not self.chat_id:
@@ -34,17 +40,21 @@ class TelegramService(NotificationService):
             return
             
         try:
-            await self.bot.send_message(
+            # Use app.bot if available, otherwise use direct bot instance
+            bot = self.app.bot if self.app else self.bot
+            await bot.send_message(
                 chat_id=self.chat_id,
                 text=message,
                 parse_mode='HTML'
             )
+            self.logger.debug(f"Sent message: {message}")
         except Exception as e:
             self.logger.error(f"Failed to send Telegram message: {str(e)}")
-
+            
     async def start_bot(self):
         """Start the Telegram bot"""
         app = Application.builder().token(self.bot_token).build()
+        self.set_app(app)
         
         # Register handlers
         app.add_handler(CommandHandler("start", self.handle_start))

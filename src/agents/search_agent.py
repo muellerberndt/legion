@@ -2,8 +2,6 @@ from typing import Dict, List, Optional, Any
 from src.util.logging import Logger
 from openai import AsyncOpenAI
 from src.config.config import Config
-from src.actions.db_query import DBQueryAction
-from src.actions.file_search import FileSearchAction
 import json
 
 SYSTEM_PROMPT = """You are a search agent that helps users find information in the database and codebase. You must always respond with a JSON object containing a search strategy.
@@ -33,20 +31,26 @@ Database Schema Knowledge:
   - project_type: High-level type (e.g. 'immunefi', 'github')
   - keywords: Array of tags including programming languages, frameworks, and features
   - source_url: URL to project source/listing
+  - extra_data: JSONB field with additional metadata
 
 - Assets table:
+  - id: Unique identifier
   - asset_type: Type of asset ('github_repo', 'github_file', 'deployed_contract')
-  - file_url: URL to the file (for github_file)
-  - repo_url: URL to the repository (for github_repo)
-  - explorer_url: URL to block explorer (for deployed_contract)
-  - source_url: Original source URL
-  - keywords: Array of tags and metadata
+  - source_url: Original source URL (contains file extension for github_file)
+  - local_path: Path to local file or directory
+  - extra_data: JSONB field with additional metadata including tags and URLs
+  - embedding: Vector embedding for semantic search
 
 When searching:
-1. Use the keywords column for searching by language, framework, or feature
+1. Use projects.keywords for searching by language, framework, or feature
 2. Use project_type for high-level categorization only
 3. Use asset_type to filter specific types of assets
-4. Consider both description and keywords when searching for technologies
+4. Use extra_data->>'tags' in assets for asset-specific metadata
+5. Consider both description and keywords when searching for technologies
+6. For file type filtering:
+   - Use source_url LIKE '%.extension' to filter by file extension
+   - Common extensions: .sol (Solidity), .cairo (Cairo), .vy (Vyper), .py (Python)
+   - For GitHub files, source_url ends with the file extension
 
 Query Format Rules:
 1. Always use fully qualified field names (e.g. 'projects.name', 'assets.id')
@@ -58,6 +62,9 @@ Query Format Rules:
    - Use 'like' for case-sensitive text search
 4. For random ordering:
    - Use order_by: [{"field": "RANDOM()", "direction": "asc"}]
+5. For JSONB fields:
+   - Use ->> operator to access text values (e.g. extra_data->>'tags')
+   - Use -> operator to access JSON values
 
 Example JSON Search Strategies:
 1. Find Cairo projects:
@@ -79,23 +86,49 @@ Example JSON Search Strategies:
     "format": "text"
 }
 
-2. Find smart contract files:
+2. Find Solidity smart contracts:
 {
-    "explanation": "Search for smart contract files",
+    "explanation": "Search for Solidity contract files",
     "actions": [{
         "type": "db_query",
         "spec": {
             "from": "assets",
-            "select": ["assets.file_url", "assets.repo_url"],
+            "select": ["assets.id", "assets.source_url", "assets.local_path"],
             "where": [
                 {"field": "assets.asset_type", "op": "=", "value": "github_file"},
-                {"field": "assets.keywords", "op": "?*", "value": "contract"}
+                {"field": "assets.source_url", "op": "like", "value": "%.sol"}
             ],
-            "order_by": [{"field": "assets.file_url", "direction": "asc"}],
+            "order_by": [{"field": "assets.id", "direction": "asc"}],
             "limit": 10
         }
     }],
-    "combine_results": "List the files with their URLs",
+    "combine_results": "List the Solidity files with their URLs",
+    "format": "text"
+}
+
+3. Find Vyper contracts with reentrancy:
+{
+    "explanation": "Search for Vyper contracts containing reentrancy patterns",
+    "actions": [
+        {
+            "type": "db_query",
+            "spec": {
+                "from": "assets",
+                "select": ["assets.id", "assets.source_url", "assets.local_path"],
+                "where": [
+                    {"field": "assets.asset_type", "op": "=", "value": "github_file"},
+                    {"field": "assets.source_url", "op": "like", "value": "%.vy"}
+                ],
+                "limit": 50
+            }
+        },
+        {
+            "type": "file_search",
+            "pattern": "send|transfer|call.value|raw_call",
+            "use_previous_paths": true
+        }
+    ],
+    "combine_results": "List Vyper files containing potential reentrancy patterns",
     "format": "text"
 }
 """
@@ -207,18 +240,22 @@ class SearchAgent:
             action_results = []
             for action in search_strategy.get("actions", []):
                 if action["type"] == "db_query":
+                    # Import here to avoid circular imports
+                    from src.actions.db_query import DBQueryAction
                     db_action = DBQueryAction()
                     result = await db_action.execute(json.dumps(action["spec"]))
                     action_results.append(json.loads(result))
                     
                 elif action["type"] == "file_search":
+                    # Import here to avoid circular imports
+                    from src.actions.file_search import FileSearchAction
+                    file_action = FileSearchAction()
                     # Get paths from previous db_query if needed
                     if action.get("use_previous_paths"):
                         prev_result = action_results[-1]
                         paths = [r.get("local_path") for r in prev_result.get("results", [])]
                         action["paths"] = paths
                         
-                    file_action = FileSearchAction()
                     result = await file_action.execute(
                         action.get("pattern", ""),
                         action.get("paths", [])

@@ -29,17 +29,14 @@ class FileSearchAction(BaseAction):
             # Join all arguments into a single regex pattern
             regex = " ".join(args)
             
-            # Create and start the file search job
+            # Create and submit the file search job
             job = FileSearchJob(regex_pattern=regex)
             job_manager = JobManager()
-            await job_manager.submit_job(job)
-            
-            # Wait for initial results
-            await asyncio.sleep(0.1)
+            job_id = await job_manager.submit_job(job)
             
             # Return job ID for tracking
-            return f"File search started with job ID: {job.id}\nUse 'job {job.id}' to check results."
+            return f"File search started with job ID: {job_id}\nUse 'job {job_id}' to check results."
             
         except Exception as e:
             self.logger.error(f"Failed to start file search: {str(e)}")
-            raise 
+            raise

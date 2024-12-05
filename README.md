@@ -54,7 +54,7 @@ GRANT ALL PRIVILEGES ON DATABASE r4dar_db TO r4dar;
 
 ### 3. Configure Application
 
-1. Copy the example config:
+1. Copy the example config:g
 ```bash
 cp config.yml.example config.yml
 ```

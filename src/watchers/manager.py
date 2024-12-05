@@ -60,17 +60,32 @@ class WatcherManager:
         
         # Discover and initialize enabled watchers
         watcher_classes = self._discover_watchers()
+        start_tasks = []
+        
         for watcher_name in active_watchers:
             if watcher_name in watcher_classes:
                 try:
+                    # Create and initialize watcher
                     watcher = watcher_classes[watcher_name]()
                     await watcher.initialize()
                     self.watchers[watcher_name] = watcher
-                    self.logger.info(f"Started watcher: {watcher_name}")
+                    
+                    # Start watcher in background
+                    start_tasks.append(watcher.start())
+                    self.logger.info(f"Initialized watcher: {watcher_name}")
                 except Exception as e:
-                    self.logger.error(f"Failed to start watcher {watcher_name}: {e}")
+                    self.logger.error(f"Failed to initialize watcher {watcher_name}: {e}")
             else:
                 self.logger.warning(f"Watcher {watcher_name} not found")
+                
+        # Start all watchers concurrently
+        if start_tasks:
+            try:
+                await asyncio.gather(*start_tasks)
+                for name in self.watchers:
+                    self.logger.info(f"Started watcher: {name}")
+            except Exception as e:
+                self.logger.error(f"Failed to start watchers: {e}")
                 
         # Start webhook server after all endpoints are registered
         await self.webhook_server.start(webhook_port)
@@ -85,7 +100,7 @@ class WatcherManager:
             stop_tasks.append(watcher.stop())
             
         if stop_tasks:
-            await asyncio.gather(*stop_tasks)
+            await asyncio.gather(*stop_tasks, return_exceptions=True)
             
         # Stop webhook server
         if self.webhook_server:

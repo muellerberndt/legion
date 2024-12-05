@@ -9,7 +9,14 @@ class ImmunefiWatcher(WatcherJob):
     def __init__(self):
         # Check every 24 hours
         super().__init__("immunefi", interval=24 * 60 * 60)
-        self.sync_action = ImmunefiSyncAction()
+        self._sync_action = None
+        
+    @property
+    def sync_action(self):
+        """Lazy-load the sync action"""
+        if self._sync_action is None:
+            self._sync_action = ImmunefiSyncAction()
+        return self._sync_action
         
     async def initialize(self) -> None:
         """Nothing to initialize"""

@@ -67,4 +67,6 @@ class JobNotifier:
             duration = notification.completed_at - notification.started_at
             lines.append(f"Duration: {duration.total_seconds():.1f}s")
             
+        lines.append(f"\nGet full results:\n<code>/job {notification.job_id}</code>")
+            
         return "\n".join(lines) 

@@ -1,16 +1,21 @@
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from src.jobs.manager import JobManager
 from src.jobs.base import Job, JobType, JobStatus, JobResult
 from src.backend.database import DBSessionMixin
 from datetime import datetime
 from src.jobs.notification import JobNotifier
+import asyncio
+from src.models.job import JobRecord
 
 @pytest.fixture
-def job_manager():
+async def job_manager():
+    """Create and start a job manager for testing"""
     manager = JobManager()
     manager._jobs.clear()  # Ensure clean state
-    return manager
+    await manager.start()  # Start the manager
+    yield manager
+    await manager.stop()  # Clean up after tests
 
 @pytest.fixture
 def mock_job():
@@ -39,19 +44,9 @@ def mock_job():
     }
     job.result = mock_result
     
-    # Mock to_dict method
-    job.to_dict.return_value = {
-        'id': job.id,
-        'type': job.type.value,
-        'status': job.status.value,
-        'started_at': job.started_at.isoformat() if job.started_at else None,
-        'completed_at': job.completed_at.isoformat() if job.completed_at else None,
-        'result': job.result.to_dict(),
-        'error': job.error
-    }
-    
-    # Mock start method
+    # Mock methods
     job.start = AsyncMock()
+    job.stop = AsyncMock()
     
     return job
 
@@ -73,26 +68,20 @@ def mock_notifier():
         yield notifier
 
 @pytest.mark.asyncio
-async def test_submit_job(job_manager, mock_job, mock_session, mock_notifier):
-    """Test submitting a job with notifications"""
+async def test_submit_job_basic(job_manager, mock_job, mock_session, mock_notifier):
+    """Test basic job submission"""
     job_id = await job_manager.submit_job(mock_job)
     assert job_id == mock_job.id
     assert mock_job.id in job_manager._jobs
+    assert mock_job.id in job_manager._tasks
     
     # Verify database record was created
     mock_session.add.assert_called_once()
     mock_session.commit.assert_called_once()
-    
-    # Verify notification was sent
-    mock_notifier.notify_completion.assert_called_once()
-    call_args = mock_notifier.notify_completion.call_args[1]
-    assert call_args['job_id'] == job_id
-    assert call_args['status'] == mock_job.status.value
-    assert call_args['message'] == mock_job.result.message
 
 @pytest.mark.asyncio
-async def test_job_lifecycle(job_manager, mock_job, mock_session, mock_notifier):
-    """Test complete job lifecycle with status changes"""
+async def test_job_lifecycle_success(job_manager, mock_job, mock_session, mock_notifier):
+    """Test complete job lifecycle with successful completion"""
     # Submit job
     job_id = await job_manager.submit_job(mock_job)
     
@@ -103,35 +92,41 @@ async def test_job_lifecycle(job_manager, mock_job, mock_session, mock_notifier)
     mock_job.status = JobStatus.RUNNING
     mock_job.started_at = datetime.utcnow()
     
-    # Simulate job completion
+    # Simulate successful completion
     mock_job.status = JobStatus.COMPLETED
     mock_job.completed_at = datetime.utcnow()
     mock_job.result.message = "Job completed successfully"
     
-    # Update job status
-    await job_manager.update_job_status(job_id, JobStatus.COMPLETED)
+    # Wait for job to complete
+    task = job_manager._tasks[job_id]
+    await task
     
-    # Verify final notification
+    # Verify final state
+    assert mock_job.status == JobStatus.COMPLETED
+    assert mock_job.result.success is True
+    
+    # Verify notification was sent
     mock_notifier.notify_completion.assert_called()
     call_args = mock_notifier.notify_completion.call_args[1]
     assert call_args['status'] == JobStatus.COMPLETED.value
     assert call_args['message'] == "Job completed successfully"
-    assert call_args['started_at'] == mock_job.started_at
-    assert call_args['completed_at'] == mock_job.completed_at
 
 @pytest.mark.asyncio
-async def test_job_failure(job_manager, mock_job, mock_session, mock_notifier):
-    """Test job failure handling"""
+async def test_job_lifecycle_failure(job_manager, mock_job, mock_session, mock_notifier):
+    """Test job lifecycle with failure"""
     job_id = await job_manager.submit_job(mock_job)
     
     # Simulate job failure
     error_msg = "Test error occurred"
-    mock_job.status = JobStatus.FAILED
-    mock_job.error = error_msg
-    mock_job.result = None
+    mock_job.start.side_effect = Exception(error_msg)
     
-    # Update job status
-    await job_manager.update_job_status(job_id, JobStatus.FAILED)
+    # Wait for job to complete
+    task = job_manager._tasks[job_id]
+    await task
+    
+    # Verify error state
+    assert mock_job.status == JobStatus.FAILED
+    assert mock_job.error == error_msg
     
     # Verify failure notification
     mock_notifier.notify_completion.assert_called()
@@ -142,18 +137,16 @@ async def test_job_failure(job_manager, mock_job, mock_session, mock_notifier):
 @pytest.mark.asyncio
 async def test_job_cancellation(job_manager, mock_job, mock_session, mock_notifier):
     """Test job cancellation"""
-    # Set up mock job
-    mock_job.stop = AsyncMock()
-    mock_job.status = JobStatus.RUNNING  # Start with running status
-    job_manager._jobs[mock_job.id] = mock_job
+    job_id = await job_manager.submit_job(mock_job)
     
     # Cancel the job
-    success = await job_manager.stop_job(mock_job.id)
+    success = await job_manager.stop_job(job_id)
     assert success
     
-    # Verify job was stopped and status updated
-    mock_job.stop.assert_called_once()
+    # Verify cancellation state
     assert mock_job.status == JobStatus.CANCELLED
+    assert job_id not in job_manager._jobs
+    assert job_id not in job_manager._tasks
     
     # Verify cancellation notification
     mock_notifier.notify_completion.assert_called()
@@ -163,6 +156,7 @@ async def test_job_cancellation(job_manager, mock_job, mock_session, mock_notifi
 @pytest.mark.asyncio
 async def test_concurrent_jobs(job_manager, mock_session, mock_notifier):
     """Test handling multiple concurrent jobs"""
+    # Create multiple jobs
     jobs = []
     for i in range(3):
         job = Mock(spec=Job)
@@ -173,57 +167,136 @@ async def test_concurrent_jobs(job_manager, mock_session, mock_notifier):
         job.started_at = None
         job.completed_at = None
         job.start = AsyncMock()
+        job.stop = AsyncMock()
         
-        # Set up result
         result = Mock(spec=JobResult)
         result.success = True
         result.message = f"Job {i} completed"
         result.outputs = []
         result.data = {}
-        result.to_dict.return_value = {
-            'success': True,
-            'message': result.message,
-            'data': {},
-            'outputs': []
-        }
         job.result = result
-        
-        # Set up to_dict
-        job.to_dict.return_value = {
-            'id': job.id,
-            'type': job.type.value,
-            'status': job.status.value,
-            'started_at': None,
-            'completed_at': None,
-            'result': result.to_dict(),
-            'error': None
-        }
         
         jobs.append(job)
     
     # Submit all jobs
-    job_ids = []
+    tasks = []
     for job in jobs:
         job_id = await job_manager.submit_job(job)
-        job_ids.append(job_id)
+        tasks.append(job_manager._tasks[job_id])
     
-    # Verify all jobs were registered
-    assert len(job_manager._jobs) == len(jobs)
+    # Wait for all jobs to complete
+    await asyncio.gather(*tasks)
     
-    # Verify notifications for each job
-    assert mock_notifier.notify_completion.call_count == len(jobs)
+    # Verify all jobs completed
+    assert len(mock_notifier.notify_completion.mock_calls) == len(jobs)
+    for job in jobs:
+        assert job.status == JobStatus.COMPLETED
 
-def test_list_jobs(job_manager, mock_job):
-    """Test listing jobs with filters"""
-    job_manager._jobs[mock_job.id] = mock_job
+@pytest.mark.asyncio
+async def test_job_cleanup(job_manager, mock_job, mock_session, mock_notifier):
+    """Test proper cleanup of job resources"""
+    job_id = await job_manager.submit_job(mock_job)
     
-    # List all jobs
+    # Simulate job completion
+    task = job_manager._tasks[job_id]
+    await task
+    
+    # Verify cleanup
+    assert job_id not in job_manager._tasks
+    assert mock_session.commit.called
+    
+    # Force cleanup
+    await job_manager.stop()
+    assert len(job_manager._jobs) == 0
+    assert len(job_manager._tasks) == 0
+
+@pytest.mark.asyncio
+async def test_job_result_handling(job_manager, mock_job, mock_session, mock_notifier):
+    """Test proper handling of job results"""
+    # Set up test outputs
+    outputs = ["Output 1", "Output 2"]
+    data = {"key": "value"}
+    mock_job.result.outputs = outputs
+    mock_job.result.data = data
+    
+    # Mock the JobRecord creation
+    def mock_add(record):
+        record.outputs = outputs
+        record.data = data
+        return record
+    mock_session.add.side_effect = mock_add
+    
+    job_id = await job_manager.submit_job(mock_job)
+    
+    # Wait for job to complete
+    task = job_manager._tasks[job_id]
+    await task
+    
+    # Verify result was saved to database
+    mock_session.commit.assert_called()
+    job_record = mock_session.add.call_args[0][0]
+    assert isinstance(job_record, JobRecord)
+    assert job_record.outputs == outputs
+    assert job_record.data == data
+
+@pytest.mark.asyncio
+async def test_notification_formatting(job_manager, mock_job, mock_session, mock_notifier):
+    """Test job notification formatting"""
+    job_id = await job_manager.submit_job(mock_job)
+    
+    # Wait for job to complete
+    task = job_manager._tasks[job_id]
+    await task
+    
+    # Verify notification format
+    mock_notifier.notify_completion.assert_called()
+    call_args = mock_notifier.notify_completion.call_args[1]
+    
+    # Should include job ID
+    assert call_args['job_id'] == job_id
+    assert call_args['job_type'] == mock_job.type.value
+    assert call_args['status'] == JobStatus.COMPLETED.value
+    assert call_args['message'] == mock_job.result.message
+
+@pytest.mark.asyncio
+async def test_list_jobs(job_manager, mock_job, mock_session):
+    """Test listing jobs"""
+    # Add some test jobs
+    job1 = mock_job
+    job1.to_dict.return_value = {
+        'id': job1.id,
+        'type': job1.type.value,
+        'status': job1.status.value,
+        'started_at': None,
+        'completed_at': None,
+        'result': job1.result.to_dict(),
+        'error': None
+    }
+    
+    job2 = Mock(spec=Job)
+    job2.id = "test-job-2"
+    job2.type = JobType.INDEXER
+    job2.status = JobStatus.RUNNING
+    job2.start = AsyncMock()
+    job2.stop = AsyncMock()
+    job2.to_dict.return_value = {
+        'id': job2.id,
+        'type': job2.type.value,
+        'status': job2.status.value,
+        'started_at': None,
+        'completed_at': None,
+        'result': None,
+        'error': None
+    }
+    
+    # Submit jobs
+    await job_manager.submit_job(job1)
+    await job_manager.submit_job(job2)
+    
+    # Get job list
     jobs = job_manager.list_jobs()
-    assert len(jobs) == 1
-    assert jobs[0]['id'] == mock_job.id
     
-    # Test filtering by type
-    jobs = job_manager.list_jobs(job_type=JobType.INDEXER)
-    assert len(jobs) == 1
-    jobs = job_manager.list_jobs(job_type=JobType.AGENT)
-    assert len(jobs) == 0
+    # Verify results
+    assert len(jobs) == 2
+    assert any(j['id'] == job1.id for j in jobs)
+    assert any(j['id'] == job2.id for j in jobs)

@@ -39,13 +39,29 @@ class ImmunefiIndexer:
             url = self.config.get('api', {}).get('immunefi', {}).get('url',
                 "https://immunefi.com/public-api/bounties.json")
                 
+            self.logger.info(f"Fetching bounties from {url}")
+                
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    response.raise_for_status()
-                    bounty_data = await response.json()
+                try:
+                    async with session.get(url) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            raise Exception(f"API returned status {response.status}: {error_text}")
+                            
+                        response.raise_for_status()
+                        bounty_data = await response.json()
+                        
+                        if not bounty_data:
+                            raise Exception("API returned empty response")
+                            
+                        self.logger.info(f"Fetched {len(bounty_data)} bounties")
+                        
+                except aiohttp.ClientError as e:
+                    raise Exception(f"Failed to fetch bounties: {str(e)}")
             
             # Track current project names
             current_projects = {project['project'] for project in bounty_data if 'project' in project}
+            self.logger.info(f"Found {len(current_projects)} current projects")
             
             # Process all current projects
             for project_data in bounty_data:
@@ -53,7 +69,12 @@ class ImmunefiIndexer:
                     self.logger.info("Indexing stopped by request")
                     break
                     
-                await self.process_bounty(project_data)
+                try:
+                    await self.process_bounty(project_data)
+                    self.logger.info(f"Processed project: {project_data.get('project', 'Unknown')}")
+                except Exception as e:
+                    self.logger.error(f"Failed to process project {project_data.get('project', 'Unknown')}: {str(e)}")
+                    continue
             
             # Clean up removed projects
             await self.cleanup_removed_projects(current_projects)

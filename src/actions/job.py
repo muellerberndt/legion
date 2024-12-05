@@ -33,20 +33,13 @@ class GetJobResultAction(BaseAction):
         ]
     )
     
-    async def execute(self, job_id: str = None, command: str = None) -> str:
+    async def execute(self, *args) -> str:
         """Execute the job result action"""
         job_manager = JobManager()
         
-        # Handle stop command
-        if command == "stop" and job_id:
-            success = await job_manager.stop_job(job_id)
-            if success:
-                return f"Successfully stopped job {job_id}"
-            else:
-                return f"Failed to stop job {job_id}"
-        
-        # If no job ID provided, list all jobs
-        if not job_id:
+        # Parse arguments
+        if not args:
+            # If no arguments, list all jobs
             jobs = job_manager._jobs.values()
             if not jobs:
                 return "No active jobs found"
@@ -59,6 +52,20 @@ class GetJobResultAction(BaseAction):
                 lines.append(f"\nJob {job.id} ({job.type.value}):")
                 lines.append(f"Status: {status}")
             return "\n".join(lines)
+        
+        # First argument is job ID
+        job_id = args[0]
+        
+        # Check for command (second argument)
+        command = args[1] if len(args) > 1 else None
+        
+        # Handle stop command
+        if command == "stop":
+            success = await job_manager.stop_job(job_id)
+            if success:
+                return f"Successfully stopped job {job_id}"
+            else:
+                return f"Failed to stop job {job_id}"
         
         # Get specific job results
         job = job_manager.get_job(job_id)

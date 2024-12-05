@@ -9,6 +9,7 @@ from src.config.config import Config
 from src.services.telegram import TelegramService
 from src.agents.conversation import ConversationAgent
 import shlex
+import telegram
 
 class TelegramInterface(Interface):
     """Telegram bot interface"""
@@ -21,6 +22,7 @@ class TelegramInterface(Interface):
         self.service = TelegramService.get_instance()
         self._agents = {}  # Session ID -> ConversationAgent
         self._polling_task = None
+        self._initialized = False
         
     def _parse_command_args(self, message: str) -> list:
         """Parse command arguments, preserving quoted strings"""
@@ -84,17 +86,31 @@ class TelegramInterface(Interface):
                     text=f"Error executing command: {str(e)}"
                 )
         return handler
-            
+        
     async def start(self) -> None:
         """Start the Telegram bot"""
+        if self._initialized:
+            self.logger.warning("Telegram interface already initialized")
+            return
+            
         try:
             config = Config()
             token = config.get('telegram', {}).get('bot_token')
             if not token:
                 raise ValueError("Telegram bot token not configured")
             
-            # Build application
-            self.app = Application.builder().token(token).build()
+            # Build application with request timeout settings
+            self.app = (
+                Application.builder()
+                .token(token)
+                .connect_timeout(30)
+                .read_timeout(30)
+                .write_timeout(30)
+                .get_updates_connect_timeout(30)
+                .get_updates_read_timeout(30)
+                .get_updates_write_timeout(30)
+                .build()
+            )
             
             # Register handlers
             await self._register_handlers()
@@ -108,23 +124,30 @@ class TelegramInterface(Interface):
             # Register commands
             await self._register_commands()
             
+            # Update service with app instance
+            self.service.set_app(self.app)
+            
             # Start polling in background without blocking
             self._polling_task = asyncio.create_task(
                 self.app.updater.start_polling(
-                    poll_interval=0.5,
-                    timeout=10,
-                    bootstrap_retries=-1,
-                    read_timeout=2,
-                    write_timeout=2,
-                    connect_timeout=2,
-                    allowed_updates=Update.ALL_TYPES
+                    drop_pending_updates=True,  # Drop pending updates on startup
+                    poll_interval=1.0,  # Increased poll interval
+                    timeout=30,  # Increased timeout
+                    bootstrap_retries=5,  # Limited retries
+                    read_timeout=30,
+                    write_timeout=30,
+                    connect_timeout=30,
+                    allowed_updates=Update.ALL_TYPES,
+                    error_callback=self._handle_error
                 )
             )
             
+            self._initialized = True
             self.logger.info("Telegram interface started")
             
         except Exception as e:
             self.logger.error(f"Failed to start Telegram interface: {e}")
+            await self.stop()  # Clean up on failure
             raise
             
     async def _register_handlers(self) -> None:
@@ -199,61 +222,43 @@ class TelegramInterface(Interface):
         """Stop the interface"""
         self.logger.info("Stopping Telegram interface...")
         
-        if self._polling_task:
-            self._polling_task.cancel()
-            try:
-                await self._polling_task
-            except asyncio.CancelledError:
-                pass
-        
-        if self.app:
-            await self.app.stop()
-            await self.app.shutdown()
-            self.app = None
-            
-        self.logger.info("Telegram interface stopped")
-
-class TelegramService(NotificationService):
-    """Telegram notification service singleton"""
-    _instance = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(TelegramService, cls).__new__(cls)
-            cls._instance.initialize()
-        return cls._instance
-    
-    def initialize(self):
-        self.logger = Logger("TelegramService")
-        self.app = None
-        
-    @classmethod
-    def get_instance(cls):
-        return cls()
-        
-    def set_bot(self, app: Application):
-        self.app = app
-        
-    async def send_message(self, content: str, session_id: str = None) -> None:
-        """Send a message through the notification service"""
-        if not self.app or not self.app.bot:
-            self.logger.error("Bot not initialized")
-            return
-            
         try:
-            config = Config()
-            default_chat_id = config.get('telegram', {}).get('chat_id')
-            target_chat_id = session_id or default_chat_id
+            # Cancel polling task
+            if self._polling_task:
+                self._polling_task.cancel()
+                try:
+                    await self._polling_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    self.logger.error(f"Error cancelling polling task: {e}")
+                self._polling_task = None
             
-            if not target_chat_id:
-                self.logger.error("No chat ID configured or provided")
-                return
-                
-            await self.app.bot.send_message(
-                chat_id=target_chat_id,
-                text=content,
-                parse_mode='HTML'
-            )
+            # Stop application
+            if self.app:
+                try:
+                    await self.app.stop()
+                    await self.app.shutdown()
+                except Exception as e:
+                    self.logger.error(f"Error stopping application: {e}")
+                self.app = None
+            
+            # Clear state
+            self._agents.clear()
+            self._initialized = False
+            
+            self.logger.info("Telegram interface stopped")
             
         except Exception as e:
-            self.logger.error(f"Failed to send notification: {e}")
+            self.logger.error(f"Error during Telegram interface shutdown: {e}")
+            raise
+            
+    def _handle_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle errors during polling"""
+        try:
+            if isinstance(context.error, telegram.error.NetworkError):
+                self.logger.warning(f"Network error in Telegram polling: {context.error}")
+            else:
+                self.logger.error(f"Error in Telegram polling: {context.error}")
+        except Exception as e:
+            self.logger.error(f"Error in error handler: {e}")

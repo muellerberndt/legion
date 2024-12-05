@@ -25,6 +25,8 @@ def mock_session():
 async def test_index(mock_config, mock_get, mock_session):
     # Setup mock response
     mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.text = AsyncMock(return_value='[{"project": "Test Project", "description": "Test Description", "assets": []}]')
     mock_response.json = AsyncMock(return_value=[
         {
             'project': 'Test Project',
