@@ -49,8 +49,9 @@ class WatcherJob(ABC):
                 self.logger.warning(f"Watcher {self.name} already running")
                 return
                 
-            # Initialize watcher
-            await self.initialize()
+            # Initialize watcher if not already initialized
+            if self._last_check is None:
+                await self.initialize()
             self._last_check = datetime.utcnow()
             
             # Start the watch loop in a background task if interval > 0
