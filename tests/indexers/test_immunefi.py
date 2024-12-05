@@ -1,24 +1,10 @@
-import os
-os.environ['LOG_LEVEL'] = 'DEBUG'
-
 import pytest
 from unittest.mock import Mock, patch, AsyncMock, call, PropertyMock
 from src.indexers.immunefi import ImmunefiIndexer
 from src.models.base import Project, Asset, AssetType
 from src.handlers.base import HandlerTrigger
-from src.util.logging import Logger, LogConfig
-import logging
-
-# Configure logging
-LogConfig.configure_logging("DEBUG")
-
-@pytest.fixture(autouse=True)
-def setup_logging():
-    """Configure logging for tests"""
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+from src.util.logging import Logger
+import os
 
 @pytest.fixture
 def mock_session():
@@ -62,16 +48,6 @@ def mock_asset():
     asset.local_path = "/test/path"
     asset.source_url = "https://github.com/test/repo/blob/main/test.sol"
     asset.extra_data = {"revision": "abc123"}
-    
-    # Add debug logging
-    logger = Logger("TestFixtures")
-    logger.debug(f"Created mock asset with properties:")
-    logger.debug(f"  id: {asset.id}")
-    logger.debug(f"  type: {asset.asset_type}")
-    logger.debug(f"  path: {asset.local_path}")
-    logger.debug(f"  url: {asset.source_url}")
-    logger.debug(f"  extra_data: {asset.extra_data}")
-    
     return asset
 
 @pytest.fixture

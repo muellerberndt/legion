@@ -31,7 +31,7 @@ class ImmunefiWatcher(WatcherJob):
             
             # Return sync event
             return [{
-                'trigger': HandlerTrigger.SYNC_COMPLETED,
+                'trigger': HandlerTrigger.SYNC_COMPLETE,
                 'data': {
                     'source': 'immunefi',
                     'result': result

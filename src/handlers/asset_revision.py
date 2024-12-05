@@ -4,6 +4,7 @@ from src.models.base import Asset
 from src.util.logging import Logger
 from src.util.diff import compute_file_diff
 from src.models.base import AssetType
+from src.services.notification_service import NotificationService
 
 class AssetRevisionHandler(Handler):
     """Handler that tracks asset revisions and computes diffs for files"""
@@ -11,6 +12,7 @@ class AssetRevisionHandler(Handler):
     def __init__(self):
         super().__init__()
         self.logger = Logger("AssetRevisionHandler")
+        self.notification_service = NotificationService.get_instance()
         
     @classmethod
     def get_triggers(cls) -> List[HandlerTrigger]:
@@ -34,6 +36,7 @@ class AssetRevisionHandler(Handler):
         
         if removed:
             self.logger.info(f"Asset {asset.id} removed")
+            await self.notification_service.send_message(f"🗑️ Asset {asset.id} removed")
             return
             
         self.logger.info(f"Asset {asset.id} updated from revision {old_revision} to {new_revision}")
@@ -51,17 +54,25 @@ class AssetRevisionHandler(Handler):
                         asset.extra_data = asset.extra_data or {}
                         asset.extra_data['diff'] = diff_result.to_dict()
                         
-                        # Log summary of changes
-                        self.logger.info(
-                            f"Changes detected in {asset.id}:\n"
+                        # Log and notify about changes
+                        changes_msg = (
+                            f"📝 Changes detected in {asset.id}:\n"
                             f"- {len(diff_result.added_lines)} lines added\n"
                             f"- {len(diff_result.removed_lines)} lines removed\n"
                             f"- {len(diff_result.modified_lines)} lines modified"
                         )
+                        self.logger.info(changes_msg)
+                        await self.notification_service.send_message(changes_msg)
                     else:
-                        self.logger.info(f"No changes detected in file content for {asset.id}")
+                        no_changes_msg = f"ℹ️ No changes detected in file content for {asset.id}"
+                        self.logger.info(no_changes_msg)
+                        await self.notification_service.send_message(no_changes_msg)
                         
                 except Exception as e:
-                    self.logger.error(f"Failed to compute diff for {asset.id}: {str(e)}")
+                    error_msg = f"❌ Failed to compute diff for {asset.id}: {str(e)}"
+                    self.logger.error(error_msg)
+                    await self.notification_service.send_message(error_msg)
             else:
-                self.logger.warning(f"Missing old_path or new_path for file diff of {asset.id}") 
+                warning_msg = f"⚠️ Missing old_path or new_path for file diff of {asset.id}"
+                self.logger.warning(warning_msg)
+                await self.notification_service.send_message(warning_msg)
