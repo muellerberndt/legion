@@ -70,6 +70,11 @@ class WatcherManager:
                     await watcher.initialize()
                     self.watchers[watcher_name] = watcher
                     
+                    # Register webhook routes if supported
+                    if hasattr(watcher, 'register_routes') and self.webhook_server:
+                        watcher.register_routes(self.webhook_server.app)
+                        self.logger.info(f"Registered webhook routes for {watcher_name}")
+                    
                     # Start watcher in background
                     start_tasks.append(watcher.start())
                     self.logger.info(f"Initialized watcher: {watcher_name}")

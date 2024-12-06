@@ -48,9 +48,6 @@ class ActionRegistry:
         # Register sync actions
         self.register_action("sync", ImmunefiSyncAction)
         
-        self.logger.info("Action registry initialized with actions:", extra_data={
-            "registered_actions": list(self.actions.keys())
-        })
         
         self._initialized = True
         

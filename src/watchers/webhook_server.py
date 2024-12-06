@@ -27,8 +27,8 @@ class WebhookServer:
         """Register a new webhook endpoint"""
         if not path.startswith('/'):
             path = '/' + path
-        if not path.startswith('/webhook/'):
-            path = '/webhook' + path
+        if not path.startswith('/webhooks/'):
+            path = '/webhooks' + path
             
         self.logger.info(f"Registering webhook endpoint: {path}")
         self.app.router.add_post(path, handler)

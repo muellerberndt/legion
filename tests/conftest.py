@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import Mock, patch
 import os
 import sys
+from aiohttp import web
 
 def pytest_configure(config):
     """Configure test environment"""

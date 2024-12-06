@@ -5,6 +5,7 @@ click
 pytest
 pytest-asyncio
 pytest-mock
+pytest-aiohttp
 pydantic
 requests==2.32.3
 pyyaml

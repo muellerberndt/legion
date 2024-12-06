@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from enum import Enum, auto
 
 class HandlerTrigger(Enum):
@@ -12,6 +12,7 @@ class HandlerTrigger(Enum):
     ASSET_REMOVE = auto()
     GITHUB_PUSH = auto()
     GITHUB_PR = auto()
+    BLOCKCHAIN_EVENT = auto()
 
 class Handler(ABC):
     """Base class for event handlers"""

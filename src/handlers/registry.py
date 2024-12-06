@@ -25,6 +25,6 @@ class HandlerRegistry:
         """Register a handler"""
         self.event_bus.register_handler(handler_class)
         
-    def trigger_event(self, trigger: HandlerTrigger, context: Dict) -> None:
+    async def trigger_event(self, trigger: HandlerTrigger, context: Dict) -> None:
         """Trigger handlers for a specific event"""
-        self.event_bus.trigger_event(trigger, context) 
+        await self.event_bus.trigger_event(trigger, context) 

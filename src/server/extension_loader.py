@@ -1,7 +1,7 @@
 import importlib
 import os
 import sys
-from typing import Dict, Type
+from typing import Dict, Type, List
 from src.actions.base import BaseAction
 from src.handlers.base import Handler
 from src.jobs.watcher import WatcherJob
@@ -23,41 +23,30 @@ class ExtensionLoader:
         self.watcher_manager = WatcherManager()
         self.config = Config()
         
-    def _find_extension_modules(self, extensions_dir: str, active_extensions: list) -> Dict[str, str]:
-        """Find extension modules in subdirectories.
+    def _find_python_modules(self, directory: str) -> List[str]:
+        """Find all Python modules in a directory recursively.
         
         Args:
-            extensions_dir: Base extensions directory
-            active_extensions: List of active extension names
+            directory: Directory to search in
             
         Returns:
-            Dict mapping extension names to their module paths
+            List of module paths relative to the extensions directory
         """
-        extension_modules = {}
+        modules = []
+        extensions_dir = self.config.get("extensions_dir", "extensions").strip("./")  # Remove ./ prefix if present
+        base_dir = os.path.dirname(directory)  # Get the parent of the extension directory
         
-        # Walk through extensions directory
-        for root, dirs, files in os.walk(extensions_dir):
-            # Skip if this is the root extensions dir
-            if root == extensions_dir:
-                continue
-                
-            # Get relative path from extensions dir
-            rel_path = os.path.relpath(root, extensions_dir)
-            extension_name = os.path.basename(root)
-            
-            # Skip if not in active extensions
-            if extension_name not in active_extensions:
-                continue
-                
-            # Look for Python files
+        for root, _, files in os.walk(directory):
             for file in files:
                 if file.endswith('.py') and not file.startswith('_'):
-                    # Convert path to module notation
-                    module_path = f"extensions.{rel_path.replace(os.sep, '.')}.{file[:-3]}"
-                    extension_modules[extension_name] = module_path
-                    break
+                    # Get path relative to base_dir and convert to module path
+                    rel_path = os.path.relpath(root, base_dir)
+                    module_name = os.path.splitext(file)[0]
+                    # Use configured extensions directory name
+                    module_path = f"{extensions_dir}.{rel_path.replace(os.sep, '.')}.{module_name}"
+                    modules.append(module_path)
                     
-        return extension_modules
+        return modules
         
     def load_extensions(self) -> None:
         """Load all extensions from the extensions directory"""
@@ -75,55 +64,68 @@ class ExtensionLoader:
         if extensions_dir not in sys.path:
             sys.path.append(os.path.dirname(extensions_dir))
             
-        # Find extension modules
-        extension_modules = self._find_extension_modules(extensions_dir, active_extensions)
-            
-        for extension_name, module_path in extension_modules.items():
+        # Process each extension directory
+        for extension_dir in active_extensions:
             try:
-                # Load extension config first
-                config_path = os.path.join(extensions_dir, extension_name, "extra_config.yml")
+                full_path = os.path.join(extensions_dir, extension_dir)
+                if not os.path.exists(full_path):
+                    self.logger.warning(f"Extension directory not found: {full_path}")
+                    continue
+                    
+                # Load extension config if available
+                config_path = os.path.join(full_path, "extra_config.yml")
                 if os.path.exists(config_path):
                     self.config.load_extension_config(config_path)
+                    
+                # Find and load all Python modules in the directory
+                modules = self._find_python_modules(full_path)
                 
-                # Import the extension module
-                module = importlib.import_module(module_path)
-                
-                # Collect components
-                actions = {}
-                handlers = []
-                watchers = []
-                agents = []
-                
-                # Look for components in the module's __all__
-                if hasattr(module, '__all__'):
-                    for item_name in module.__all__:
-                        item = getattr(module, item_name)
-                        if isinstance(item, type):
-                            if issubclass(item, BaseAction) and item != BaseAction:
-                                actions[item.spec.name] = item
-                            elif issubclass(item, Handler) and item != Handler:
-                                handlers.append(item)
-                            elif issubclass(item, WatcherJob) and item != WatcherJob:
-                                watchers.append(item)
-                            elif issubclass(item, BaseAgent) and item != BaseAgent:
-                                agents.append(item)
-                                
-                self.extensions[extension_name] = {
-                    'actions': actions,
-                    'handlers': handlers,
-                    'watchers': watchers,
-                    'agents': agents
+                # Initialize extension data
+                self.extensions[extension_dir] = {
+                    'actions': {},
+                    'handlers': [],
+                    'watchers': [],
+                    'agents': []
                 }
                 
-                self.logger.info(f"Loaded extension: {extension_name}")
-                self.logger.info(f"Found components: {len(actions)} actions, {len(handlers)} handlers, {len(watchers)} watchers, {len(agents)} agents")
+                # Import each module and collect components
+                for module_path in modules:
+                    try:
+                        module = importlib.import_module(module_path)
+                        
+                        # Look for components in the module's __all__
+                        if hasattr(module, '__all__'):
+                            for item_name in module.__all__:
+                                item = getattr(module, item_name)
+                                if isinstance(item, type):
+                                    if issubclass(item, BaseAction) and item != BaseAction:
+                                        self.extensions[extension_dir]['actions'][item.spec.name] = item
+                                    elif issubclass(item, Handler) and item != Handler:
+                                        self.extensions[extension_dir]['handlers'].append(item)
+                                    elif issubclass(item, WatcherJob) and item != WatcherJob:
+                                        self.extensions[extension_dir]['watchers'].append(item)
+                                    elif issubclass(item, BaseAgent) and item != BaseAgent:
+                                        self.extensions[extension_dir]['agents'].append(item)
+                                        
+                    except Exception as e:
+                        self.logger.error(f"Failed to load module {module_path}: {e}")
+                        
+                # Log found components
+                components = self.extensions[extension_dir]
+                self.logger.info(
+                    f"Loaded extension directory: {extension_dir} - "
+                    f"Found {len(components['actions'])} actions, "
+                    f"{len(components['handlers'])} handlers, "
+                    f"{len(components['watchers'])} watchers, "
+                    f"{len(components['agents'])} agents"
+                )
                 
             except Exception as e:
-                self.logger.error(f"Failed to load extension {extension_name}: {e}")
+                self.logger.error(f"Failed to load extension directory {extension_dir}: {e}")
                 
     def register_components(self) -> None:
         """Register all components from loaded extensions"""
-        for extension_name, components in self.extensions.items():
+        for extension_dir, components in self.extensions.items():
             try:
                 # Register actions
                 for name, action_class in components['actions'].items():
@@ -145,4 +147,4 @@ class ExtensionLoader:
                     self.logger.info(f"Found agent: {agent_class.__name__}")
                     
             except Exception as e:
-                self.logger.error(f"Failed to register components for {extension_name}: {e}")
+                self.logger.error(f"Failed to register components for {extension_dir}: {e}")

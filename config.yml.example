@@ -41,8 +41,9 @@ watchers:
 
 # Extension configuration
 extensions_dir: extensions  # Directory containing extensions
-active_extensions:  # List of extensions to load
-  - semgrep  # Enable semgrep extension
+active_extensions:  # List of extension directories to load
+  - examples  # Example extensions directory with handlers and other components
+  # - muellerberndt  # Example user-specific extensions
 
 telegram:
   bot_token: "your-bot-token"
