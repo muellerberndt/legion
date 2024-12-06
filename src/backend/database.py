@@ -1,5 +1,6 @@
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from sqlalchemy import create_engine, inspect
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from src.config.config import Config
@@ -10,7 +11,9 @@ Base = declarative_base()
 class Database:
     _instance = None
     _engine = None
+    _async_engine = None
     _SessionLocal = None
+    _AsyncSessionLocal = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -22,8 +25,19 @@ class Database:
             config = Config()
             db_config = config.get('database', {})
             database_url = f"postgresql://{db_config.get('user')}:{db_config.get('password')}@{db_config.get('host')}:{db_config.get('port')}/{db_config.get('name')}"
+            
+            # Create sync engine
             self._engine = create_engine(database_url, future=True)
             self._SessionLocal = sessionmaker(bind=self._engine, expire_on_commit=False)
+            
+            # Create async engine
+            async_url = f"postgresql+asyncpg://{db_config.get('user')}:{db_config.get('password')}@{db_config.get('host')}:{db_config.get('port')}/{db_config.get('name')}"
+            self._async_engine = create_async_engine(async_url, future=True)
+            self._AsyncSessionLocal = sessionmaker(
+                bind=self._async_engine,
+                class_=AsyncSession,
+                expire_on_commit=False
+            )
 
     @contextmanager
     def session(self):
@@ -38,9 +52,26 @@ class Database:
         finally:
             session.close()
             
+    @asynccontextmanager
+    async def async_session(self):
+        """Provide an async transactional scope around a series of operations."""
+        session = self._AsyncSessionLocal()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+            
     def get_engine(self):
         """Get the SQLAlchemy engine instance."""
         return self._engine
+        
+    def get_async_engine(self):
+        """Get the async SQLAlchemy engine instance."""
+        return self._async_engine
             
     def is_initialized(self) -> bool:
         """Check if database is initialized by checking if tables exist"""
@@ -64,4 +95,13 @@ class DBSessionMixin:
             yield self._session
         else:
             with db.session() as session:
+                yield session
+                
+    @asynccontextmanager
+    async def get_async_session(self):
+        """Get an async database session."""
+        if self._session is not None:
+            yield self._session
+        else:
+            async with db.async_session() as session:
                 yield session

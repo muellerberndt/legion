@@ -20,11 +20,10 @@ api:
     key: your_openai_api_key_here
     model: gpt-4-1106-preview  # or gpt-4, gpt-3.5-turbo
 
-# GitHub configuration (optional, needed for GitHub webhook integration)
+# GitHub configuration (optional)
 github:
-  webhook_secret: your_webhook_secret_here  # Required if using GitHub webhooks
-  webhook_port: 8081  # Optional, defaults to 8080
-  api_token: your_github_token_here  # Optional, for higher rate limits
+  api_token: your_github_token_here  # Optional - higher rate limits with token
+  poll_interval: 300  # How often to check for updates (seconds)
 
 # Watcher configuration (optional)
 watchers:

@@ -2,6 +2,7 @@ from sqlalchemy import text
 from src.backend.database import db, Base, DBSessionMixin
 from src.util.logging import Logger, LogConfig
 from src.indexers.immunefi import ImmunefiIndexer
+import src.models  # Import all models so SQLAlchemy can discover them
 
 class Initializer(DBSessionMixin):
     """Handles server initialization tasks"""
@@ -20,8 +21,10 @@ class Initializer(DBSessionMixin):
                 LogConfig.set_db_logging(True)
                 return "Database already initialized"
                         
-            # Create tables
+            # Create tables for both sync and async engines
             Base.metadata.create_all(db.get_engine())
+            async with db.get_async_engine().begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
             
             # Create array to vector conversion function
             with self.get_session() as session:

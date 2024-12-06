@@ -14,3 +14,5 @@ semgrep
 aiofiles
 chardet
 alembic
+asyncpg
+greenlet

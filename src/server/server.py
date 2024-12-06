@@ -10,6 +10,7 @@ from src.interfaces.base import Interface
 from src.interfaces.telegram import TelegramInterface
 from src.actions.registry import ActionRegistry
 from src.server.extension_loader import ExtensionLoader
+from src.handlers.github_events import GitHubEventHandler
 import concurrent.futures
 import threading
 import os
@@ -42,6 +43,10 @@ class Server:
             # Start job manager first
             self.logger.info("Starting job manager...")
             await self.job_manager.start()
+            
+            # Register built-in handlers
+            self.logger.info("Registering built-in handlers...")
+            self.handler_registry.register_handler(GitHubEventHandler)
             
             # Load and register extensions
             self.extension_loader.load_extensions()

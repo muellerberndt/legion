@@ -35,11 +35,9 @@ CONFIG_SCHEMA = {
         "github": {
             "type": "object",
             "properties": {
-                "webhook_secret": {"type": "string"},
-                "webhook_port": {"type": "integer"},
-                "api_token": {"type": "string"}
-            },
-            "required": ["webhook_secret"]
+                "api_token": {"type": "string"},
+                "poll_interval": {"type": "integer", "default": 300}
+            }
         },
         "watchers": {
             "type": "object",

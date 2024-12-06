@@ -1,157 +1,280 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from src.jobs.watcher import WatcherJob
-from src.util.logging import Logger
-from src.config.config import Config
+from src.models.base import Asset, Project, AssetType
+from src.models.github import GitHubRepoState
 from src.handlers.base import HandlerTrigger
-from aiohttp import web
-from src.watchers.webhook_server import WebhookServer
-import json
+from src.config.config import Config
+from src.util.logging import Logger
+from src.backend.database import DBSessionMixin
+import aiohttp
+from sqlalchemy import text
+from datetime import datetime, timedelta, timezone
 import asyncio
-from datetime import datetime
+from urllib.parse import urlparse
+import re
 
-class GitHubWatcher(WatcherJob):
-    """Watcher that handles GitHub webhook events"""
+class GitHubWatcher(WatcherJob, DBSessionMixin):
+    """Watcher that polls GitHub API for repository updates"""
     
     def __init__(self):
-        super().__init__("github", interval=0)  # interval=0 since we use webhooks
+        # Get poll interval from config or use default (5 minutes)
+        config = Config()
+        github_config = config.get('github', {})
+        interval = github_config.get('poll_interval', 300)  # 5 minutes default
+        
+        super().__init__("github", interval)
+        DBSessionMixin.__init__(self)
         self.logger = Logger("GitHubWatcher")
-        self.config = Config()
-        self.webhook_secret = self.config.get('github', {}).get('webhook_secret')
-        self.webhook_server = None
+        
+        # Initialize API client
+        self.api_token = github_config.get('api_token')
+        self.session = None
         
     async def initialize(self) -> None:
-        """Initialize the webhook server"""
-        if not self.webhook_secret:
-            raise ValueError("GitHub webhook secret not configured")
+        """Initialize the watcher"""
+        # Set up API session with or without token
+        headers = {
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'R4dar-Security-Bot'
+        }
+        if self.api_token:
+            headers['Authorization'] = f'token {self.api_token}'
             
-        try:
-            # Get shared webhook server instance
-            self.webhook_server = await WebhookServer.get_instance()
-            
-            # Register our endpoint
-            self.webhook_server.register_endpoint('/github', self.handle_webhook)
-            self.logger.info("Registered GitHub webhook endpoint")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to initialize GitHub webhook server: {str(e)}")
-            raise
+        self.session = aiohttp.ClientSession(headers=headers)
         
+    async def cleanup(self) -> None:
+        """Clean up resources"""
+        if self.session:
+            await self.session.close()
+            
     async def check(self) -> List[Dict[str, Any]]:
-        """Not used since we're webhook-based"""
-        return []
-        
-    async def handle_webhook(self, request: web.Request) -> web.Response:
-        """Handle incoming GitHub webhook events"""
+        """Check for updates in GitHub repositories"""
         try:
-            # Log headers for debugging
-            self.logger.info(f"Received GitHub webhook headers: {dict(request.headers)}")
+            # Get all repos in scope
+            repos = await self._get_repos_in_scope()
+            if not repos:
+                self.logger.info("No GitHub repositories found in scope")
+                return []
+                
+            self.logger.info(f"Found {len(repos)} repositories to check")
             
-            # Verify webhook signature
-            if not await self.verify_signature(request):
-                return web.Response(status=401, text="Invalid signature")
-            
-            # Handle both JSON and form-encoded payloads
-            content_type = request.headers.get('Content-Type', '')
-            
-            if 'application/x-www-form-urlencoded' in content_type:
-                # Parse form data
-                form_data = await request.post()
-                if 'payload' not in form_data:
-                    return web.Response(status=400, text="Missing payload in form data")
-                try:
-                    payload = json.loads(form_data['payload'])
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"Failed to parse form payload JSON: {e}")
-                    return web.Response(status=400, text=f"Invalid JSON in form payload: {str(e)}")
-            else:
-                # Handle direct JSON payload
-                try:
-                    payload = await request.json()
-                except json.JSONDecodeError as e:
-                    self.logger.error(f"Failed to parse JSON payload: {e}")
-                    return web.Response(status=400, text=f"Invalid JSON payload: {str(e)}")
-            
-            event_type = request.headers.get('X-GitHub-Event')
-            self.logger.info(f"Received GitHub webhook: {event_type}")
-            
-            # Handle different event types
+            # Check each repo for updates
             events = []
-            if event_type == 'push':
-                events.extend(await self.handle_push_event(payload))
-            elif event_type == 'pull_request':
-                events.extend(await self.handle_pr_event(payload))
-            
-            # Trigger handlers for the events
-            for event in events:
-                self.event_bus.trigger_event(event['trigger'], event['data'])
-                
-            return web.Response(status=200, text="OK")
+            for repo in repos:
+                try:
+                    repo_events = await self._check_repo_updates(repo)
+                    events.extend(repo_events)
+                except Exception as e:
+                    self.logger.error(f"Failed to check repo {repo['repo_url']}: {str(e)}")
+                    continue
+                    
+            return events
             
         except Exception as e:
-            self.logger.error(f"Error handling webhook: {str(e)}")
-            import traceback
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            return web.Response(status=500, text=f"Internal error: {str(e)}")
+            self.logger.error(f"Failed to check GitHub updates: {str(e)}")
+            return []
             
-    async def verify_signature(self, request: web.Request) -> bool:
-        """Verify GitHub webhook signature"""
+    async def _get_repos_in_scope(self) -> List[Dict[str, Any]]:
+        """Get all GitHub repositories from bounty projects"""
         try:
-            # Get signature from header
-            signature = request.headers.get('X-Hub-Signature-256')
-            if not signature:
-                return False
+            async with self.get_async_session() as session:
+                # Query to get all repos and their states
+                query = text("""
+                    WITH repo_urls AS (
+                        -- Direct repo assets
+                        SELECT DISTINCT a.source_url 
+                        FROM assets a
+                        JOIN project_assets pa ON a.id = pa.asset_id
+                        JOIN projects p ON pa.project_id = p.id
+                        WHERE p.project_type = 'bounty'
+                        AND a.asset_type = 'github_repo'
+                        
+                        UNION
+                        
+                        -- Extract repos from file URLs
+                        SELECT DISTINCT regexp_replace(a.source_url, '/blob/.*$', '')
+                        FROM assets a
+                        JOIN project_assets pa ON a.id = pa.asset_id
+                        JOIN projects p ON pa.project_id = p.id
+                        WHERE p.project_type = 'bounty'
+                        AND a.asset_type = 'github_file'
+                    )
+                    SELECT 
+                        r.source_url as repo_url,
+                        s.last_commit_sha,
+                        s.last_pr_number,
+                        s.last_check
+                    FROM repo_urls r
+                    LEFT JOIN github_repo_state s ON r.source_url = s.repo_url
+                """)
                 
-            # TODO: Implement signature verification using webhook secret
-            # For now, accept all requests in development
-            return True
-            
+                result = await session.execute(query)
+                rows = result.all()
+                return [
+                    {
+                        'repo_url': row.repo_url,
+                        'last_commit_sha': row.last_commit_sha,
+                        'last_pr_number': row.last_pr_number,
+                        'last_check': row.last_check
+                    }
+                    for row in rows
+                ]
+                
         except Exception as e:
-            self.logger.error(f"Error verifying signature: {e}")
-            return False
+            self.logger.error(f"Failed to get repos in scope: {str(e)}")
+            return []
             
-    async def handle_push_event(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Handle GitHub push events"""
+    async def _check_repo_updates(self, repo: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Check a single repository for updates"""
         events = []
+        repo_url = repo['repo_url']
+        owner, name = self._parse_repo_url(repo_url)
+        if not owner or not name:
+            self.logger.debug(f"Invalid repo URL: {repo_url}")
+            return []
+            
+        self.logger.info(f"Checking updates for {repo_url}")
+        self.logger.debug(f"Current state: {repo}")
+            
+        # Get the cutoff time (4 hours ago or last check time)
+        # cutoff_time = repo['last_check'] if repo['last_check'] else (
+        #     datetime.now(timezone.utc) - timedelta(hours=4)
+        # )
+
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
+        
+        # Ensure cutoff time is timezone-aware
+        if cutoff_time.tzinfo is None:
+            cutoff_time = cutoff_time.replace(tzinfo=timezone.utc)
+            
+        # Check commits and PRs in parallel
+        commits_task = self._get_new_commits(owner, name, cutoff_time)
+        prs_task = self._get_updated_prs(owner, name, cutoff_time)
         
         try:
-            repo_name = payload['repository']['full_name']
-            branch = payload['ref'].split('/')[-1]
-            commits = payload['commits']
-            
-            # Create event for new commits
-            events.append({
-                'trigger': HandlerTrigger.GITHUB_PUSH,
-                'data': {
-                    'repository': repo_name,
-                    'branch': branch,
-                    'commits': commits
-                }
-            })
-            
+            commits, prs = await asyncio.gather(commits_task, prs_task)
+            self.logger.debug(f"Got commits: {commits}")
+            self.logger.debug(f"Got PRs: {prs}")
         except Exception as e:
-            self.logger.error(f"Error handling push event: {e}")
+            self.logger.error(f"Failed to fetch updates for {repo_url}: {str(e)}")
+            return []
             
+        # Process commit updates - GitHub returns newest commits first
+        last_commit_sha = repo.get('last_commit_sha')
+        newest_sha = None
+        
+        self.logger.debug(f"Processing commits with last_commit_sha: {last_commit_sha}")
+        
+        # Reverse commits to process oldest first
+        for commit in reversed(commits):
+            if newest_sha is None:
+                newest_sha = commit['sha']  # First commit is the newest
+                self.logger.debug(f"Set newest_sha to: {newest_sha}")
+                
+            # Generate event if this is a new commit
+            if not last_commit_sha or commit['sha'] != last_commit_sha:
+                self.logger.info(f"Found new commit: {commit['sha']}")
+                events.append({
+                    'trigger': HandlerTrigger.GITHUB_PUSH,
+                    'data': {
+                        'repo_url': repo_url,
+                        'commit': commit
+                    }
+                })
+                
+        # Process PR updates
+        last_pr_number = repo.get('last_pr_number') or 0  # Default to 0 if None
+        self.logger.debug(f"Processing PRs with last_pr_number: {last_pr_number}")
+        
+        for pr in prs:
+            pr_number = pr.get('number')
+            if pr_number is None:
+                self.logger.warning(f"PR missing number field: {pr}")
+                continue
+                
+            # Only process new PRs
+            if pr_number > last_pr_number:
+                self.logger.info(f"Found new PR: {pr_number}")
+                events.append({
+                    'trigger': HandlerTrigger.GITHUB_PR,
+                    'data': {
+                        'repo_url': repo_url,
+                        'pull_request': pr
+                    }
+                })
+                
+                # Keep track of the highest PR number
+                last_pr_number = max(last_pr_number, pr_number)
+                
+        # Update repo state if we have new data
+        if newest_sha or last_pr_number > 0:
+            self.logger.debug(f"Updating repo state with newest_sha: {newest_sha}, last_pr_number: {last_pr_number}")
+            await self._update_repo_state(
+                repo_url,
+                newest_sha or repo.get('last_commit_sha'),
+                last_pr_number
+            )
+            
+        self.logger.debug(f"Returning events: {events}")
         return events
         
-    async def handle_pr_event(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Handle GitHub pull request events"""
-        events = []
-        
+    def _parse_repo_url(self, url: str) -> tuple[Optional[str], Optional[str]]:
+        """Parse owner and repo name from GitHub URL"""
         try:
-            # Create event with full payload
-            events.append({
-                'trigger': HandlerTrigger.GITHUB_PR,
-                'data': {
-                    'payload': payload
-                }
-            })
+            parsed = urlparse(url)
+            if parsed.netloc != 'github.com':
+                return None, None
+                
+            parts = parsed.path.strip('/').split('/')
+            if len(parts) >= 2:
+                return parts[0], parts[1]
+                
+        except Exception:
+            pass
             
-        except Exception as e:
-            self.logger.error(f"Error handling PR event: {e}")
-            
-        return events
+        return None, None
         
-    async def stop(self) -> None:
-        """Stop the webhook server"""
-        # Stop the base watcher first
-        await super().stop()
+    async def _get_new_commits(self, owner: str, repo: str, since: datetime) -> List[Dict[str, Any]]:
+        """Get new commits for a repository"""
+        if not self.session:
+            return []
+            
+        url = f"https://api.github.com/repos/{owner}/{repo}/commits"
+        params = {'since': since.isoformat()}
+        
+        response = await self.session.get(url, params=params)
+        if response.status == 200:
+            return await response.json()
+        return []
+            
+    async def _get_updated_prs(self, owner: str, repo: str, since: datetime) -> List[Dict[str, Any]]:
+        """Get updated pull requests for a repository"""
+        if not self.session:
+            return []
+            
+        url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+        params = {'state': 'all', 'sort': 'updated', 'direction': 'desc'}
+        
+        response = await self.session.get(url, params=params)
+        if response.status == 200:
+            prs = await response.json()
+            # Filter PRs updated since cutoff
+            return [pr for pr in prs if datetime.fromisoformat(pr['updated_at'].replace('Z', '+00:00')) > since]
+        return []
+            
+    async def _update_repo_state(self, repo_url: str, commit_sha: str, pr_number: int) -> None:
+        """Update repository state in database"""
+        try:
+            async with self.get_async_session() as session:
+                state = await session.get(GitHubRepoState, repo_url)
+                if not state:
+                    state = GitHubRepoState(repo_url=repo_url)
+                    session.add(state)
+                    
+                state.last_commit_sha = commit_sha
+                state.last_pr_number = pr_number
+                state.last_check = datetime.utcnow()
+                await session.commit()
+                
+        except Exception as e:
+            self.logger.error(f"Failed to update repo state: {str(e)}")

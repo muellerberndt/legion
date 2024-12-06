@@ -2,6 +2,29 @@ import os
 import aiohttp
 import json
 import aiofiles
+from src.config.config import Config
+from src.util.logging import Logger
+
+logger = Logger("GitHubUtil")
+
+async def get_headers():
+    """Get headers for GitHub API requests.
+    
+    Returns:
+        dict: Headers including auth token if configured
+    """
+    config = Config()
+    headers = {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'R4dar-Security-Bot'
+    }
+    
+    # Add auth token if configured
+    if github_config := config.get('github', {}):
+        if api_token := github_config.get('api_token'):
+            headers['Authorization'] = f'token {api_token}'
+            
+    return headers
 
 async def fetch_github_file(url: str, target_path: str) -> None:
     """
@@ -15,8 +38,9 @@ async def fetch_github_file(url: str, target_path: str) -> None:
     raw_url = url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
     
     # Fetch file content
+    headers = await get_headers()
     async with aiohttp.ClientSession() as session:
-        async with session.get(raw_url) as response:
+        async with session.get(raw_url, headers=headers) as response:
             if response.status != 200:
                 raise Exception(f"GitHub fetch error: Status code {response.status}")
             content = await response.text()
@@ -45,11 +69,17 @@ async def fetch_github_repo(url: str, target_path: str) -> None:
     api_url = f"https://api.github.com/repos/{owner}/{repo}/zipball"
     
     # Fetch repository content
+    headers = await get_headers()
     async with aiohttp.ClientSession() as session:
-        async with session.get(api_url) as response:
+        async with session.get(api_url, headers=headers) as response:
             if response.status != 200:
                 raise Exception(f"GitHub fetch error: Status code {response.status}")
             content = await response.read()
+            
+            # Check rate limit info
+            rate_limit = response.headers.get('X-RateLimit-Remaining')
+            if rate_limit:
+                logger.info(f"GitHub API requests remaining: {rate_limit}")
     
     # Create target directory if it doesn't exist
     os.makedirs(target_path, exist_ok=True)
@@ -66,3 +96,16 @@ async def fetch_github_repo(url: str, target_path: str) -> None:
     
     # Remove temporary zip file
     os.remove(zip_path)
+
+async def check_rate_limit() -> dict:
+    """Check current GitHub API rate limit status.
+    
+    Returns:
+        dict: Rate limit information including remaining requests
+    """
+    headers = await get_headers()
+    async with aiohttp.ClientSession() as session:
+        async with session.get('https://api.github.com/rate_limit', headers=headers) as response:
+            if response.status != 200:
+                raise Exception(f"Failed to check rate limit: {response.status}")
+            return await response.json()
