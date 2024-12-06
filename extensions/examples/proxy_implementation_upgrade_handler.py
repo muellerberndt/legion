@@ -2,7 +2,7 @@ from src.handlers.base import Handler, HandlerTrigger
 from src.services.telegram import TelegramService
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
-from src.util.etherscan import EVMExplorer
+from src.util.etherscan import EVMExplorer, ExplorerType
 from sqlalchemy import text
 from typing import Dict, Any, Optional
 import json
@@ -146,8 +146,8 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
         """
         try:
             # Get API key and URL for Etherscan
-            api_key = self.explorer.get_api_key(self.explorer.ExplorerType.ETHERSCAN)
-            api_url = self.explorer.get_api_url(self.explorer.ExplorerType.ETHERSCAN)
+            api_key = self.explorer.get_api_key(ExplorerType.ETHERSCAN)
+            api_url = self.explorer.get_api_url(ExplorerType.ETHERSCAN)
             
             # Construct API URL
             full_api_url = f"{api_url}?module=contract&action=getsourcecode&address={address}&apikey={api_key}"
@@ -214,11 +214,11 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
             
             # Format notification message
             message = [
-                "🔄 Proxy Implementation Upgrade Detected!",
+                "🔄 Proxy Implementation Upgrade In Bounty Scope Detected!",
                 "",
-                f"Contract: [{data['contract_address']}](https://etherscan.io/address/{data['contract_address']})",
-                f"New Implementation: [{data['implementation_address']}](https://etherscan.io/address/{data['implementation_address']})",
-                f"Transaction: [{data['transaction_hash']}](https://etherscan.io/tx/{data['transaction_hash']})",
+                f"Contract: https://etherscan.io/address/{data['contract_address']}",
+                f"New Implementation: https://etherscan.io/address/{data['implementation_address']}",
+                f"Transaction: https://etherscan.io/tx/{data['transaction_hash']}",
                 "",
             ]
             
@@ -233,9 +233,11 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
                     ""
                 ])
             
-            # Add analysis results
-            message.append(agent.format_analysis(analysis))
+            # Format analysis results
+            analysis_message = agent.format_analysis(analysis)
+            message.append(analysis_message)
             
+            # Send notification
             self.logger.info("Sending notification")
             await self.telegram.send_message("\n".join(message))
             

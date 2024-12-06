@@ -27,41 +27,77 @@ class ProxyImplementationUpgradeAgent(BaseAgent):
         prompt = f"""Please analyze this smart contract implementation code and provide:
 1. A brief summary of the main functionality
 2. Any potential security concerns or critical bugs
-3. Notable changes or additions that could affect security
 
 Source code:
 {source_code}
 
-Please format your response as JSON with the following structure:
-{{
-    "summary": "Brief description of main functionality",
-    "security_concerns": ["List of potential security issues"],
-    "notable_changes": ["List of notable changes"],
-    "risk_level": "low|medium|high"
-}}"""
+Please format your response in plain text with clear sections:
+
+SUMMARY:
+(Write a brief description of the main functionality)
+
+SECURITY CONCERNS:
+- First concern
+- Second concern
+(etc.)
+
+RISK LEVEL: (low|medium|high)"""
 
         self.logger.info("Sending prompt to OpenAI")
         # Get analysis from OpenAI
-        response = await self.chat_with_ai(prompt)
+        response = await self.chat_completion([
+            {"role": "user", "content": prompt}
+        ])
         self.logger.info("Received response from OpenAI", extra_data={"response": response})
         
-        try:
-            # Parse response as JSON
-            analysis = json.loads(response)
-            self.logger.info("Successfully parsed response as JSON", extra_data={"analysis": analysis})
-            return analysis
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to parse AI response as JSON: {str(e)}")
-            # Return basic analysis if JSON parsing fails
-            basic_analysis = {
-                "summary": response[:500],  # First 500 chars as summary
-                "security_concerns": [],
-                "notable_changes": [],
-                "risk_level": "unknown"
-            }
-            self.logger.info("Returning basic analysis", extra_data={"analysis": basic_analysis})
-            return basic_analysis
+        # Parse the response into sections
+        sections = response.split('\n\n')
+        analysis = {
+            'summary': '',
+            'security_concerns': [],
+            'risk_level': 'unknown'
+        }
+        
+        current_section = None
+        for section in sections:
+            if section.startswith('SUMMARY:'):
+                current_section = 'summary'
+                analysis['summary'] = section.replace('SUMMARY:', '').strip()
+            elif section.startswith('SECURITY CONCERNS:'):
+                current_section = 'security_concerns'
+                concerns = section.replace('SECURITY CONCERNS:', '').strip().split('\n')
+                analysis['security_concerns'] = [c.strip('- ').strip() for c in concerns if c.strip('- ').strip()]
+            elif section.startswith('RISK LEVEL:'):
+                risk_level = section.replace('RISK LEVEL:', '').strip().lower()
+                if risk_level in ['low', 'medium', 'high']:
+                    analysis['risk_level'] = risk_level
+        
+        self.logger.info("Parsed analysis", extra_data={"analysis": analysis})
+        return analysis
+
+    def format_message(self, proxy_address: str, new_implementation: str, tx_hash: str, in_scope: bool = False) -> str:
+        """Format the initial notification message
+        
+        Args:
+            proxy_address: The proxy contract address
+            new_implementation: The new implementation address
+            tx_hash: The transaction hash
+            in_scope: Whether the contract is in bounty scope
             
+        Returns:
+            Formatted message string
+        """
+        scope_text = "In Bounty Scope " if in_scope else ""
+        message = [
+            f"🔄 Proxy Implementation Upgrade {scope_text}Detected!",
+            "",
+            f"Contract: https://etherscan.io/address/{proxy_address}",
+            f"New Implementation: https://etherscan.io/address/{new_implementation}",
+            f"Transaction: https://etherscan.io/tx/{tx_hash}",
+            ""
+        ]
+        return "\n".join(message)
+
     def format_analysis(self, analysis: Dict[str, Any]) -> str:
         """Format analysis results into a readable message
         
@@ -73,35 +109,62 @@ Please format your response as JSON with the following structure:
         """
         risk_emojis = {
             "low": "🟢",
-            "medium": "🟡",
+            "medium": "🟡", 
             "high": "🔴",
             "unknown": "⚪"
         }
         
+        # Extract and format the summary
+        summary = analysis.get('summary', 'No summary available')
+        if isinstance(summary, dict):
+            summary = summary.get('summary', 'No summary available')
+        elif isinstance(summary, str):
+            try:
+                # Try to parse if it's a JSON string
+                summary_data = json.loads(summary)
+                if isinstance(summary_data, dict):
+                    summary = summary_data.get('summary', summary)
+            except json.JSONDecodeError:
+                # If it's not JSON, use as is
+                pass
+        
         message = [
-            "Implementation Analysis:",
+            "🔍 Implementation Analysis",
             "",
             f"Risk Level: {risk_emojis.get(analysis.get('risk_level', 'unknown'), '⚪')} {analysis.get('risk_level', 'unknown').upper()}",
             "",
-            "Summary:",
-            analysis.get('summary', 'No summary available'),
+            "📝 Summary:",
+            summary,
             ""
         ]
         
-        if analysis.get('security_concerns'):
+        # Extract and format security concerns
+        security_concerns = analysis.get('security_concerns', [])
+        if isinstance(security_concerns, dict):
+            security_concerns = security_concerns.get('security_concerns', [])
+        elif isinstance(security_concerns, str):
+            try:
+                # Try to parse if it's a JSON string
+                concerns_data = json.loads(security_concerns)
+                if isinstance(concerns_data, (list, dict)):
+                    security_concerns = concerns_data if isinstance(concerns_data, list) else concerns_data.get('security_concerns', [])
+            except json.JSONDecodeError:
+                security_concerns = [security_concerns]
+        
+        if security_concerns:
             message.extend([
-                "Security Concerns:",
-                *[f"• {concern}" for concern in analysis['security_concerns']],
+                "⚠️ Security Concerns:",
+                *[f"• {concern}" for concern in security_concerns],
                 ""
             ])
             
-        if analysis.get('notable_changes'):
+            # Add recommendation footer if there are security concerns
             message.extend([
-                "Notable Changes:",
-                *[f"• {change}" for change in analysis['notable_changes']],
+                "🚨 Recommendation:",
+                "Please review the security concerns carefully before proceeding with the upgrade.",
                 ""
             ])
-            
+        
         return "\n".join(message)
 
 # Function to initialize the agent
