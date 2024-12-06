@@ -165,22 +165,39 @@ async def test_concurrent_jobs(job_manager, mock_session, mock_notifier):
     # Create multiple jobs
     jobs = []
     for i in range(3):
-        job = Mock(spec=Job)
+        job = AsyncMock(spec=Job)
         job.id = f"test-job-{i}"
         job.type = JobType.INDEXER
         job.status = JobStatus.PENDING
         job.error = None
         job.started_at = None
         job.completed_at = None
-        job.start = AsyncMock()
-        job.stop = AsyncMock()
+        
+        # Set up the start method to simulate successful completion
+        async def mock_start(job_num=i):
+            job.status = JobStatus.COMPLETED
+            job.completed_at = datetime.utcnow()
+            return None
+        job.start.side_effect = mock_start
         
         result = Mock(spec=JobResult)
         result.success = True
         result.message = f"Job {i} completed"
         result.outputs = []
         result.data = {}
+        result.get_output = Mock(return_value=f"Job {i} completed")
         job.result = result
+        
+        # Add to_dict method
+        job.to_dict.return_value = {
+            'id': job.id,
+            'type': job.type.value,
+            'status': job.status.value,
+            'started_at': job.started_at,
+            'completed_at': job.completed_at,
+            'result': result.get_output(),
+            'error': job.error
+        }
         
         jobs.append(job)
     

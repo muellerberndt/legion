@@ -10,7 +10,23 @@ class FileSearchAction(BaseAction):
     
     spec = ActionSpec(
         name="file_search",
-        description="Search local files using regex patterns and get associated asset info. Example: file_search \"function.*public\"",
+        description="Search local files using regex patterns",
+        help_text="""Search through downloaded files using regular expressions.
+
+Usage:
+/file_search <regex_pattern>
+
+The regex pattern will be used to search through all downloaded files (smart contracts, source code, etc.).
+Results will include:
+- Matching file paths
+- Line numbers and content of matches
+- Associated asset and project information
+
+Examples:
+/file_search "function.*public"  # Find public functions
+/file_search "import.*@openzeppelin"  # Find OpenZeppelin imports
+/file_search "constructor\\s*\\("  # Find constructors""",
+        agent_hint="Use this command to search through actual file contents using regex patterns. Useful for finding specific code patterns or implementations.",
         arguments=[
             ActionArgument(
                 name="regex",

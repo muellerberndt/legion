@@ -1,12 +1,12 @@
 from typing import Dict, Any, Optional
 from src.jobs.base import Job, JobType
-from src.agents.search_agent import SearchAgent
+from src.agents.base_agent import BaseAgent
 from src.util.logging import Logger
 
 class NaturalSearchJob(Job):
     """Job for handling natural language search queries
     
-    This job uses the SearchAgent to process natural language queries and return
+    This job uses the BaseAgent to process natural language queries and return
     results from multiple sources (database and file contents).
     
     Example queries:
@@ -27,7 +27,7 @@ class NaturalSearchJob(Job):
             raise ValueError("Search query not set")
             
         try:
-            agent = SearchAgent()
+            agent = BaseAgent()
             self.results = await agent.process_query(self.query)
             
         except Exception as e:

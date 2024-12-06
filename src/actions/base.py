@@ -13,7 +13,9 @@ class ActionArgument:
 class ActionSpec:
     """Specification for an action"""
     name: str
-    description: str
+    description: str  # Short one-line description for command list
+    help_text: str   # Detailed help text shown with /help <command>
+    agent_hint: str  # Hint for agents about when/how to use this command
     arguments: List[ActionArgument] = None
 
 class BaseAction(ABC):
@@ -22,6 +24,6 @@ class BaseAction(ABC):
     spec: Optional[ActionSpec] = None
     
     @abstractmethod
-    def execute(self) -> Any:
+    async def execute(self, *args, **kwargs) -> Any:
         """Execute the action"""
         pass

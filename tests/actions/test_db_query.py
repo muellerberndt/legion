@@ -3,6 +3,7 @@ from src.actions.db_query import DBQueryAction
 import json
 from unittest.mock import Mock, patch, MagicMock
 from src.util.logging import Logger
+from src.actions.base import ActionSpec, ActionArgument
 
 logger = Logger("TestDBQuery")
 
@@ -33,8 +34,16 @@ def mock_session():
         mock.return_value = session
         yield session
 
+@pytest.fixture
+def mock_query_builder():
+    with patch('src.actions.db_query.QueryBuilder') as mock:
+        builder = Mock()
+        builder.build_query = Mock(return_value="SELECT * FROM assets")
+        mock.return_value = builder
+        yield builder
+
 @pytest.mark.asyncio
-async def test_db_query_action(mock_session):
+async def test_db_query_action(mock_session, mock_query_builder):
     action = DBQueryAction()
     
     # Test valid query
@@ -55,11 +64,14 @@ async def test_db_query_action(mock_session):
         
     result_data = json.loads(result)
     
+    assert "count" in result_data
+    assert "results" in result_data
     assert result_data["count"] == 1
     assert len(result_data["results"]) == 1
     assert result_data["results"][0]["asset_type"] == "github_file"
     
     # Test invalid JSON
+    mock_query_builder.build_query.side_effect = ValueError("Invalid query")
     result = await action.execute("invalid json")
     result_data = json.loads(result)
     assert "error" in result_data
@@ -69,7 +81,11 @@ async def test_db_query_action(mock_session):
     result = await action.execute('{"invalid": "spec"}')
     result_data = json.loads(result)
     assert "error" in result_data
-    assert "Error building query" in result_data["error"]
+    assert "Invalid query" in result_data["error"]
+    
+    # Reset mock for remaining tests
+    mock_query_builder.build_query.side_effect = None
+    mock_query_builder.build_query.return_value = "SELECT * FROM assets"
     
     # Test query with no results
     mock_session.execute.return_value.all.return_value = []

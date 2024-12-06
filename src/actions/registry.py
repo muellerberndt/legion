@@ -8,40 +8,51 @@ from src.actions.result import ActionResult
 from src.actions.help import HelpAction
 from src.actions.semantic_search import SemanticSearchAction
 from src.actions.embeddings import EmbeddingsAction
-from src.actions.agent import AgentAction
-from src.actions.job import GetJobResultAction, StopJobAction
 from src.actions.file_search import FileSearchAction
 from src.actions.db_query import DBQueryAction
-from src.actions.natural_search import NaturalSearchAction
+from src.actions.job import ListJobsAction, GetJobResultAction, StopJobAction
 from src.actions.sync.immunefi import ImmunefiSyncAction
-from src.actions.sync.initial_sync import InitialSyncAction
 
 class ActionRegistry:
     """Registry for all available actions"""
     _instance = None
+    _initialized = False
     
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(ActionRegistry, cls).__new__(cls)
-            cls._instance.initialize()
         return cls._instance
         
     def initialize(self):
+        """Initialize the registry if not already initialized"""
+        if self._initialized:
+            return
+            
         self.logger = Logger("ActionRegistry")
         self.actions: Dict[str, Tuple[Callable, ActionSpec]] = {}
         
-        # Register only essential actions by default
+        self.logger.info("Initializing action registry")
+        
+        # Register core actions
         self.register_action("help", HelpAction)
         self.register_action("db_query", DBQueryAction)
-        self.register_action("sem_search", SemanticSearchAction)
         self.register_action("embeddings", EmbeddingsAction)
-        self.register_action("agent", AgentAction)
+        self.register_action("files", FileSearchAction)
+        self.register_action("semantic", SemanticSearchAction)
+        
+        # Register job management actions
+        self.register_action("jobs", ListJobsAction)
         self.register_action("job", GetJobResultAction)
         self.register_action("stop", StopJobAction)
-        self.register_action("file_search", FileSearchAction)
-        self.register_action("search", NaturalSearchAction)
+        
+        # Register sync actions
         self.register_action("sync", ImmunefiSyncAction)
-        self.register_action("initial_sync", InitialSyncAction)
+        
+        self.logger.info("Action registry initialized with actions:", extra_data={
+            "registered_actions": list(self.actions.keys())
+        })
+        
+        self._initialized = True
         
     def register_action(self, name: str, action_class: Type[BaseAction]) -> None:
         """Register an action class"""
@@ -59,10 +70,6 @@ class ActionRegistry:
                 if action_class == SemanticSearchAction:
                     query = f"search {' '.join(args)}"
                     result = await action.execute(query)
-                # For agent action, join all args into a single prompt
-                elif action_class == AgentAction:
-                    prompt = ' '.join(args)
-                    result = await action.execute(prompt)
                 else:
                     # For other actions, pass args as is
                     if len(args) == 1:
@@ -80,8 +87,12 @@ class ActionRegistry:
         
     def get_action(self, name: str) -> Optional[Tuple[Callable, ActionSpec]]:
         """Get an action by name"""
+        if not self._initialized:
+            self.initialize()
         return self.actions.get(name)
         
     def get_actions(self) -> Dict[str, Tuple[Callable, ActionSpec]]:
         """Get all registered actions"""
+        if not self._initialized:
+            self.initialize()
         return self.actions

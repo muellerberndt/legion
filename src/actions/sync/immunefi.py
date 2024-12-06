@@ -3,11 +3,25 @@ from src.jobs.indexer import IndexerJob
 import asyncio
 
 class ImmunefiSyncAction(BaseAction):
-    """Action to sync Immunefi data"""
+    """Action to sync data from Immunefi"""
     
     spec = ActionSpec(
-        name="sync",
-        description="Sync Immunefi data",
+        name="immunefi",
+        description="Sync data from Immunefi",
+        help_text="""Synchronize bounty program data from Immunefi.
+
+Usage:
+/sync immunefi
+
+This command will:
+1. Fetch latest bounty program data
+2. Update project information
+3. Download and index smart contracts
+4. Track changes in scope and rewards
+
+Example:
+/sync immunefi  # Sync all Immunefi data""",
+        agent_hint="Use this command to update the local database with the latest information from Immunefi bounty programs.",
         arguments=[]
     )
     

@@ -1,5 +1,18 @@
 import pytest
 from unittest.mock import Mock, patch
+import os
+import sys
+
+def pytest_configure(config):
+    """Configure test environment"""
+    # Add extensions directory to Python path for tests
+    extensions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "extensions")
+    if extensions_dir not in sys.path:
+        sys.path.append(os.path.dirname(extensions_dir))
+        
+    # Create test extensions directory if it doesn't exist
+    test_extensions_dir = os.path.join(os.path.dirname(__file__), "extensions")
+    os.makedirs(test_extensions_dir, exist_ok=True)
 
 @pytest.fixture(autouse=True)
 def mock_config():
@@ -17,4 +30,4 @@ def mock_config():
         config.get.return_value = {}
         
         mock.return_value = config
-        yield config 
+        yield config

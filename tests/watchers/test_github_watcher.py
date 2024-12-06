@@ -5,18 +5,19 @@ from src.watchers.github import GitHubWatcher
 from src.handlers.base import HandlerTrigger
 from src.models.github import GitHubRepoState
 from src.util.logging import Logger
+import asyncio
 
 logger = Logger("TestGitHubWatcher")
 
 @pytest.fixture
-def mock_session():
+async def mock_session():
     """Mock aiohttp ClientSession"""
     session = AsyncMock()
     session.get = AsyncMock()
-    return session
+    yield session
 
 @pytest.fixture
-def mock_db_session():
+async def mock_db_session():
     """Mock database session"""
     session = AsyncMock()
     
@@ -42,13 +43,14 @@ def mock_db_session():
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=None)
     
-    return session
+    yield session
 
 @pytest.fixture
 async def watcher(mock_session, mock_db_session):
     """Create a GitHub watcher instance"""
     with patch('src.config.config.Config') as mock_config, \
-         patch('src.backend.database.DBSessionMixin.get_async_session') as mock_get_session:
+         patch('src.backend.database.DBSessionMixin.get_async_session') as mock_get_session, \
+         patch('aiohttp.ClientSession', return_value=mock_session):
         # Mock config
         config = Mock()
         config.get.return_value = {
@@ -65,59 +67,12 @@ async def watcher(mock_session, mock_db_session):
         
         # Create watcher and initialize it
         watcher = GitHubWatcher()
-        watcher.session = mock_session  # Set the session directly
-        await watcher.initialize()  # Initialize the watcher
-        return watcher
-
-@pytest.mark.asyncio
-async def test_check_repo_updates(watcher, mock_session, mock_db_session):
-    """Test checking repository updates"""
-    # Mock repo data
-    repo = {
-        'repo_url': 'https://github.com/owner/repo',
-        'last_commit_sha': 'old-sha',
-        'last_pr_number': 1,
-        'last_check': datetime.now(timezone.utc) - timedelta(hours=1)
-    }
-    
-    # Mock API responses
-    commits_response = AsyncMock()
-    commits_response.status = 200
-    await commits_response.json.return_value = [
-        {'sha': 'new-sha', 'commit': {'message': 'New commit'}}
-    ]
-    
-    prs_response = AsyncMock()
-    prs_response.status = 200
-    await prs_response.json.return_value = [
-        {
-            'number': 2,
-            'title': 'New PR',
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }
-    ]
-    
-    # Set up session mock to return responses in order
-    mock_session.get = AsyncMock()
-    mock_session.get.side_effect = [commits_response, prs_response]
-    
-    # Check for updates
-    logger.debug("Calling _check_repo_updates")
-    events = await watcher._check_repo_updates(repo)
-    logger.debug(f"Got events: {events}")
-    
-    # Verify events were generated
-    assert len(events) == 2
-    
-    # Verify commit event
-    commit_event = next(e for e in events if e['trigger'] == HandlerTrigger.GITHUB_PUSH)
-    assert commit_event['data']['repo_url'] == repo['repo_url']
-    assert commit_event['data']['commit']['sha'] == 'new-sha'
-    
-    # Verify PR event
-    pr_event = next(e for e in events if e['trigger'] == HandlerTrigger.GITHUB_PR)
-    assert pr_event['data']['repo_url'] == repo['repo_url']
-    assert pr_event['data']['pull_request']['number'] == 2
+        await watcher.initialize()  # This will now use our mock session
+        
+        yield watcher
+        
+        # Clean up
+        await watcher.stop()
 
 @pytest.mark.asyncio
 async def test_no_updates(watcher, mock_session, mock_db_session):

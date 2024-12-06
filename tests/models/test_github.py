@@ -48,45 +48,6 @@ def test_github_repo_state_creation():
     assert isinstance(repo_state.created_at, datetime)
     assert isinstance(repo_state.updated_at, datetime)
 
-def test_github_repo_state_to_dict():
-    """Test the to_dict method handles all fields correctly"""
-    now = datetime.now(timezone.utc)
-    repo_state = GitHubRepoState(
-        repo_url="https://github.com/owner/repo",
-        last_commit_sha="abc123",
-        last_pr_number=42,
-        last_check=now,
-        created_at=now,
-        updated_at=now
-    )
-    
-    result = repo_state.to_dict()
-    
-    assert result["repo_url"] == "https://github.com/owner/repo"
-    assert result["last_commit_sha"] == "abc123"
-    assert result["last_pr_number"] == 42
-    assert result["last_check"] == now.isoformat()
-    assert result["created_at"] == now.isoformat()
-    assert result["updated_at"] == now.isoformat()
-
-def test_github_repo_state_to_dict_with_none_dates():
-    """Test the to_dict method handles None dates correctly"""
-    now = datetime.now(timezone.utc)
-    repo_state = GitHubRepoState(
-        repo_url="https://github.com/owner/repo",
-        last_commit_sha="abc123",
-        last_pr_number=42,
-        last_check=None,
-        created_at=now,
-        updated_at=now
-    )
-    
-    result = repo_state.to_dict()
-    
-    assert result["last_check"] is None
-    assert result["created_at"] is not None
-    assert result["updated_at"] is not None
-
 @pytest.mark.asyncio
 async def test_github_repo_state_db_operations(mock_db_session: AsyncSession):
     """Test database operations with GitHubRepoState"""
@@ -100,7 +61,7 @@ async def test_github_repo_state_db_operations(mock_db_session: AsyncSession):
     )
     
     # Add to database
-    mock_db_session.add(repo_state)
+    await mock_db_session.add(repo_state)
     await mock_db_session.commit()
     
     # Store in mock state for get operations

@@ -10,6 +10,8 @@ from src.backend.database import DBSessionMixin
 from src.models.job import JobRecord
 from src.services.telegram import TelegramService
 from src.jobs.base import JobStatus
+from typing import Optional
+import json
 
 class ListJobsAction(BaseAction):
     """Action to list running jobs"""
@@ -17,6 +19,20 @@ class ListJobsAction(BaseAction):
     spec = ActionSpec(
         name="list_jobs",
         description="List all running jobs",
+        help_text="""List all currently running jobs in the system.
+
+Usage:
+/list_jobs
+
+Shows information about:
+- Job IDs
+- Job types
+- Current status
+- Start times (if available)
+
+Example:
+/list_jobs  # Show all running jobs""",
+        agent_hint="Use this command to see what jobs are currently running in the system and monitor their status.",
         arguments=[]
     )
     
@@ -42,20 +58,27 @@ class ListJobsAction(BaseAction):
             raise
 
 class GetJobResultAction(BaseAction, DBSessionMixin):
-    """Action to get job details"""
-    
-    # Maximum length for text messages
-    MAX_MESSAGE_LENGTH = 4096
+    """Action to get job results"""
     
     spec = ActionSpec(
         name="job",
-        description="Get details of a specific job",
+        description="Get results of a job by ID",
+        help_text="""Get the results or status of a background job.
+
+Usage:
+/job <job_id>
+
+This command will show:
+- Job status (running, completed, failed)
+- Job results or error message
+- Start and completion times
+- Additional outputs if available
+
+Example:
+/job abc123  # Get results for job abc123""",
+        agent_hint="Use this command to check the status and results of background jobs like scans, searches, or analysis tasks.",
         arguments=[
-            ActionArgument(
-                name="job_id",
-                description="ID of the job to get details for",
-                required=True
-            )
+            ActionArgument(name="job_id", description="ID of the job to check", required=True)
         ]
     )
     
@@ -64,117 +87,40 @@ class GetJobResultAction(BaseAction, DBSessionMixin):
         self.logger = Logger("GetJobResultAction")
         
     async def execute(self, job_id: str) -> str:
-        """Execute the get job action"""
+        """Get job results"""
         try:
-            # First try to get from active jobs
-            job_manager = JobManager()
-            job = job_manager.get_job(job_id)
-            
-            if job:
-                # If job is still in memory, wait a bit for it to complete
-                if job.status == JobStatus.RUNNING:
-                    await asyncio.sleep(0.5)
-                    # Try to get from database after waiting
-                    with self.get_session() as session:
-                        job_record = session.query(JobRecord).filter(JobRecord.id == job_id).first()
-                        if job_record:
-                            job_dict = {
-                                'id': job_record.id,
-                                'type': job_record.type,
-                                'status': job_record.status,
-                                'started_at': job_record.started_at,
-                                'completed_at': job_record.completed_at,
-                                'success': job_record.success,
-                                'message': job_record.message,
-                                'outputs': job_record.outputs,
-                                'data': job_record.data
-                            }
-                        else:
-                            job_dict = job.to_dict()
-                else:
-                    job_dict = job.to_dict()
-            else:
-                # If not active, try to get from database
-                with self.get_session() as session:
-                    job_record = session.query(JobRecord).filter(JobRecord.id == job_id).first()
-                    if not job_record:
-                        return f"Job {job_id} not found."
-                        
-                    job_dict = {
-                        'id': job_record.id,
-                        'type': job_record.type,
-                        'status': job_record.status,
-                        'started_at': job_record.started_at,
-                        'completed_at': job_record.completed_at,
-                        'success': job_record.success,
-                        'message': job_record.message,
-                        'outputs': job_record.outputs,
-                        'data': job_record.data
-                    }
-            
-            # Format job details
-            lines = [
-                f"Job ID: {job_dict['id']}",
-                f"Type: {job_dict['type']}",
-                f"Status: {job_dict['status']}",
-                f"Started: {job_dict['started_at'] or 'Not started'}",
-                f"Completed: {job_dict['completed_at'] or 'Not completed'}"
-            ]
-            
-            # Add result based on status
-            if job_dict['status'] == JobStatus.FAILED.value:
-                lines.append("\nJob failed")
-            elif job_dict['status'] == JobStatus.COMPLETED.value:
-                if job_dict.get('message'):
-                    lines.append(f"\nMessage: {job_dict['message']}")
+            with self.get_session() as session:
+                job = session.query(JobRecord).filter_by(id=job_id).first()
+                if not job:
+                    return f"Job {job_id} not found"
+                    
+                # Format job info
+                lines = [
+                    f"Job {job.id} ({job.type})",
+                    f"Status: {job.status}"
+                ]
                 
-                # Check if we have outputs or data
-                has_results = bool(job_dict.get('outputs') or job_dict.get('data'))
+                if job.started_at:
+                    lines.append(f"Started: {job.started_at}")
+                if job.completed_at:
+                    lines.append(f"Completed: {job.completed_at}")
+                    
+                if job.message:
+                    lines.extend(["", "Result:", job.message])
+                    
+                if job.error:
+                    lines.extend(["", "Error:", job.error])
+                    
+                if job.outputs:
+                    lines.extend(["", "Outputs:"])
+                    for output in job.outputs:
+                        lines.append(output)
+                        
+                return "\n".join(lines)
                 
-                if has_results:
-                    # Always send detailed results as a file
-                    result_parts = []
-                    
-                    if job_dict.get('outputs'):
-                        result_parts.extend(job_dict['outputs'])
-                        
-                    if job_dict.get('data'):
-                        result_parts.append("\nData:")
-                        result_parts.append(str(job_dict['data']))
-                    
-                    result_text = "\n".join(result_parts)
-                    
-                    # Create temporary file
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-                        f.write(result_text)
-                        temp_path = f.name
-                    
-                    try:
-                        # Send file via Telegram
-                        telegram = TelegramService.get_instance()
-                        await telegram.send_file(
-                            file_path=temp_path,
-                            caption=f"Job output for {job_dict['id']}"
-                        )
-                        
-                        # Add note about file being sent
-                        lines.append("\nDetailed results have been sent as a file.")
-                        
-                    finally:
-                        # Clean up temp file
-                        os.unlink(temp_path)
-                else:
-                    lines.append("\nNo results available.")
-            elif job_dict['status'] == JobStatus.CANCELLED.value:
-                lines.append("\nJob was cancelled")
-            elif job_dict['status'] == JobStatus.RUNNING.value:
-                lines.append("\nJob is still running")
-                
-            return "\n".join(lines)
-            
         except Exception as e:
-            self.logger.error(f"Failed to get job details: {str(e)}")
-            raise
+            self.logger.error(f"Failed to get job results: {str(e)}")
+            return f"Error getting job results: {str(e)}"
 
 class StopJobAction(BaseAction):
     """Action to stop a running job"""
@@ -182,12 +128,19 @@ class StopJobAction(BaseAction):
     spec = ActionSpec(
         name="stop",
         description="Stop a running job",
+        help_text="""Stop a currently running job.
+
+Usage:
+/stop <job_id>
+
+This will attempt to gracefully stop the specified job.
+Note that some jobs may take a moment to stop completely.
+
+Example:
+/stop abc123  # Stop job abc123""",
+        agent_hint="Use this command when you need to stop a long-running job that is no longer needed or is taking too long.",
         arguments=[
-            ActionArgument(
-                name="job_id",
-                description="ID of the job to stop",
-                required=True
-            )
+            ActionArgument(name="job_id", description="ID of the job to stop", required=True)
         ]
     )
     
@@ -195,20 +148,15 @@ class StopJobAction(BaseAction):
         self.logger = Logger("StopJobAction")
         
     async def execute(self, job_id: str) -> str:
-        """Execute the stop job action"""
+        """Stop a job"""
         try:
             job_manager = JobManager()
-            job = job_manager.get_job(job_id)
-            
-            if not job:
-                return f"Job {job_id} not found."
-                
-            job.cancel()
-            return f"Job {job_id} has been stopped."
+            await job_manager.stop_job(job_id)
+            return f"Requested stop for job {job_id}"
             
         except Exception as e:
             self.logger.error(f"Failed to stop job: {str(e)}")
-            raise
+            return f"Error stopping job: {str(e)}"
 
 # Export actions
 __all__ = ['ListJobsAction', 'GetJobResultAction', 'StopJobAction'] 

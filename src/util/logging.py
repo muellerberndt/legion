@@ -83,9 +83,16 @@ class Logger(DBSessionMixin):
 
     def _log(self, level: LogLevel, message: str, extra_data: Optional[Dict[str, Any]] = None) -> None:
         """Internal method to handle logging"""
-        # Always log to Python's logging system
+        # Format message with extra_data if present
+        log_message = message
+        if extra_data:
+            # Format extra_data as pretty JSON
+            extra_json = json.dumps(extra_data, indent=2, cls=ModelJSONEncoder)
+            log_message = f"{message}\n{extra_json}"
+        
+        # Log to Python's logging system
         log_func = getattr(self.python_logger, level.value.lower())
-        log_func(message)
+        log_func(log_message)
         
         if not LogConfig.is_db_logging_enabled():
             return

@@ -20,7 +20,7 @@ class Config:
             self.load_config()
     
     def load_config(self):
-        """Load configuration from main and extra config files."""
+        """Load configuration from main config file."""
         # Load main config
         config_path = os.getenv('R4DAR_CONFIG', 'config.yml')
         try:
@@ -46,23 +46,27 @@ class Config:
                 raise ValueError(f"Invalid configuration: {str(e)}")
             raise
             
-        # Load and merge extra config if it exists
-        extra_config_path = os.path.join("extensions", "extra_config.yml")
-        if os.path.exists(extra_config_path):
-            try:
-                with open(extra_config_path, 'r') as f:
-                    try:
-                        extra_config = yaml.safe_load(f)
-                    except yaml.YAMLError as e:
-                        self.logger.error(f"Failed to parse extra config: {e}")
-                        return
-                        
-                    if extra_config:
-                        self.logger.info("Loaded extra configuration")
-                        # Deep merge extra config into main config
-                        self._merge_configs(self._config, extra_config)
-            except Exception as e:
-                self.logger.error(f"Failed to load extra config: {e}")
+    def load_extension_config(self, config_path: str) -> None:
+        """Load and merge configuration from an extension's config file.
+        
+        Args:
+            config_path: Path to the extension's config file
+        """
+        try:
+            with open(config_path, 'r') as f:
+                try:
+                    extension_config = yaml.safe_load(f)
+                except yaml.YAMLError as e:
+                    self.logger.error(f"Failed to parse extension config {config_path}: {e}")
+                    return
+                    
+                if extension_config:
+                    self.logger.info(f"Loaded extension configuration from {config_path}")
+                    # Deep merge extension config into main config
+                    self._merge_configs(self._config, extension_config)
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to load extension config {config_path}: {e}")
     
     def _merge_configs(self, base: Dict, update: Dict) -> None:
         """Deep merge update dict into base dict."""
