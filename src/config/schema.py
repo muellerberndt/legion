@@ -12,10 +12,17 @@ CONFIG_SCHEMA = {
             },
             "required": ["host", "port", "name", "user", "password"]
         },
-        "api": {
+        "block_explorers": {
             "type": "object",
             "properties": {
                 "etherscan": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"}
+                    },
+                    "required": ["key"]
+                },
+                "basescan": {
                     "type": "object",
                     "properties": {
                         "key": {"type": "string"}
@@ -36,20 +43,18 @@ CONFIG_SCHEMA = {
                     },
                     "required": ["key"]
                 },
-                "basescan": {
-                    "type": "object",
-                    "properties": {
-                        "key": {"type": "string"}
-                    },
-                    "required": ["key"]
-                },
                 "bscscan": {
                     "type": "object",
                     "properties": {
                         "key": {"type": "string"}
                     },
                     "required": ["key"]
-                },
+                }
+            }
+        },
+        "llm": {
+            "type": "object",
+            "properties": {
                 "openai": {
                     "type": "object",
                     "properties": {
@@ -78,6 +83,21 @@ CONFIG_SCHEMA = {
                     "default": []
                 }
             }
+        },
+        "telegram": {
+            "type": "object",
+            "properties": {
+                "bot_token": {"type": "string"},
+                "chat_id": {"type": "string"}
+            },
+            "required": ["bot_token", "chat_id"]
+        },
+        "data_dir": {"type": "string"},
+        "extensions_dir": {"type": "string"},
+        "active_extensions": {
+            "type": "array",
+            "items": {"type": "string"}
         }
-    }
+    },
+    "required": ["database", "data_dir"]
 } 

@@ -71,7 +71,7 @@ class EVMExplorer:
             for explorer_type, config in self.EXPLORERS.items():
                 if domain == config['domain']:
                     # Check if API key is configured
-                    api_key = self.config.get('api', {}).get(config['config_key'], {}).get('key')
+                    api_key = self.config.get('block_explorers', {}).get(config['config_key'], {}).get('key')
                     if api_key:
                         return True, explorer_type
                     else:
@@ -89,7 +89,7 @@ class EVMExplorer:
     def get_api_key(self, explorer_type: ExplorerType) -> Optional[str]:
         """Get the API key for an explorer type"""
         config_key = self.EXPLORERS[explorer_type]['config_key']
-        return self.config.get('api', {}).get(config_key, {}).get('key')
+        return self.config.get('block_explorers', {}).get(config_key, {}).get('key')
 
 async def fetch_verified_sources(explorer_url: str, target_path: str) -> None:
     """

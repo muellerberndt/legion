@@ -36,7 +36,7 @@ active_extensions:
 
 ## 1. Actions
 
-Actions are the building blocks of R4dar's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents.
+Actions are the building blocks of R4dar's functionality. Actions in registered extension automatically appear in Telegram as commands and are made available to the LLM agents.
 
 ### Action Specification
 

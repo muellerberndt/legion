@@ -27,8 +27,26 @@ def mock_config():
         config.database_url = "postgresql://test:test@localhost:5432/test_db"
         config.etherscan_api_key = "test-etherscan-key"
         
-        # Mock get method
-        config.get.return_value = {}
+        # Mock get method with new config structure
+        def get_side_effect(key, default=None):
+            if key == 'block_explorers':
+                return {
+                    'etherscan': {'key': 'test-etherscan-key'},
+                    'basescan': {'key': 'test-basescan-key'},
+                    'arbiscan': {'key': 'test-arbiscan-key'},
+                    'polygonscan': {'key': 'test-polygonscan-key'},
+                    'bscscan': {'key': 'test-bscscan-key'}
+                }
+            elif key == 'llm':
+                return {
+                    'openai': {
+                        'key': 'test-key',
+                        'model': 'gpt-4'
+                    }
+                }
+            return default
+            
+        config.get.side_effect = get_side_effect
         
         mock.return_value = config
         yield config

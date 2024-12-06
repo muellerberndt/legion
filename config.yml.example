@@ -12,18 +12,24 @@ database:
   user: r4dar
   password: your_password_here
 
-# API Keys configuration (required)
-api:
-  # Required for fetching and verifying Ethereum contracts
-  etherscan:
-    key: "your-etherscan-api-key"  # Get from https://etherscan.io/apis
-  # Required for Base network contract verification
-  basescan:
-    key: "your-basescan-api-key"  # Get from https://basescan.org/apis
-  # Required for AI analysis features
+# Block explorer API keys (optional but recommended)
+block_explorers:
+  # etherscan:
+  #  key: "your-etherscan-api-key"  # Get from https://etherscan.io/apis
+  # basescan:
+  #  key: "your-basescan-api-key"  # Get from https://basescan.org/apis
+  # arbiscan:
+  #  key: "your-arbiscan-api-key"  # Get from https://arbiscan.io/apis
+  # polygonscan:
+  #   key: "your-polygonscan-api-key"  # Get from https://polygonscan.com/apis
+  # bscscan:
+  # key: "your-bscscan-api-key"  # Get from https://bscscan.com/apis
+
+# Language Model configuration (required)
+llm:
   openai:
     key: "your-openai-api-key"  # Get from https://platform.openai.com/api-keys
-    model: "gpt-4"  # Available models: gpt-4, gpt-4-1106-preview
+    model: "gpt-4o"
 
 # Telegram settings (required)
 telegram:

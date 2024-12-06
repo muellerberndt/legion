@@ -23,10 +23,24 @@ def test_config_path(tmp_path):
             'user': 'r4dar_test',
             'password': 'test_password'
         },
-        'api': {
+        'block_explorers': {
             'etherscan': {
                 'key': 'TEST_API_KEY'
             },
+            'basescan': {
+                'key': 'TEST_BASESCAN_KEY'
+            },
+            'arbiscan': {
+                'key': 'TEST_ARBISCAN_KEY'
+            },
+            'polygonscan': {
+                'key': 'TEST_POLYGONSCAN_KEY'
+            },
+            'bscscan': {
+                'key': 'TEST_BSCSCAN_KEY'
+            }
+        },
+        'llm': {
             'openai': {
                 'key': 'test-key',
                 'model': 'gpt-4'

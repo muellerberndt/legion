@@ -87,7 +87,7 @@ class Config:
     @property
     def etherscan_api_key(self) -> str:
         """Get Etherscan API key."""
-        return self._config.get('api', {}).get('etherscan', {}).get('key')
+        return self._config.get('block_explorers', {}).get('etherscan', {}).get('key')
     
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value."""
@@ -114,7 +114,7 @@ class Config:
     @property
     def openai_api_key(self) -> str:
         """Get OpenAI API key"""
-        key = self.get('api.openai.key')
+        key = self._config.get('llm', {}).get('openai', {}).get('key')
         if not key:
             raise ValueError("OpenAI API key not configured")
         return key
@@ -122,4 +122,4 @@ class Config:
     @property
     def openai_model(self) -> str:
         """Get OpenAI model to use"""
-        return self.get('api.openai.model', 'gpt-4')
+        return self._config.get('llm', {}).get('openai', {}).get('model', 'gpt-4')
