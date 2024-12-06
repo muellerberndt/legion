@@ -4,6 +4,6 @@ _pycache__/
 *.py[cod]
 *$py.class
 data/
-extensions
-tools
+extensions/*
+!extensions/examples/
 tests/extensions
