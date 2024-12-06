@@ -341,8 +341,24 @@ class ImmunefiIndexer:
                         self.logger.warning(f"Failed to fetch Etherscan contract at {url}: {str(e)}")
                         continue
                 else:
-                    self.logger.warning(f"Unsupported asset URL: {url}")
-                    continue
+                    # Check if it's a supported EVM explorer
+                    from src.util.etherscan import EVMExplorer
+                    explorer = EVMExplorer()
+                    is_supported, explorer_type = explorer.is_supported_explorer(url)
+                    
+                    if is_supported:
+                        try:
+                            asset_type = AssetType.DEPLOYED_CONTRACT
+                            await fetch_verified_sources(url, target_dir)
+                            asset_record.asset_type = asset_type
+                            asset_record.local_path = target_dir
+                            asset_record.extra_data['explorer_url'] = url
+                        except Exception as e:
+                            self.logger.warning(f"Failed to fetch contract from {explorer_type.value} at {url}: {str(e)}")
+                            continue
+                    else:
+                        self.logger.warning(f"Unsupported asset URL: {url}")
+                        continue
 
                 # Associate the asset with the project if it's new
                 if not existing_asset:

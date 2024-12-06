@@ -3,37 +3,131 @@ import aiohttp
 import json
 import aiofiles
 from src.config.config import Config
+from typing import Optional, Dict, Tuple
+from urllib.parse import urlparse
+from enum import Enum
 
-async def fetch_verified_sources(etherscan_url: str, target_path: str) -> None:
+class ExplorerType(Enum):
+    """Supported EVM explorer types"""
+    ETHERSCAN = "etherscan"
+    ARBISCAN = "arbiscan"
+    POLYGONSCAN = "polygonscan"
+    BASESCAN = "basescan"
+    BSCSCAN = "bscscan"
+
+class EVMExplorer:
+    """Handles interaction with various EVM blockchain explorers"""
+    
+    # Explorer configurations
+    EXPLORERS = {
+        ExplorerType.ETHERSCAN: {
+            "domain": "etherscan.io",
+            "api_url": "https://api.etherscan.io/api",
+            "config_key": "etherscan"
+        },
+        ExplorerType.ARBISCAN: {
+            "domain": "arbiscan.io",
+            "api_url": "https://api.arbiscan.io/api",
+            "config_key": "arbiscan"
+        },
+        ExplorerType.POLYGONSCAN: {
+            "domain": "polygonscan.com",
+            "api_url": "https://api.polygonscan.com/api",
+            "config_key": "polygonscan"
+        },
+        ExplorerType.BASESCAN: {
+            "domain": "basescan.org",
+            "api_url": "https://api.basescan.org/api",
+            "config_key": "basescan"
+        },
+        ExplorerType.BSCSCAN: {
+            "domain": "bscscan.com",
+            "api_url": "https://api.bscscan.com/api",
+            "config_key": "bscscan"
+        }
+    }
+    
+    def __init__(self):
+        self.config = Config()
+        
+    def is_supported_explorer(self, url: str) -> Tuple[bool, Optional[ExplorerType]]:
+        """Check if a URL is from a supported explorer
+        
+        Args:
+            url: The URL to check
+            
+        Returns:
+            Tuple of (is_supported, explorer_type)
+        """
+        try:
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            
+            # Remove www. prefix if present
+            if domain.startswith('www.'):
+                domain = domain[4:]
+                
+            # Find matching explorer
+            for explorer_type, config in self.EXPLORERS.items():
+                if domain == config['domain']:
+                    # Check if API key is configured
+                    api_key = self.config.get('api', {}).get(config['config_key'], {}).get('key')
+                    if api_key:
+                        return True, explorer_type
+                    else:
+                        return False, explorer_type
+                        
+            return False, None
+            
+        except Exception:
+            return False, None
+            
+    def get_api_url(self, explorer_type: ExplorerType) -> str:
+        """Get the API URL for an explorer type"""
+        return self.EXPLORERS[explorer_type]['api_url']
+        
+    def get_api_key(self, explorer_type: ExplorerType) -> Optional[str]:
+        """Get the API key for an explorer type"""
+        config_key = self.EXPLORERS[explorer_type]['config_key']
+        return self.config.get('api', {}).get(config_key, {}).get('key')
+
+async def fetch_verified_sources(explorer_url: str, target_path: str) -> None:
     """
-    Fetch verified sources from Etherscan and store them locally.
+    Fetch verified sources from an EVM explorer and store them locally.
     
     Args:
-        etherscan_url: URL of the format https://etherscan.io/address/{address}
+        explorer_url: URL of the format https://{explorer_domain}/address/{address}
         target_path: Path where to store the source files
     """
+    # Check if this is a supported explorer
+    explorer = EVMExplorer()
+    is_supported, explorer_type = explorer.is_supported_explorer(explorer_url)
+    
+    if not is_supported:
+        if explorer_type:
+            raise ValueError(f"No API key configured for {explorer_type.value}")
+        else:
+            raise ValueError("Unsupported explorer URL")
+    
     # Extract address from URL and clean it
-    address = etherscan_url.split('/')[-1].lower()
+    address = explorer_url.split('/')[-1].lower()
     # Remove any extra parts after the address (like #code)
     address = address.split('#')[0]
     
-    # Get API key from config
-    config = Config()
-    api_key = config.etherscan_api_key
-    
-    if not api_key:
-        raise ValueError("Etherscan API key not found in config")
+    # Get API key and URL
+    api_key = explorer.get_api_key(explorer_type)
+    api_url = explorer.get_api_url(explorer_type)
     
     # Construct API URL
-    api_url = f"https://api.etherscan.io/api?module=contract&action=getsourcecode&address={address}&apikey={api_key}"
+    full_api_url = f"{api_url}?module=contract&action=getsourcecode&address={address}&apikey={api_key}"
     
     # Fetch source code
     async with aiohttp.ClientSession() as session:
-        async with session.get(api_url) as response:
+        async with session.get(full_api_url) as response:
             data = await response.json()
     
     if data["status"] != "1":
-        raise Exception(f"Etherscan API error: {data.get('message', 'Unknown error')}")
+        raise Exception(f"Explorer API error: {data.get('message', 'Unknown error')}")
     
     # Create target directory if it doesn't exist
     os.makedirs(target_path, exist_ok=True)

@@ -13,12 +13,18 @@ data_dir: ./data
 api:
   # Etherscan API configuration for fetching verified contracts
   etherscan:
-    key: your_etherscan_api_key_here
-
-  # OpenAI API configuration for AI features
+    key: "your-etherscan-api-key"
+  arbiscan:
+    key: "your-arbiscan-api-key"
+  polygonscan:
+    key: "your-polygonscan-api-key"
+  basescan:
+    key: "your-basescan-api-key"
+  bscscan:
+    key: "your-bscscan-api-key"
   openai:
-    key: your_openai_api_key_here
-    model: gpt-4-1106-preview  # or gpt-4, gpt-3.5-turbo
+    key: "your-openai-api-key"
+    model: "gpt-4-1106-preview"
 
 # GitHub configuration (optional)
 github:

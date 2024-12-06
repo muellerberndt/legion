@@ -22,6 +22,34 @@ CONFIG_SCHEMA = {
                     },
                     "required": ["key"]
                 },
+                "arbiscan": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"}
+                    },
+                    "required": ["key"]
+                },
+                "polygonscan": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"}
+                    },
+                    "required": ["key"]
+                },
+                "basescan": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"}
+                    },
+                    "required": ["key"]
+                },
+                "bscscan": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"}
+                    },
+                    "required": ["key"]
+                },
                 "openai": {
                     "type": "object",
                     "properties": {
@@ -50,8 +78,6 @@ CONFIG_SCHEMA = {
                     "default": []
                 }
             }
-        },
-        "data_dir": {"type": "string"}
-    },
-    "required": ["database", "data_dir"]
+        }
+    }
 } 
