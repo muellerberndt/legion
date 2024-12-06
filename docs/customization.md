@@ -2,9 +2,18 @@
 
 R4dar is designed to be highly extensible. This guide explains how to customize and extend its functionality.
 
+There are four types of extensions:
+
+1. **Actions** are basic operations that can be executed by the user and LLM agents. Actions should return immediately but may launch longer-running jobs.
+2. **Agents** use actions to perform tasks on behalf of the user.
+3. **Watchers** monitor external sources for new data, run repeating actions, and trigger events.
+4. **Event handlers** react to specific types of events (blockchain events, GitHub events, etc.).
+
 ## Custom Event Handlers
 
-Event handlers process specific types of events (blockchain events, GitHub events, etc.) and perform custom actions.
+Event handlers react to specific types of events (blockchain events, GitHub events, etc.) and perform custom actions. To add a new handler, tou need to create a handler class and register for a [trigger event]().
+
+
 
 ### Creating a Handler
 

@@ -6,7 +6,7 @@ The r4dar framework is designed to be easily extensible in order to allow users 
 
 ## Features
 
-Built-in features include:
+Built-in features:
 
 - LLM-powered Telegram chatbot interface
 - Indexing assets from bounty platforms and contests (atm Immunefi only)
@@ -14,6 +14,14 @@ Built-in features include:
 - Automated diff when in-scope assets are updated on Immunefi or Github
 - Automated monitoring of Github repos in scope
 - On-chain monitoring via Quicknode integration
+
+Extensions you can build:
+
+- Notify the user when a smart contract in scope is upgraded (see [example](examples/proxy_contract_handler.py))
+- Extract new semgrep patterns whenever a new audit report is published
+- Pre-assess the codebase of new bounties and contests
+- Daily data analysis to prioritize bounties, contests and assets
+- ?
 
 ## Quick Start
 
@@ -32,31 +40,16 @@ r4dar start
 ## Documentation
 
 - [Installation Guide](docs/installation.md) - Detailed setup instructions
-- [Customization Guide](docs/customization.md) - How to extend R4dar with custom handlers and analyzers
-- [API Reference](docs/api.md) - API documentation for developers
-
-## Example Usage
-
-```python
-# Example custom handler for monitoring specific contracts
-from r4dar.handlers import Handler
-from r4dar.triggers import BlockchainEvent
-
-class CustomContractHandler(Handler):
-    def get_triggers(self):
-        return [BlockchainEvent]
-        
-    async def handle(self):
-        # Your custom logic here
-        pass
-```
+- [Customization Guide](docs/customization.md) - How to extend R4dar
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and contribute to the project.
+Contributions are welcome!
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache 2.0 License with additional commercial terms. 
 
+It is free to use for security research and bug hunting activities, including those generating commercial rewards (e.g., bug bounty programs or audit contests). Any extensions you build on top of r4dar belong to you and are not subject to the license.
 
+However, wrapping r4dar into a commercial product or service is prohibited without written permission from the author. See [LICENSE](LICENSE.txt) for details.
