@@ -2,234 +2,249 @@
 
 R4dar is designed to be highly extensible. This guide explains how to customize and extend its functionality.
 
-There are four types of extensions:
+## Extension System
 
-1. **Actions** are basic operations that can be executed by the user and LLM agents. Actions should return immediately but may launch longer-running jobs.
-2. **Agents** use actions to perform tasks on behalf of the user.
-3. **Watchers** monitor external sources for new data, run repeating actions, and trigger events.
-4. **Event handlers** react to specific types of events (blockchain events, GitHub events, etc.).
+Extensions in R4dar are stored in the `/extensions` directory. You can organize your extensions in subdirectories:
 
-## Custom Event Handlers
-
-Event handlers react to specific types of events (blockchain events, GitHub events, etc.) and perform custom actions. To add a new handler, tou need to create a handler class and register for a [trigger event]().
-
-
-
-### Creating a Handler
-
-1. Create a new file in the `extensions` directory:
-
-```python
-# extensions/my_custom_handler.py
-from r4dar.handlers import Handler
-from r4dar.triggers import BlockchainEvent
-from r4dar.services import TelegramService
-from r4dar.util.logging import Logger
-
-class MyCustomHandler(Handler):
-    """Custom handler for monitoring specific events"""
-    
-    def __init__(self):
-        super().__init__()
-        self.logger = Logger("MyCustomHandler")
-        self.telegram = TelegramService.get_instance()
-        
-    @classmethod
-    def get_triggers(cls) -> list:
-        """Define which events this handler listens for"""
-        return [BlockchainEvent]
-        
-    async def handle(self) -> None:
-        """Process the event"""
-        try:
-            # Extract event data
-            payload = self.context.get("payload", {})
-            
-            # Your custom logic here
-            # Example: Monitor specific contract events
-            if self._is_relevant_event(payload):
-                await self._process_event(payload)
-                
-        except Exception as e:
-            self.logger.error(f"Error in handler: {str(e)}")
-            
-    def _is_relevant_event(self, payload: dict) -> bool:
-        """Check if event is relevant for this handler"""
-        # Your filtering logic here
-        return True
-        
-    async def _process_event(self, payload: dict) -> None:
-        """Process relevant event"""
-        # Your processing logic here
-        await self.telegram.send_message("Event detected!")
+```
+/extensions
+    /my-extension
+        my_custom_action.py
+        my_custom_agent.py
+        my_custom_handler.py
+        my_custom_watcher.py
+    /another-extension
+        another_extension.py
 ```
 
-2. Register your handler in `extensions/__init__.py`:
+To enable your extensions, add them to `config.yml`:
 
-```python
-from .my_custom_handler import MyCustomHandler
-
-__all__ = ['MyCustomHandler']
+```yaml
+extensions_dir: "./extensions"
+active_extensions:
+  - my-extension
 ```
 
-## Custom Analysis Agents
+## 1. Actions
 
-Analysis agents perform specialized analysis tasks using AI or other methods.
+Actions are commands that can be executed via the Telegram interface. They provide interactive functionality to users.
 
-### Creating an Agent
-
-```python
-# extensions/my_custom_agent.py
-from r4dar.agents import BaseAgent
-from typing import Dict, Any
-
-class MyCustomAgent(BaseAgent):
-    """Custom agent for specialized analysis"""
-    
-    def __init__(self):
-        # Add specialized prompt for your analysis
-        custom_prompt = """You are specialized in analyzing X.
-        Your task is to:
-        1. Analyze A
-        2. Detect B
-        3. Report C"""
-        
-        super().__init__(custom_prompt=custom_prompt)
-        
-    async def analyze(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Perform custom analysis"""
-        prompt = self._create_analysis_prompt(data)
-        
-        # Get analysis from AI
-        response = await self.chat_completion([
-            {"role": "user", "content": prompt}
-        ])
-        
-        # Process and return results
-        return self._process_response(response)
-        
-    def _create_analysis_prompt(self, data: Dict[str, Any]) -> str:
-        """Create analysis prompt"""
-        return f"Please analyze this data: {data}"
-        
-    def _process_response(self, response: str) -> Dict[str, Any]:
-        """Process AI response"""
-        # Your processing logic here
-        return {
-            "result": response,
-            "confidence": 0.9
-        }
-```
-
-## Custom Commands
-
-You can add custom commands to interact with your handlers and agents via Telegram.
-
-### Adding Commands
-
-1. Create a command handler:
+### Creating an Action
 
 ```python
-# extensions/my_custom_command.py
-from r4dar.actions import BaseAction, ActionSpec, ActionArgument
+# extensions/your-username/my_custom_action.py
+from src.actions.base import BaseAction, ActionSpec, ActionArgument
+from src.util.logging import Logger
 
-class MyCustomCommand(BaseAction):
-    """Custom command implementation"""
+class MyCustomAction(BaseAction):
+    """Custom action implementation"""
     
+    # This spec defines how the action appears in Telegram
     spec = ActionSpec(
-        name="my_command",
-        description="Performs custom analysis",
-        help_text="Usage: /my_command <argument>",
+        name="my_action",  # Command name: /my_action
+        description="Performs custom analysis",  # Shows in /help
+        help_text="Usage: /my_action <argument>",  # Detailed help text
         arguments=[
             ActionArgument(
-                name="arg1",
+                name="arg1",p
                 description="First argument",
                 required=True
             )
         ]
     )
     
+    def __init__(self):
+        self.logger = Logger("MyCustomAction")
+    
     async def execute(self, arg1: str) -> str:
-        """Execute the command"""
-        # Your command logic here
-        return f"Processed {arg1}"
+        """Execute the action
+        
+        This method is called when a user invokes the command in Telegram.
+        The return value is sent as a message to the user.
+        """
+        try:
+            result = f"Processed {arg1}"
+            return result
+        except Exception as e:
+            self.logger.error(f"Error in action: {str(e)}")
+            return "An error occurred"
 ```
 
-2. Register the command in `extensions/__init__.py`:
+The action will automatically appear in Telegram as `/my_action` and be included in `/help`.
+
+## 2. Agents
+
+Agents are AI-powered components that can process messages and perform complex tasks. They don't have a predefined interface 
+
+### Creating an Agent
 
 ```python
-from .my_custom_command import MyCustomCommand
+# extensions/your-username/my_custom_agent.py
+from src.agents.base_agent import BaseAgent
+from typing import Dict, Any, List
+from src.util.logging import Logger
 
-__all__ = ['MyCustomCommand']
+class MyCustomAgent(BaseAgent):
+    """Custom agent for specialized analysis"""
+    
+    def __init__(self):
+        # Define the agent's specialized capabilities
+        custom_prompt = """You are specialized in X.
+        Your responsibilities:
+        1. Task A
+        2. Task B
+        3. Task C"""
+        
+        # Specify which commands this agent can use
+        command_names = [
+            'semantic_search',  # For searching code semantically
+            'grep_search'       # For pattern matching
+        ]
+        
+        # Initialize with custom prompt and allowed commands
+        super().__init__(custom_prompt=custom_prompt, command_names=command_names)
+        self.logger = Logger("MyCustomAgent")
+    
+    async def process_message(self, message: str) -> str:
+        """Process a message from the user
+        
+        This is the main entry point for agent interaction.
+        """
+        try:
+            # Your message processing logic here
+            response = await self.chat_completion([
+                {"role": "user", "content": message}
+            ])
+            return response
+        except Exception as e:
+            self.logger.error(f"Error processing message: {str(e)}")
+            return "An error occurred"
 ```
 
-## Configuration
+The agent will automatically have access to the specified commands from the action registry. The base agent handles:
+1. Filtering available commands based on command_names
+2. Building command documentation into the system prompt
+3. Validating and executing commands
 
-### Custom Settings
+You don't need to implement `_get_available_commands` - just pass the command names you want to use to `super().__init__`.
 
-Add your custom settings to `config.yml`:
+## 3. Watchers
 
-```yaml
-custom_settings:
-  my_handler:
-    enabled: true
-    threshold: 0.8
-    target_contracts:
-      - "0x123..."
-      - "0x456..."
-```
+Watchers monitor external data sources and generate events when changes are detected.
 
-### Accessing Settings
+### Creating a Watcher
 
 ```python
-from r4dar.config import Config
+# extensions/your-username/my_custom_watcher.py
+from src.watchers.base import BaseWatcher
+from src.handlers.event_bus import EventBus
+from src.util.logging import Logger
+import asyncio
 
-config = Config()
-settings = config.get("custom_settings.my_handler", {})
-threshold = settings.get("threshold", 0.5)
+class MyCustomWatcher(BaseWatcher):
+    """Custom watcher implementation"""
+    
+    def __init__(self):
+        self.logger = Logger("MyCustomWatcher")
+        self.event_bus = EventBus()
+        self.running = False
+    
+    async def start(self):
+        """Start the watcher"""
+        self.running = True
+        while self.running:
+            try:
+                # Your monitoring logic here
+                changes = await self._check_for_changes()
+                if changes:
+                    await self._emit_event(changes)
+                await asyncio.sleep(60)  # Check every minute
+            except Exception as e:
+                self.logger.error(f"Error in watcher: {str(e)}")
+                await asyncio.sleep(60)
+    
+    async def stop(self):
+        """Stop the watcher"""
+        self.running = False
+    
+    async def _check_for_changes(self):
+        """Check for changes in data source"""
+        # Your change detection logic here
+        pass
+    
+    async def _emit_event(self, changes):
+        """Emit event when changes are detected"""
+        await self.event_bus.emit("custom_event", {
+            "source": "my_custom_watcher",
+            "changes": changes
+        })
 ```
 
-## Testing
+## 4. Event Handlers
 
-### Writing Tests
+Event handlers process events emitted by watchers and perform actions in response.
+
+### Creating an Event Handler
 
 ```python
-# tests/extensions/test_my_handler.py
-import pytest
-from extensions.my_custom_handler import MyCustomHandler
+# extensions/your-username/my_custom_handler.py
+from src.handlers.base import Handler, HandlerTrigger
+from src.services.telegram import TelegramService
+from src.util.logging import Logger
 
-@pytest.mark.asyncio
-async def test_handler():
-    handler = MyCustomHandler()
-    handler.context = {"payload": {...}}
-    await handler.handle()
-    # Add assertions
-```
-
-### Running Tests
-
-```bash
-pytest tests/extensions/test_my_handler.py -v
+class MyCustomHandler(Handler):
+    """Custom event handler"""
+    
+    def __init__(self):
+        self.logger = Logger("MyCustomHandler")
+        self.telegram = TelegramService.get_instance()
+    
+    @classmethod
+    def get_triggers(cls) -> list[HandlerTrigger]:
+        """Define which events this handler listens for"""
+        return [HandlerTrigger.CUSTOM_EVENT]
+    
+    async def handle(self) -> None:
+        """Handle the event"""
+        try:
+            # Extract event data
+            payload = self.context.get("payload", {})
+            
+            # Process the event
+            if self._is_relevant(payload):
+                await self._process_event(payload)
+                
+        except Exception as e:
+            self.logger.error(f"Error in handler: {str(e)}")
+    
+    def _is_relevant(self, payload: dict) -> bool:
+        """Check if event is relevant"""
+        return True
+    
+    async def _process_event(self, payload: dict) -> None:
+        """Process the event"""
+        # Your event processing logic here
+        await self.telegram.send_message("Event processed!")
 ```
 
 ## Best Practices
 
 1. **Error Handling**
-   - Always use try-except blocks in handlers
-   - Log errors with appropriate context
-   - Fail gracefully when possible
+   - Use try-except blocks in all async methods
+   - Log errors with context
+   - Fail gracefully and notify users when appropriate
 
 2. **Performance**
-   - Cache frequently used data
+   - Implement proper sleep intervals in watchers
    - Use async/await for I/O operations
-   - Implement timeouts for external calls
+   - Cache frequently used data
 
 3. **Security**
    - Validate all input data
    - Use environment variables for sensitive data
-   - Implement rate limiting where appropriate
+   - Implement rate limiting for external APIs
 
 4. **Documentation**
-   - Document your code with docstrings
+   - Document your extension's purpose and functionality
    - Include usage examples
-   - Explain configuration options 
+   - List all configuration options

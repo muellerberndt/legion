@@ -9,7 +9,19 @@ class ProxyImplementationUpgradeAgent(BaseAgent):
     """Agent for analyzing proxy implementation upgrades"""
     
     def __init__(self):
-        super().__init__()
+        # Add specialized prompt for analyzing proxy upgrades
+        custom_prompt = """You are specialized in analyzing proxy implementation upgrades.
+        
+Your responsibilities:
+1. Analyze new implementation code for changes
+2. Identify potential security implications
+3. Compare with previous implementations
+4. Generate clear summaries for security researchers"""
+
+        # Specify commands this agent can use
+        command_names = []
+
+        super().__init__(custom_prompt=custom_prompt, command_names=command_names)
         self.logger = Logger("ProxyImplementationUpgradeAgent")
         
     async def analyze_implementation(self, source_code: str) -> Dict[str, Any]:

@@ -99,16 +99,29 @@ Communication style:
             # First get AI's understanding of the request
             messages = [
                 {"role": "user", "content": message},
-                {"role": "system", "content": """First, explain what you plan to do. Then, execute the necessary commands.
+                {"role": "system", "content": """Determine if this message requires executing any commands.
+                
+For casual conversation or greetings, just respond naturally.
+Only suggest commands if the user is asking for specific information or actions.
 
-Remember to format database queries exactly like this:
-EXECUTE: db_query query={"from": "projects", "limit": 5}
+Example casual messages (no commands needed):
+- "How are you?"
 
-The query parameter must be a complete, valid JSON object as a single string."""}
+Example action messages (commands needed):
+- "Show me recent projects"
+- "Search for reentrancy vulnerabilities"
+- "List all assets"
+
+If commands are needed, format them exactly like this:
+EXECUTE: db_query query={"from": "projects", "limit": 5}"""}
             ]
             plan = await self.chat_completion(messages)
             
-            # Now get the actual command execution plan
+            # For casual conversation, return the response directly
+            if 'EXECUTE:' not in plan:
+                return plan
+                
+            # Otherwise, proceed with command execution
             messages.extend([
                 {"role": "assistant", "content": plan},
                 {"role": "system", "content": """Execute the necessary commands. Format queries exactly like this:
@@ -193,9 +206,14 @@ The query must be a single, properly escaped JSON string."""}
                 ]
                 return await self.chat_completion(summary_messages)
             else:
-                error_msg = "No valid commands were found in the execution plan"
-                self.logger.error(error_msg, extra_data={"execution_plan": execution_plan})
-                return error_msg
+                # Check if the execution plan contains any EXECUTE commands
+                if 'EXECUTE:' not in execution_plan:
+                    # If no commands were intended, just return the AI's response
+                    return execution_plan
+                else:
+                    error_msg = "No valid commands were found in the execution plan"
+                    self.logger.error(error_msg, extra_data={"execution_plan": execution_plan})
+                    return error_msg
 
         except Exception as e:
             error_msg = f"Error processing message: {str(e)}"

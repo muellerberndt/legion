@@ -31,31 +31,15 @@ Focus areas:
 - Gas optimization problems
 - Potential economic attack vectors"""
 
-        super().__init__(custom_prompt=custom_prompt)
+        # Specify commands this agent can use
+        command_names = [
+            'semantic_search',  # For searching code semantically
+            'grep_search',      # For pattern matching
+            'db_query'          # For database queries
+        ]
+
+        super().__init__(custom_prompt=custom_prompt, command_names=command_names)
         DBSessionMixin.__init__(self)
-        
-    def _get_available_commands(self) -> Dict[str, AgentCommand]:
-        """Get commands available to this agent"""
-        return {
-            'semantic_search': AgentCommand(
-                name='semantic_search',
-                description='Search codebase semantically',
-                required_params=['query'],
-                optional_params=['target_directories']
-            ),
-            'grep_search': AgentCommand(
-                name='grep_search',
-                description='Search for exact patterns in code',
-                required_params=['query'],
-                optional_params=['include_pattern', 'exclude_pattern', 'case_sensitive']
-            ),
-            'db_query': AgentCommand(
-                name='db_query',
-                description='Query the database',
-                required_params=['query'],
-                optional_params=[]
-            )
-        }
         
     def find_related_asset(self, repo_url: str) -> Optional[Tuple[Asset, Project]]:
         """Find an asset and its project related to the given repo URL"""

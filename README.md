@@ -23,24 +23,22 @@ Extensions you can build:
 - Daily data analysis to prioritize bounties, contests and assets
 - ?
 
-## Quick Start
+## Running R4dar
+
+You need to set up a Telegram bot, a Postgres database and several API keys first ([Installation Guide](docs/installation.md)).
+
+To start the server, run:
 
 ```bash
-# Install R4dar
-pip install r4dar
-
-# Set up configuration
-cp config.example.yml config.yml
-# Edit config.yml with your settings
-
-# Start the service
-r4dar start
+./r4dar.sh server start --log-level INFO
 ```
+
+You can then talk to the bot via Telegram. To get help, just type `/help`.
 
 ## Documentation
 
 - [Installation Guide](docs/installation.md) - Detailed setup instructions
-- [Customization Guide](docs/customization.md) - How to extend R4dar
+- [Customization Guide](docs/customization.md) - How to extend r4dar
 
 ## Contributing
 
