@@ -4,14 +4,14 @@ from src.watchers.quicknode import QuicknodeWatcher
 from src.handlers.base import HandlerTrigger
 from src.handlers.event_bus import EventBus
 import json
-from unittest.mock import Mock
+from unittest.mock import AsyncMock
 from aiohttp.test_utils import TestClient, TestServer
 
 @pytest.fixture
 def watcher():
     watcher = QuicknodeWatcher()
-    # Mock the event bus trigger_event method
-    watcher.event_bus.trigger_event = Mock()
+    # Mock the handler registry trigger_event method
+    watcher.handler_registry.trigger_event = AsyncMock()
     return watcher
 
 @pytest.fixture
@@ -44,9 +44,11 @@ async def test_handle_webhook_valid_payload(watcher, test_client):
     client, _ = test_client
     
     test_payload = {
-        "eventId": "test-event-123",
-        "blockNumber": "0x123",
-        "transactionHash": "0xabc..."
+        "payload": [{  # Wrap in payload array to match Quicknode format
+            "eventId": "test-event-123",
+            "blockNumber": "0x123",
+            "transactionHash": "0xabc..."
+        }]
     }
     
     resp = await client.post(
@@ -60,11 +62,11 @@ async def test_handle_webhook_valid_payload(watcher, test_client):
     assert text == "OK"
     
     # Verify event was triggered
-    watcher.event_bus.trigger_event.assert_called_once_with(
+    watcher.handler_registry.trigger_event.assert_awaited_once_with(
         HandlerTrigger.BLOCKCHAIN_EVENT,
         {
             "source": "quicknode",
-            "payload": test_payload
+            "payload": test_payload["payload"][0]
         }
     )
 
@@ -83,7 +85,7 @@ async def test_handle_webhook_invalid_payload(watcher, test_client):
     assert resp.status == 500
     
     # Verify no event was triggered
-    watcher.event_bus.trigger_event.assert_not_called()
+    watcher.handler_registry.trigger_event.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_event_triggering_without_event_bus(watcher, test_client):
@@ -96,9 +98,9 @@ async def test_event_triggering_without_event_bus(watcher, test_client):
         "transactionHash": "0xabc..."
     }
     
-    # Create a new app without event bus
+    # Create a new app without handler registry
     new_app = web.Application()
-    watcher.event_bus = None
+    watcher.handler_registry = None
     watcher.register_routes(new_app)
     
     new_server = TestServer(new_app)
@@ -112,7 +114,7 @@ async def test_event_triggering_without_event_bus(watcher, test_client):
             headers={"Content-Type": "application/json"}
         )
         
-        # Should still return OK even without event bus
+        # Should still return OK even without handler registry
         assert resp.status == 200
         text = await resp.text()
         assert text == "OK"

@@ -5,11 +5,11 @@ from src.handlers.registry import HandlerRegistry
 from src.handlers.event_bus import EventBus
 
 class MockHandler(Handler):
-    def __init__(self, trigger: HandlerTrigger, context: dict):
-        super().__init__(trigger, context)
+    def __init__(self):
+        super().__init__()
         self.handled = False
         
-    def handle(self) -> None:
+    async def handle(self) -> None:
         self.handled = True
     
     @classmethod
@@ -37,21 +37,23 @@ def test_register_handler(handler_registry):
     event_bus = EventBus()
     assert len(event_bus._handlers.get(HandlerTrigger.NEW_PROJECT, [])) == 1
 
-def test_trigger_event(handler_registry):
+@pytest.mark.asyncio
+async def test_trigger_event(handler_registry):
     """Test event triggering"""
     handler_registry.register_handler(MockHandler)
     
     context = {'project': Mock()}
     event_bus = EventBus()
-    event_bus.trigger_event(HandlerTrigger.NEW_PROJECT, context)
+    await event_bus.trigger_event(HandlerTrigger.NEW_PROJECT, context)
     
     # Event should have been handled
     assert len(event_bus._handlers.get(HandlerTrigger.NEW_PROJECT, [])) == 1
 
-def test_trigger_event_with_error(handler_registry):
+@pytest.mark.asyncio
+async def test_trigger_event_with_error(handler_registry):
     """Test error handling during event triggering"""
     class ErrorHandler(MockHandler):
-        def handle(self) -> None:
+        async def handle(self) -> None:
             raise Exception("Test error")
     
     handler_registry.register_handler(ErrorHandler)
@@ -59,4 +61,4 @@ def test_trigger_event_with_error(handler_registry):
     
     # Should not raise exception
     event_bus = EventBus()
-    event_bus.trigger_event(HandlerTrigger.NEW_PROJECT, context)
+    await event_bus.trigger_event(HandlerTrigger.NEW_PROJECT, context)
