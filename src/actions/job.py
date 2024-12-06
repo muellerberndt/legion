@@ -37,9 +37,10 @@ Example:
     )
     
     def __init__(self):
+        BaseAction.__init__(self)
         self.logger = Logger("ListJobsAction")
         
-    async def execute(self) -> str:
+    async def execute(self, *args, **kwargs) -> str:
         """Execute the list jobs action"""
         try:
             job_manager = JobManager()

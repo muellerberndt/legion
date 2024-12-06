@@ -38,7 +38,9 @@ def mock_session():
 def mock_query_builder():
     with patch('src.actions.db_query.QueryBuilder') as mock:
         builder = Mock()
-        builder.build_query = Mock(return_value="SELECT * FROM assets")
+        # Mock the builder to return itself for method chaining
+        builder.from_spec = Mock(return_value=builder)
+        builder.build = Mock(return_value="SELECT * FROM assets")
         mock.return_value = builder
         yield builder
 
@@ -71,21 +73,20 @@ async def test_db_query_action(mock_session, mock_query_builder):
     assert result_data["results"][0]["asset_type"] == "github_file"
     
     # Test invalid JSON
-    mock_query_builder.build_query.side_effect = ValueError("Invalid query")
     result = await action.execute("invalid json")
     result_data = json.loads(result)
     assert "error" in result_data
     assert "Invalid JSON" in result_data["error"]
     
     # Test invalid query spec
+    mock_query_builder.from_spec.side_effect = ValueError("Invalid query")
     result = await action.execute('{"invalid": "spec"}')
     result_data = json.loads(result)
     assert "error" in result_data
     assert "Invalid query" in result_data["error"]
     
     # Reset mock for remaining tests
-    mock_query_builder.build_query.side_effect = None
-    mock_query_builder.build_query.return_value = "SELECT * FROM assets"
+    mock_query_builder.from_spec.side_effect = None
     
     # Test query with no results
     mock_session.execute.return_value.all.return_value = []

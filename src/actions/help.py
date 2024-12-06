@@ -17,9 +17,9 @@ Without arguments, shows a list of all available commands.
 With a command name, shows detailed help for that command.
 
 Examples:
-<code>/help</code>  # List all commands
-<code>/help search</code>  # Show help for search command
-<code>/help agent</code>  # Show help for agent command""",
+/help  # List all commands
+/help search  # Show help for search command
+/help agent  # Show help for agent command""",
         agent_hint="Use this command to learn about available commands and their usage. Without arguments it shows all commands, with an argument it shows detailed help for that command.",
         arguments=[
             ActionArgument(
@@ -31,6 +31,7 @@ Examples:
     )
     
     def __init__(self):
+        BaseAction.__init__(self)
         self.logger = Logger("HelpAction")
         
     async def execute(self, command: Optional[str] = None) -> str:
@@ -50,12 +51,12 @@ Examples:
                 
                 # Build detailed help text
                 lines = [
-                    f"<b>Command:</b> {action_spec.name}",
-                    f"<b>Description:</b> {action_spec.description}",
+                    f"Command: {action_spec.name}",
+                    f"Description: {action_spec.description}",
                     "",
                     action_spec.help_text,
                     "",
-                    "<b>Arguments:</b>"
+                    "Arguments:"
                 ]
                 
                 for arg in action_spec.arguments or []:
@@ -66,12 +67,12 @@ Examples:
                 
             else:
                 # List all available commands
-                lines = ["<b>Available Commands:</b>"]
+                lines = ["Available Commands:"]
                 
                 for name, (_, spec) in sorted(self.registry.get_actions().items()):
-                    lines.append(f"  • <code>/{name}</code>: {spec.description}")
+                    lines.append(f"  • /{name}: {spec.description}")
                     
-                lines.append("\nUse <code>/help &lt;command&gt;</code> for detailed information about a specific command.")
+                lines.append("\nUse /help <command> for detailed information about a specific command.")
                 return "\n".join(lines)
                 
         except Exception as e:

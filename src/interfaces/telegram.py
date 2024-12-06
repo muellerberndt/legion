@@ -58,16 +58,11 @@ class TelegramInterface(Interface):
                 # Parse arguments from the full message text
                 args = self._parse_command_args(update.message.text)
                 
-                # Create message object for action
-                from src.interfaces.base import Message as BaseMessage
-                action_message = BaseMessage(
-                    session_id=str(update.message.chat.id),
-                    content=command_name,
-                    arguments=args
-                )
-                
-                # Execute the action
-                result = await action_handler(action_message, *args)
+                # Execute the action with the arguments
+                if args:
+                    result = await action_handler(*args)
+                else:
+                    result = await action_handler()
                 
                 if result:
                     # Handle ActionResult objects
@@ -78,7 +73,7 @@ class TelegramInterface(Interface):
                         
                     await update.message.reply_text(
                         text=content,
-                        parse_mode='HTML'
+                        parse_mode=None  # Disable HTML parsing
                     )
             except Exception as e:
                 self.logger.error(f"Error executing command {command_name}: {e}")

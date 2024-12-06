@@ -62,20 +62,20 @@ class ActionRegistry:
         
     def create_handler(self, action_class: Type[BaseAction]) -> Callable:
         """Create handler for an action class"""
-        async def handler(message: Message, *args, **kwargs) -> str:
+        async def handler(*args, **kwargs) -> str:
             try:
                 action = action_class()
                 
                 # For semantic search, prepend "search" to the query
-                if action_class == SemanticSearchAction:
+                if action_class == SemanticSearchAction and args:
                     query = f"search {' '.join(args)}"
                     result = await action.execute(query)
                 else:
                     # For other actions, pass args as is
-                    if len(args) == 1:
-                        result = await action.execute(args[0])
-                    else:
+                    if args:
                         result = await action.execute(*args)
+                    else:
+                        result = await action.execute(**kwargs)
                     
                 if isinstance(result, ActionResult):
                     return result.content

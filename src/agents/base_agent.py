@@ -199,7 +199,16 @@ Always maintain a security-focused perspective in your analysis."""
             raise ValueError(f"Action not found for command: {command_name}")
             
         handler, _ = action
-        return await handler(cleaned_params)
+        
+        # Log command execution
+        self.logger.info(f"Executing command: {command_name}", extra_data=params)
+        
+        # For single-parameter commands, pass the value directly
+        if len(cleaned_params) == 1 and list(cleaned_params.keys())[0] == command.required_params[0]:
+            return await handler(list(cleaned_params.values())[0])
+            
+        # For multi-parameter commands, pass as kwargs
+        return await handler(**cleaned_params)
             
     async def chat_completion(self, messages: List[Dict[str, str]], temperature: float = 0.7) -> str:
         """Get a chat completion from OpenAI

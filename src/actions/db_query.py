@@ -3,6 +3,7 @@ from src.backend.query_builder import QueryBuilder
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 import json
+from datetime import datetime
 
 class DBQueryAction(BaseAction, DBSessionMixin):
     """Action to execute database queries"""
@@ -40,6 +41,18 @@ Examples:
         self.logger = Logger("DBQueryAction")
         self.query_builder = QueryBuilder()
         
+    def _serialize_value(self, value):
+        """Helper to serialize values to JSON-compatible format"""
+        if isinstance(value, datetime):
+            return value.isoformat()
+        elif hasattr(value, "__table__"):
+            # Handle SQLAlchemy models
+            model_dict = {}
+            for column in value.__table__.columns:
+                model_dict[column.name] = self._serialize_value(getattr(value, column.name))
+            return model_dict
+        return value
+        
     async def execute(self, query_spec: str) -> str:
         """Execute a database query
         
@@ -60,7 +73,7 @@ Examples:
                 
             # Build and execute query
             try:
-                query = self.query_builder.build_query(spec)
+                query = self.query_builder.from_spec(spec).build()
                 results = []
                 
                 with self.get_session() as session:
@@ -68,8 +81,15 @@ Examples:
                     for row in rows:
                         # Convert row to dict
                         result = {}
-                        for key in row._mapping.keys():
-                            result[key] = row._mapping.get(key)
+                        if hasattr(row, "_mapping"):
+                            # Handle SQLAlchemy Result rows
+                            for key in row._mapping.keys():
+                                value = row._mapping.get(key)
+                                result[key] = self._serialize_value(value)
+                        else:
+                            # Handle SQLAlchemy model objects directly
+                            for column in row.__table__.columns:
+                                result[column.name] = self._serialize_value(getattr(row, column.name))
                         results.append(result)
                         
                 # Limit results and add note if truncated
