@@ -13,6 +13,21 @@ class HandlerTrigger(Enum):
     GITHUB_PUSH = auto()
     GITHUB_PR = auto()
     BLOCKCHAIN_EVENT = auto()
+    
+    @classmethod
+    def register_custom_trigger(cls, trigger_name: str) -> 'HandlerTrigger':
+        """Register a custom trigger if it doesn't exist yet"""
+        try:
+            return cls[trigger_name]
+        except KeyError:
+            # Dynamically add new trigger
+            new_trigger = len(cls.__members__) + 1
+            cls._value2member_map_[new_trigger] = new_member = object.__new__(cls)
+            new_member._name_ = trigger_name
+            new_member._value_ = new_trigger
+            cls._member_names_.append(trigger_name)
+            cls._member_map_[trigger_name] = new_member
+            return new_member
 
 class Handler(ABC):
     """Base class for event handlers"""

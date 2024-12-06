@@ -1,6 +1,7 @@
 # Customization Guide
 
 R4dar is designed to be highly extensible. This guide explains how to customize and extend its functionality.
+See [extensions/example](../extensions/example) for an example extension.
 
 ## Extension System
 
@@ -25,56 +26,211 @@ active_extensions:
   - my-extension
 ```
 
+## Core concepts
+
+1. **Actions** are the basic building blocks of R4dar's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents.
+2. **Jobs** handle long-running tasks and maintain state. The can be managed by users via the bot interface.
+3. **Agents** are AI-powered components that process messages and perform complex tasks.
+4. **Watchers** monitor external sources for events and trigger handlers when events occur.
+5. **Handlers** process events emitted by watchers.
+
 ## 1. Actions
 
-Actions are commands that can be executed via the Telegram interface. They provide interactive functionality to users.
+Actions are the building blocks of R4dar's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents.
+
+### Action Specification
+
+Before creating an action, you need to define its specification using `ActionSpec`. This tells R4dar:
+- How the action appears in Telegram
+- What parameters it accepts
+- When agents should use it
+- How to display help text
+
+```python
+from src.actions.base import ActionSpec, ActionArgument
+
+# Define the action's specification
+spec = ActionSpec(
+    name="my_action",          # Command name: /my_action
+    description="Performs custom analysis",  # Short description for /help
+    help_text="""Detailed help text explaining usage.
+    
+Usage:
+/my_action <argument>
+
+This command performs custom analysis on the provided argument.
+Results are returned as formatted text.
+
+Examples:
+/my_action example
+/my_action --verbose example""",  # Shown with /help my_action
+    agent_hint="Use this command when you need to perform custom analysis on user input",  # Helps agents decide when to use this command
+    arguments=[
+        ActionArgument(
+            name="arg1",
+            description="First argument",
+            required=True
+        ),
+        ActionArgument(
+            name="verbose",
+            description="Enable verbose output",
+            required=False
+        )
+    ]
+)
+```
 
 ### Creating an Action
 
+Actions must inherit from `BaseAction` and implement the `execute` method:
+
 ```python
-# extensions/your-username/my_custom_action.py
-from src.actions.base import BaseAction, ActionSpec, ActionArgument
+from src.actions.base import BaseAction
+from src.jobs.manager import JobManager
 from src.util.logging import Logger
 
 class MyCustomAction(BaseAction):
     """Custom action implementation"""
     
-    # This spec defines how the action appears in Telegram
-    spec = ActionSpec(
-        name="my_action",  # Command name: /my_action
-        description="Performs custom analysis",  # Shows in /help
-        help_text="Usage: /my_action <argument>",  # Detailed help text
-        arguments=[
-            ActionArgument(
-                name="arg1",p
-                description="First argument",
-                required=True
-            )
-        ]
-    )
+    # Use the spec we defined above
+    spec = spec
     
     def __init__(self):
         self.logger = Logger("MyCustomAction")
     
-    async def execute(self, arg1: str) -> str:
+    async def execute(self, arg1: str, verbose: bool = False) -> str:
         """Execute the action
         
         This method is called when a user invokes the command in Telegram.
         The return value is sent as a message to the user.
         """
         try:
-            result = f"Processed {arg1}"
-            return result
+            # Create and submit a job
+            job = MyCustomJob(arg1, verbose=verbose)
+            job_manager = JobManager()
+            job_id = await job_manager.submit_job(job)
+            
+            return f"Started analysis (Job ID: {job_id})"
+            
         except Exception as e:
             self.logger.error(f"Error in action: {str(e)}")
             return "An error occurred"
 ```
 
+### Creating Jobs
+
+Since actions are blocking, your action should launch a job if it needs to perform long-running tasks. Users can manage jobs using:
+
+The job system provides:
+- State management (`PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`)
+- Result storage via `JobResult`
+- Automatic persistence to database
+- Job cancellation support
+- Progress tracking
+- Output collection
+
+Jobs inherit from the `Job` class:
+
+```python
+from src.jobs.base import Job, JobType, JobResult, JobStatus
+from typing import Optional
+
+class MyCustomJob(Job):
+    """Job for handling custom analysis"""
+    
+    def __init__(self, target: str, verbose: bool = False):
+        super().__init__(JobType.ANALYSIS)  # Set appropriate job type
+        self.target = target
+        self.verbose = verbose
+        self.result: Optional[JobResult] = None
+    
+    async def start(self) -> None:
+        """Start the job - this is called by the job manager"""
+        try:
+            self.status = JobStatus.RUNNING
+            
+            # Perform the actual work
+            analysis_result = await self._analyze(self.target)
+            
+            # Store results
+            self.result = JobResult(
+                success=True,
+                message="Analysis completed successfully",
+                data=analysis_result  # Store structured data
+            )
+            if self.verbose:
+                self.result.add_output("Detailed analysis log...")
+                
+            self.status = JobStatus.COMPLETED
+            
+        except Exception as e:
+            self.status = JobStatus.FAILED
+            self.result = JobResult(
+                success=False,
+                message=f"Analysis failed: {str(e)}"
+            )
+            raise
+            
+    async def stop(self) -> None:
+        """Stop the job - called when user cancels"""
+        self.status = JobStatus.CANCELLED
+        
+    async def _analyze(self, target: str) -> dict:
+        """Internal method to perform analysis"""
+        # Your analysis logic here
+        return {"result": "analysis output"}
+```
+
+`JobResult` can store:
+- Success/failure status
+- User-friendly message
+- Structured data (as JSON)
+- Multiple text outputs (for logging/progress
+
+Users can check job status and results using:
+- `/job <job_id>` - Get current status and results
+- `/jobs` - List recent jobs
+- `/stop <job_id>` - Cancel a running job
+
+### Launching Jobs from Actions
+
+Jobs can be launched from actions using the `JobManager`. Here's how:
+
+```python
+from src.jobs.manager import JobManager
+
+class MyAction(BaseAction):
+    async def execute(self, *args, **kwargs) -> str:
+        try:
+            # Create job instance
+            job = MyCustomJob(*args, **kwargs)
+            
+            # Get job manager instance
+            job_manager = JobManager()
+            
+            # Submit job and get ID
+            job_id = await job_manager.submit_job(job)
+            
+            # Return job ID to user
+            return f"Started job with ID: {job_id}"
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start job: {str(e)}")
+            return f"Error starting job: {str(e)}"
+```
+
+The job manager handles:
+- Job persistence to database
+- State management
+- Concurrent execution
+- Error handling
+- Result storage
+
 The action will automatically appear in Telegram as `/my_action` and be included in `/help`.
 
 ## 2. Agents
 
-Agents are AI-powered components that can process messages and perform complex tasks. They don't have a predefined interface 
+Agents are AI-powered components that can process messages and perform complex tasks. They don't have a predefined interface - just inherit from `BaseAgent` and specify the actions the agent can use in the constructor.
 
 ### Creating an Agent
 
@@ -130,7 +286,48 @@ You don't need to implement `_get_available_commands` - just pass the command na
 
 ## 3. Watchers
 
-Watchers monitor external data sources and generate events when changes are detected.
+Watchers monitor external sources for events. To activate a watcher:
+
+1. Enable watchers in `config.yml`:
+```yaml
+watchers:
+  enabled: true  # Master switch for all watchers
+  webhook_port: 8080  # Port for webhook server
+  active_watchers:  # List of watchers to enable
+    - github       # Monitor GitHub repositories
+    - quicknode    # Monitor blockchain events
+    - immunefi     # Monitor bounty program updates
+```
+
+2. Configure watcher-specific settings:
+```yaml
+github:
+  api_token: "your-github-token"  # For GitHub watcher
+  poll_interval: 300  # Check every 5 minutes
+
+quicknode:
+  endpoints:
+    - name: "mainnet"
+      url: "your-quicknode-endpoint"
+      chain_id: 1
+```
+
+3. Start the server with watchers enabled:
+```bash
+./r4dar.sh server start
+```
+
+The server will:
+- Load all enabled watchers
+- Start the webhook server if needed
+- Begin monitoring configured sources
+
+Available watchers:
+- `github`: Monitors repositories for changes
+- `quicknode`: Monitors blockchain events
+- `immunefi`: Monitors bounty program updates
+
+Each watcher can trigger handlers when events occur. See the Handlers section for details on processing these events.
 
 ### Creating a Watcher
 
@@ -182,7 +379,56 @@ class MyCustomWatcher(BaseWatcher):
 
 ## 4. Event Handlers
 
-Event handlers process events emitted by watchers and perform actions in response.
+Event handlers process events emitted by watchers and perform actions in response. They inherit from `Handler` and implement the `handle` method. Each handler must subscribe to specific event types via the `get_triggers` method.
+
+### Built-in Handler Triggers
+
+The framework provides several built-in triggers that handlers can listen for:
+
+- `NEW_PROJECT`: When a new project is added
+- `PROJECT_UPDATE`: When a project is updated
+- `PROJECT_REMOVE`: When a project is removed
+- `NEW_ASSET`: When a new asset is added
+- `ASSET_UPDATE`: When an asset is updated
+- `ASSET_REMOVE`: When an asset is removed
+- `GITHUB_PUSH`: When a GitHub push event is received
+- `GITHUB_PR`: When a GitHub pull request event is received
+- `BLOCKCHAIN_EVENT`: When a blockchain event is detected
+
+### Custom Handler Triggers
+
+You can define custom triggers for your extensions without modifying the base framework. Here's how:
+
+1. Register your custom trigger:
+```python
+from src.handlers.base import HandlerTrigger
+
+# Register a custom trigger
+MY_CUSTOM_TRIGGER = HandlerTrigger.register_custom_trigger("MY_CUSTOM_TRIGGER")
+```
+
+2. Use the custom trigger in your handler:
+```python
+class MyCustomHandler(Handler):
+    @classmethod
+    def get_triggers(cls) -> list[HandlerTrigger]:
+        return [MY_CUSTOM_TRIGGER]
+    
+    async def handle(self) -> None:
+        # Handle the custom event
+        pass
+```
+
+3. Emit the custom trigger from your watcher or other components:
+```python
+from src.handlers.event_bus import EventBus
+
+event_bus = EventBus()
+await event_bus.trigger_event(MY_CUSTOM_TRIGGER, {
+    "source": "my_custom_watcher",
+    "data": my_event_data
+})
+```
 
 ### Creating an Event Handler
 
@@ -226,6 +472,10 @@ class MyCustomHandler(Handler):
         # Your event processing logic here
         await self.telegram.send_message("Event processed!")
 ```
+
+### Custom event types
+
+If you need to define custom event types, you can do so by creating a new class that inherits from `HandlerTrigger` and registering it in `Handler.get_triggers`.
 
 ## Best Practices
 

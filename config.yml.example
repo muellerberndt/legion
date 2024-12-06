@@ -1,50 +1,49 @@
+# Data directory for storing downloaded files (required)
+data_dir: "~/.r4dar/data"
+extensions_dir: "./extensions"
+active_extensions:
+  - examples
+
 # Database configuration (required)
 database:
   host: localhost
   port: 5432
-  name: r4dar
-  user: postgres
+  name: r4dar_db
+  user: r4dar
   password: your_password_here
 
-# Data directory for storing downloaded files (required)
-data_dir: ./data
-
-# API configurations (optional)
+# API Keys configuration (required)
 api:
-  # Etherscan API configuration for fetching verified contracts
+  # Required for fetching and verifying Ethereum contracts
   etherscan:
-    key: "your-etherscan-api-key"
-  arbiscan:
-    key: "your-arbiscan-api-key"
-  polygonscan:
-    key: "your-polygonscan-api-key"
+    key: "your-etherscan-api-key"  # Get from https://etherscan.io/apis
+  # Required for Base network contract verification
   basescan:
-    key: "your-basescan-api-key"
-  bscscan:
-    key: "your-bscscan-api-key"
+    key: "your-basescan-api-key"  # Get from https://basescan.org/apis
+  # Required for AI analysis features
   openai:
-    key: "your-openai-api-key"
-    model: "gpt-4-1106-preview"
+    key: "your-openai-api-key"  # Get from https://platform.openai.com/api-keys
+    model: "gpt-4"  # Available models: gpt-4, gpt-4-1106-preview
 
-# GitHub configuration (optional)
-github:
-  api_token: your_github_token_here  # Optional - higher rate limits with token
-  poll_interval: 300  # How often to check for updates (seconds)
-
-# Watcher configuration (optional)
-watchers:
-  enabled: false  # Set to true to enable watchers
-  webhook_port: 8080  # Port for webhook server
-  active_watchers:  # List of watchers to enable
-    # - github  # Uncomment to enable GitHub watcher
-    # - immunefi  # Uncomment to enable Immunefi watcher
-
-# Extension configuration
-extensions_dir: extensions  # Directory containing extensions
-active_extensions:  # List of extension directories to load
-  - examples  # Example extensions directory with handlers and other components
-  # - muellerberndt  # Example user-specific extensions
-
+# Telegram settings (required)
 telegram:
+  # Get from @BotFather on Telegram
   bot_token: "your-bot-token"
-  chat_id: "your-chat-id" 
+  # Get by sending /start to @userinfobot
+  chat_id: "your-chat-id"
+
+# GitHub configuration (required for GitHub watcher)
+github:
+  # Create at https://github.com/settings/tokens
+  # Required scopes: repo, read:org
+  api_token: "your-github-pat-token"
+
+# Watcher configuration
+watchers:
+  enabled: true  # Enable watchers
+  webhook_port: 8080  # Port for webhook server
+  active_watchers: []  # List of watchers to enable
+  # Available watchers:
+  # - github     # Monitor GitHub repositories
+  # - quicknode  # Monitor blockchain events
+  # - immunefi   # Monitor bounty program updates

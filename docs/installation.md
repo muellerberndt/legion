@@ -62,70 +62,45 @@ GRANT ALL PRIVILEGES ON DATABASE r4dar_db TO r4dar;
 
 ## R4dar Installation
 
-1. Install the package:
+1. Clone the repository and install requirements:
 
 ```bash
-pip install r4dar
+git clone git@github.com:muellerberndt/r4dar.git
+cd r4dar
+pip install -r requirements.txt
 ```
 
-2. Create configuration file:
+2. Create the configuration file:
 
 ```bash
 cp config.example.yml config.yml
 ```
 
 3. Configure the following in `config.yml`:
+   - Telegram bot token and chat ID
    - Database credentials
    - API keys:
-     - Etherscan API key (for contract monitoring)
-     - OpenAI API key (for AI analysis)
-   - Telegram bot token (optional, for notifications)
+     - Block explorer API keys
+     - OpenAI API key
+     - GitHub API token (for GitHub watcher)
+     - Quicknode API key
 
-4. Initialize the application:
-
-```bash
-r4dar initialize
-```
-
-## Verification
-
-To verify your installation:
-
-1. Start the service:
+4. Initialize the database:
 
 ```bash
-r4dar start
+./r4dar.sh init-db
+./r4dar.sh initial-sync
 ```
 
-2. Check the logs for any errors:
+5. Start the service:
 
 ```bash
-r4dar logs
+r4dar --log-level INFO server start
 ```
 
-3. If using Telegram, send a test message to your bot:
+You should now be able to interact with the bot on Telegram using the following commands:
 
 ```bash
 /start
-/help
+/help0
 ```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Database Connection Failed**
-   - Check PostgreSQL service is running
-   - Verify database credentials in config.yml
-   - Ensure pgvector extension is installed
-
-2. **API Key Issues**
-   - Verify API keys are correctly set in config.yml
-   - Check API key permissions and quotas
-
-3. **Telegram Bot Not Responding**
-   - Ensure bot token is correct
-   - Check if bot is properly initialized with BotFather
-   - Verify network connectivity
-
-For more help, please [open an issue](https://github.com/yourusername/r4dar/issues) on our GitHub repository. 
