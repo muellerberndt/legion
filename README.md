@@ -1,84 +1,62 @@
-# R4dar - Your friendly web3 bug hunting assistant
+# R4dar 🎯
 
-A tool to monitor and analyze security programs and bug bounties.
+R4dar is an AI agent-driven bot that does the dirty work for web3 bug hunters. Its goal is to optimize the use of the researchers' time by automatically correlating , and acting on, ata from various sources. It keeps track of assets associated with ongoing bounty programs and contests, monitors on-chain and off-chain events related to those assets, and spawns agents that perform tasks on behalf of the user.
 
-## Setup
+The r4dar framework is designed to be easily extensible in order to allow users to keep their bug hunting alpha private.
 
-### 1. Install Dependencies
+## Features
 
-#### macOS
-```bash
-# Install PostgreSQL and pgvector
-brew install postgresql
-brew install pgvector
+Built-in features include:
 
-# Start PostgreSQL service
-brew services start postgresql
-```
+- LLM-powered Telegram chatbot interface
+- Indexing assets from bounty platforms and contests (atm Immunefi only)
+- Various search options for bounties & associated assets
+- Automated diff when in-scope assets are updated on Immunefi or Github
+- Automated monitoring of Github repos in scope
+- On-chain monitoring via Quicknode integration
 
-#### Ubuntu/Debian
-```bash
-# Install PostgreSQL
-sudo apt update
-sudo apt install postgresql postgresql-contrib
-
-# Install pgvector
-sudo apt install postgresql-common
-git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git
-cd pgvector
-make
-sudo make install
-
-# Start PostgreSQL service
-sudo systemctl start postgresql
-```
-
-### 2. Create Database
+## Quick Start
 
 ```bash
-# Connect to PostgreSQL
-psql postgres
+# Install R4dar
+pip install r4dar
 
-# Create database and user
-CREATE USER r4dar WITH PASSWORD 'your-password';
-CREATE DATABASE r4dar_db OWNER r4dar;
-\c r4dar_db
+# Set up configuration
+cp config.example.yml config.yml
+# Edit config.yml with your settings
 
-# Enable vector extension
-CREATE EXTENSION vector;
-
-# Grant privileges
-GRANT ALL PRIVILEGES ON DATABASE r4dar_db TO r4dar;
-\q
+# Start the service
+r4dar start
 ```
 
-### 3. Configure Application
+## Documentation
 
-1. Copy the example config:g
-```bash
-cp config.yml.example config.yml
+- [Installation Guide](docs/installation.md) - Detailed setup instructions
+- [Customization Guide](docs/customization.md) - How to extend R4dar with custom handlers and analyzers
+- [API Reference](docs/api.md) - API documentation for developers
+
+## Example Usage
+
+```python
+# Example custom handler for monitoring specific contracts
+from r4dar.handlers import Handler
+from r4dar.triggers import BlockchainEvent
+
+class CustomContractHandler(Handler):
+    def get_triggers(self):
+        return [BlockchainEvent]
+        
+    async def handle(self):
+        # Your custom logic here
+        pass
 ```
 
-2. Edit `config.yml` and set:
-   - Database credentials
-   - API keys (Etherscan, OpenAI)
-   - Telegram bot settings (optional)
+## Contributing
 
-### 4. Initialize Application
+Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and contribute to the project.
 
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
+## License
 
-# Initialize database schema and sync initial data
-python -m src.cli.main initialize
-```
-
-## Usage
-
-Start the server with Telegram interface:
-```bash
-python -m src.cli.main server start
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 
