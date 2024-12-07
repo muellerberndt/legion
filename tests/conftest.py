@@ -1,6 +1,14 @@
 import pytest
 from src.config.config import Config
 import os
+from unittest.mock import patch
+
+
+@pytest.fixture(autouse=True)
+def mock_database():
+    """Mock database initialization for all tests."""
+    with patch("src.backend.database.Database.__init__", return_value=None):
+        yield
 
 
 @pytest.fixture(autouse=True)
