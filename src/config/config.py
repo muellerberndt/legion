@@ -1,126 +1,139 @@
-import yaml
 import os
-import logging
-from typing import Dict, Any
-from jsonschema import validate
-from src.config.schema import CONFIG_SCHEMA
+import yaml
+from typing import Dict, Any, Optional
+import re
 
 
 class Config:
+    """Configuration singleton"""
+
     _instance = None
     _config = None
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            cls._instance = super(Config, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
-        if self._config is None:
-            self.logger = logging.getLogger("Config")
+        if Config._config is None:
             self.load_config()
 
-    def load_config(self):
-        """Load configuration from main config file."""
-        # Load main config
+    def load_config(self) -> None:
+        """Load configuration from file and environment"""
+        # Load base config
         config_path = os.getenv("R4DAR_CONFIG", "config.yml")
+        if not os.path.exists(config_path):
+            config_path = "config.yml.example"
+
         try:
             with open(config_path, "r") as f:
-                try:
-                    self._config = yaml.safe_load(f)
-                except yaml.YAMLError as e:
-                    raise ValueError(f"Invalid configuration: YAML parsing error - {str(e)}")
+                Config._config = yaml.safe_load(f) or {}
+        except Exception:
+            Config._config = {}
 
-            if not isinstance(self._config, dict):
-                raise ValueError("Invalid configuration: Root must be a dictionary")
+        # Ensure base structure exists
+        if "llm" not in Config._config:
+            Config._config["llm"] = {}
+        if "openai" not in Config._config["llm"]:
+            Config._config["llm"]["openai"] = {}
 
-            # Validate against schema
-            try:
-                validate(instance=self._config, schema=CONFIG_SCHEMA)
-            except Exception as e:
-                raise ValueError(f"Invalid configuration: Schema validation failed - {str(e)}")
+        # Handle Fly.io DATABASE_URL if present
+        database_url = os.getenv("DATABASE_URL")
+        if database_url:
+            # Parse DATABASE_URL into our config format
+            # Format: postgres://user:pass@host:5432/dbname
+            match = re.match(r"postgres://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)", database_url)
+            if match:
+                user, password, host, port, dbname = match.groups()
+                Config._config["database"] = {
+                    "host": host,
+                    "port": int(port),
+                    "name": dbname,
+                    "user": user,
+                    "password": password,
+                }
 
-        except FileNotFoundError:
-            raise ValueError(f"Invalid configuration: Config file not found at {config_path}")
-        except Exception as e:
-            if not isinstance(e, ValueError):
-                raise ValueError(f"Invalid configuration: {str(e)}")
-            raise
+        # Override with environment-specific values
+        env_overrides = {
+            "data_dir": os.getenv("R4DAR_DATA_DIR"),
+            "telegram": {
+                "bot_token": os.getenv("R4DAR_BOT_TOKEN"),
+                "chat_id": os.getenv("R4DAR_CHAT_ID"),
+            },
+            "database": {
+                "host": os.getenv("R4DAR_DB_HOST"),
+                "port": os.getenv("R4DAR_DB_PORT"),
+                "name": os.getenv("R4DAR_DB_NAME"),
+                "user": os.getenv("R4DAR_DB_USER"),
+                "password": os.getenv("R4DAR_DB_PASSWORD"),
+            },
+            "block_explorers": {
+                "etherscan": {"key": os.getenv("R4DAR_ETHERSCAN_KEY")},
+                "basescan": {"key": os.getenv("R4DAR_BASESCAN_KEY")},
+                "arbiscan": {"key": os.getenv("R4DAR_ARBISCAN_KEY")},
+                "polygonscan": {"key": os.getenv("R4DAR_POLYGONSCAN_KEY")},
+                "bscscan": {"key": os.getenv("R4DAR_BSCSCAN_KEY")},
+            },
+            "llm": {
+                "openai": {
+                    "key": os.getenv("R4DAR_OPENAI_KEY"),
+                    "model": os.getenv("R4DAR_OPENAI_MODEL"),
+                }
+            },
+        }
 
-    def load_extension_config(self, config_path: str) -> None:
-        """Load and merge configuration from an extension's config file.
+        # Update config with non-None environment values
+        self._deep_update(Config._config, env_overrides)
 
-        Args:
-            config_path: Path to the extension's config file
-        """
-        try:
-            with open(config_path, "r") as f:
-                try:
-                    extension_config = yaml.safe_load(f)
-                except yaml.YAMLError as e:
-                    self.logger.error(f"Failed to parse extension config {config_path}: {e}")
-                    return
-
-                if extension_config:
-                    self.logger.info(f"Loaded extension configuration from {config_path}")
-                    # Deep merge extension config into main config
-                    self._merge_configs(self._config, extension_config)
-
-        except Exception as e:
-            self.logger.error(f"Failed to load extension config {config_path}: {e}")
-
-    def _merge_configs(self, base: Dict, update: Dict) -> None:
-        """Deep merge update dict into base dict."""
+    def _deep_update(self, base: Dict, update: Dict) -> None:
+        """Recursively update a dictionary with non-None values"""
         for key, value in update.items():
-            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                # Recursively merge nested dicts
-                self._merge_configs(base[key], value)
-            else:
-                # Update or add new value
+            if value is None:
+                continue
+            if isinstance(value, dict):
+                if key not in base:
+                    base[key] = {}
+                if isinstance(base[key], dict):
+                    self._deep_update(base[key], value)
+            elif value is not None:  # Only update if value is not None
                 base[key] = value
 
-    @property
-    def database_url(self) -> str:
-        """Get database connection URL."""
-        db = self._config["database"]
-        return f"postgresql://{db['user']}:{db['password']}@{db['host']}:{db['port']}/{db['name']}"
-
-    @property
-    def etherscan_api_key(self) -> str:
-        """Get Etherscan API key."""
-        return self._config.get("block_explorers", {}).get("etherscan", {}).get("key")
-
     def get(self, key: str, default: Any = None) -> Any:
-        """Get a configuration value."""
-        if "." in key:
-            # Handle nested keys
-            keys = key.split(".")
-            value = self._config
-            for k in keys:
-                if isinstance(value, dict):
-                    value = value.get(k)
-                else:
-                    value = None
-                if value is None:
-                    break
-            return value if value is not None else default
+        """Get a configuration value"""
+        if not Config._config:
+            return default
 
-        return self._config.get(key, default)
+        # Handle nested keys
+        current = Config._config
+        for part in key.split("."):
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return default
+        return current
 
     @property
     def data_dir(self) -> str:
-        """Get the data directory path"""
-        return self._config.get("data_dir")
+        return self.get("data_dir", "./data")
 
     @property
-    def openai_api_key(self) -> str:
-        """Get OpenAI API key"""
-        key = self._config.get("llm", {}).get("openai", {}).get("key")
-        if not key:
-            raise ValueError("OpenAI API key not configured")
-        return key
+    def database_url(self) -> Optional[str]:
+        # First check for Fly.io DATABASE_URL
+        fly_url = os.getenv("DATABASE_URL")
+        if fly_url:
+            return fly_url
+
+        # Fall back to constructed URL from config
+        db = self.get("database", {})
+        if all(key in db for key in ["host", "port", "name", "user", "password"]):
+            return f"postgresql://{db['user']}:{db['password']}@{db['host']}:{db['port']}/{db['name']}"
+        return None
+
+    @property
+    def openai_api_key(self) -> Optional[str]:
+        return self.get("llm.openai.key")
 
     @property
     def openai_model(self) -> str:
-        """Get OpenAI model to use"""
-        return self._config.get("llm", {}).get("openai", {}).get("model", "gpt-4")
+        return self.get("llm.openai.model", "gpt-4")

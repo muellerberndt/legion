@@ -7,3 +7,4 @@ data/
 extensions/*
 !extensions/examples/
 tests/extensions
+fly.toml

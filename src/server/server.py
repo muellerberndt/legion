@@ -12,6 +12,8 @@ from src.actions.registry import ActionRegistry
 from src.server.extension_loader import ExtensionLoader
 from src.handlers.github_events import GitHubEventHandler
 import os
+from aiohttp import web
+import yaml
 
 
 class Server:
@@ -28,6 +30,34 @@ class Server:
         self.interfaces: Dict[str, Interface] = {}
         self.shutdown_event = asyncio.Event()
         self.shutting_down = False
+        self.app = web.Application()
+        self.setup_routes()
+
+    def setup_routes(self):
+        self.app.router.add_get("/health", self.health_check)
+
+    async def health_check(self, request):
+        """Health check endpoint for Render"""
+        return web.Response(text="OK", status=200)
+
+    def load_config(self):
+        """Load configuration from environment or file"""
+        if config_env := os.getenv("R4DAR_CONFIG_YAML"):
+            # Load config from environment variable
+            try:
+                return yaml.safe_load(config_env)
+            except Exception as e:
+                self.logger.error(f"Failed to load config from environment: {e}")
+                return None
+        elif os.path.exists("config.yml"):
+            # Load config from file
+            try:
+                with open("config.yml", "r") as f:
+                    return yaml.safe_load(f)
+            except Exception as e:
+                self.logger.error(f"Failed to load config file: {e}")
+                return None
+        return None
 
     async def start(self, enabled_interfaces: List[str] = ["telegram"]) -> None:
         """Start the server and all its components"""

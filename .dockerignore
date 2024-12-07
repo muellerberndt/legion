@@ -1,0 +1,15 @@
+# flyctl launch added from .gitignore
+**/.DS_Store
+**/config.yml
+**/_pycache__
+**/*.py[cod]
+**/*$py.class
+**/data
+**/extensions/*
+!**/extensions/examples
+**/tests/extensions
+
+# flyctl launch added from .pytest_cache/.gitignore
+# Created by pytest automatically.
+.pytest_cache/**/*
+fly.toml

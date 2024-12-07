@@ -1,5 +1,5 @@
 sqlalchemy
-psycopg2
+psycopg2-binary
 aiohttp
 click
 pytest
@@ -11,9 +11,10 @@ requests==2.32.3
 pyyaml
 openai>=1.0.0
 pgvector
-semgrep
 aiofiles
 chardet
 alembic
 asyncpg
 greenlet
+telegram
+python-telegram-bot

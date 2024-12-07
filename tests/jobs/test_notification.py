@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from src.jobs.notification import JobNotifier
 from src.services.notification_service import NotificationService
 from datetime import datetime, timedelta
@@ -28,7 +28,10 @@ def notifier():
     # Reset singleton state
     JobNotifier._instance = None
     JobNotifier._notification_services = []
-    return JobNotifier()
+    # Mock TelegramService
+    with patch("src.jobs.notification.TelegramService") as mock_telegram:
+        mock_telegram.get_instance.return_value = AsyncMock()
+        return JobNotifier()
 
 
 @pytest.mark.asyncio
