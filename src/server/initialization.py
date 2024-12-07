@@ -2,6 +2,7 @@ from sqlalchemy import text
 from src.backend.database import db, Base, DBSessionMixin
 from src.util.logging import Logger, LogConfig
 from src.indexers.immunefi import ImmunefiIndexer
+from src.config import Config
 
 
 class Initializer(DBSessionMixin):
@@ -16,6 +17,11 @@ class Initializer(DBSessionMixin):
         try:
             # Temporarily disable database logging
             LogConfig.set_db_logging(False)
+
+            # Skip actual DB initialization in test mode
+            if Config().is_test_mode():
+                LogConfig.set_db_logging(True)
+                return "Database initialization skipped in test mode"
 
             if db.is_initialized():
                 LogConfig.set_db_logging(True)
