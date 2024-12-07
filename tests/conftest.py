@@ -1,4 +1,5 @@
-# Mock database before any imports
+# isort: skip_file
+# flake8: noqa: E402, F401
 import os
 from unittest.mock import patch, Mock
 import pytest
@@ -34,8 +35,6 @@ patch("src.backend.database.Database.__init__", return_value=None).start()
 patch("src.backend.database.db", mock_db).start()
 
 # Now import the rest
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 from src.config.config import Config
 
 
