@@ -1,6 +1,6 @@
 import os
 import yaml
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import re
 
 
@@ -31,6 +31,16 @@ class Config:
                 Config._config = yaml.safe_load(f) or {}
         except Exception:
             Config._config = {}
+
+        # Handle watchers from environment
+        watchers_env = os.getenv("R4DAR_WATCHERS")
+        if watchers_env:
+            Config._config["watchers"] = [w.strip() for w in watchers_env.split(",")]
+
+        # Handle extensions from environment
+        extensions_env = os.getenv("R4DAR_EXTENSIONS")
+        if extensions_env:
+            Config._config["active_extensions"] = [e.strip() for e in extensions_env.split(",")]
 
         # Ensure base structure exists
         if "llm" not in Config._config:
@@ -137,3 +147,7 @@ class Config:
     @property
     def openai_model(self) -> str:
         return self.get("llm.openai.model", "gpt-4")
+
+    @property
+    def watchers(self) -> List[str]:
+        return self.get("watchers", [])

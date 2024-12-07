@@ -120,30 +120,6 @@ async def server_start(ctx, interface):
 )
 @click.pass_context
 @async_command
-async def init_db(ctx, log_level):
-    """Initialize the database"""
-    logger = ctx.obj["logger"]
-
-    try:
-        # Set logging level
-        LogConfig.set_log_level(log_level)
-        initializer = Initializer()
-        result = await initializer.init_db()
-        logger.info(result)
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
-        raise
-
-
-@cli.command()
-@click.option(
-    "--log-level",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
-    default="INFO",
-    help="Set logging level",
-)
-@click.pass_context
-@async_command
 async def initial_sync(ctx, log_level):
     """Perform initial data sync"""
     logger = ctx.obj["logger"]

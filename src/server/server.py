@@ -1,168 +1,100 @@
 import asyncio
-import signal
-from typing import Dict, List
-from src.jobs.manager import JobManager
-from src.watchers.manager import WatcherManager
-from src.handlers.registry import HandlerRegistry
-from src.util.logging import Logger
-from src.config.config import Config
-from src.interfaces.base import Interface
+from typing import List
 from src.interfaces.telegram import TelegramInterface
+from src.interfaces.base import Interface
+from src.util.logging import Logger
+from src.server.initialization import Initializer
+from src.watchers.manager import WatcherManager
+from src.services.telegram import TelegramService
 from src.actions.registry import ActionRegistry
-from src.server.extension_loader import ExtensionLoader
-from src.handlers.github_events import GitHubEventHandler
-import os
-from aiohttp import web
-import yaml
+from src.jobs.manager import JobManager
 
 
 class Server:
-    """Main server that manages jobs, watchers, and handlers"""
+    """Main server class that coordinates all components"""
 
-    def __init__(self):
-        self.logger = Logger("Server")
-        self.config = Config()
-        self.job_manager = JobManager()
-        self.watcher_manager = WatcherManager()
-        self.handler_registry = HandlerRegistry()
-        self.action_registry = ActionRegistry()
-        self.extension_loader = ExtensionLoader()
-        self.interfaces: Dict[str, Interface] = {}
-        self.shutdown_event = asyncio.Event()
-        self.shutting_down = False
-        self.app = web.Application()
-        self.setup_routes()
-
-    def setup_routes(self):
-        self.app.router.add_get("/health", self.health_check)
-
-    async def health_check(self, request):
-        """Health check endpoint for Render"""
-        return web.Response(text="OK", status=200)
-
-    def load_config(self):
-        """Load configuration from environment or file"""
-        if config_env := os.getenv("R4DAR_CONFIG_YAML"):
-            # Load config from environment variable
-            try:
-                return yaml.safe_load(config_env)
-            except Exception as e:
-                self.logger.error(f"Failed to load config from environment: {e}")
-                return None
-        elif os.path.exists("config.yml"):
-            # Load config from file
-            try:
-                with open("config.yml", "r") as f:
-                    return yaml.safe_load(f)
-            except Exception as e:
-                self.logger.error(f"Failed to load config file: {e}")
-                return None
-        return None
-
-    async def start(self, enabled_interfaces: List[str] = ["telegram"]) -> None:
-        """Start the server and all its components"""
-        self.logger.info("Starting server...")
-
-        # Register signal handlers
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self.handle_signal(s)))
+    @classmethod
+    async def run(cls, interfaces: List[str]) -> None:
+        """Run the server with specified interfaces"""
+        logger = Logger("Server")
+        initializer = Initializer()
+        watcher_manager = WatcherManager()
+        action_registry = ActionRegistry()
+        job_manager = JobManager()
 
         try:
+            print("Starting server...")  # Direct console output
+            logger.info("Starting server initialization...")
+
+            # Initialize database
+            await initializer.init_db()
+
             # Start job manager first
-            self.logger.info("Starting job manager...")
-            await self.job_manager.start()
+            logger.info("Starting job manager...")
+            await job_manager.start()
 
-            # Register built-in handlers
-            self.logger.info("Registering built-in handlers...")
-            self.handler_registry.register_handler(GitHubEventHandler)
-
-            # Load and register extensions
-            self.extension_loader.load_extensions()
-            self.extension_loader.register_components()
+            # Start watchers
+            await watcher_manager.start()
 
             # Initialize interfaces
-            if "telegram" in enabled_interfaces:
-                telegram = TelegramInterface(action_registry=self.action_registry)
-                self.interfaces["telegram"] = telegram
-                await telegram.start()
+            interface_instances: List[Interface] = []
+            for interface_name in interfaces:
+                if interface_name == "telegram":
+                    interface = TelegramInterface(action_registry=action_registry)
+                    interface_instances.append(interface)
+                else:
+                    logger.warning(f"Unknown interface: {interface_name}")
 
-                # Register TelegramService for job notifications
-                from src.jobs.notification import JobNotifier
+            # Start interfaces
+            for interface in interface_instances:
+                await interface.start()
 
-                telegram_service = telegram.service
-                JobNotifier.register_service(telegram_service)
+            logger.info("Server started successfully")
+            print("Server is running...")  # Direct console output
 
-                self.logger.info("Started Telegram interface")
-
-            # Start watcher manager if enabled
-            if self.config.get("watchers", {}).get("enabled", True):
-                await self.watcher_manager.start()
-
-            self.logger.info("Server started successfully")
+            # Keep server running
+            try:
+                while True:
+                    await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                logger.info("Server shutdown initiated")
+                raise
 
         except Exception as e:
-            self.logger.error(f"Server error: {e}")
+            logger.error(f"Server error: {str(e)}")
+            print(f"Server error: {str(e)}")  # Direct console output
             raise
 
-    async def handle_signal(self, sig: signal.Signals) -> None:
-        """Handle shutdown signals"""
-        if self.shutting_down:
-            self.logger.warning("Received another shutdown signal, forcing immediate shutdown")
-            # Force exit
-            os._exit(1)
-            return
+        finally:
+            # Cleanup
+            logger.info("Cleaning up server resources...")
+            print("Cleaning up server resources...")  # Direct console output
 
-        self.logger.info(f"Received signal {sig.name}, initiating shutdown...")
-        await self.shutdown()
-        # Force exit after shutdown attempt
-        os._exit(0)
-
-    async def shutdown(self) -> None:
-        """Gracefully shutdown the server"""
-        if self.shutting_down:
-            return
-
-        self.shutting_down = True
-        self.logger.info("Shutting down server...")
-
-        try:
-            # Stop interfaces first
-            for name, interface in self.interfaces.items():
-                self.logger.info(f"Stopping interface: {name}")
+            # Stop interfaces
+            for interface in interface_instances:
                 try:
-                    await asyncio.wait_for(interface.stop(), timeout=2.0)
-                except asyncio.TimeoutError:
-                    self.logger.error(f"Timeout stopping interface: {name}")
+                    await interface.stop()
+                except Exception as e:
+                    logger.error(f"Error stopping interface: {e}")
+
+            # Stop job manager
+            try:
+                await job_manager.stop()
+            except Exception as e:
+                logger.error(f"Error stopping job manager: {e}")
 
             # Stop watchers
             try:
-                await asyncio.wait_for(self.watcher_manager.stop(), timeout=2.0)
-            except asyncio.TimeoutError:
-                self.logger.error("Timeout stopping watcher manager")
+                await watcher_manager.stop()
+            except Exception as e:
+                logger.error(f"Error stopping watchers: {e}")
 
-            # Stop job manager last
+            # Cleanup Telegram service
             try:
-                await asyncio.wait_for(self.job_manager.stop(), timeout=2.0)
-            except asyncio.TimeoutError:
-                self.logger.error("Timeout stopping job manager")
+                telegram_service = TelegramService.get_instance()
+                await telegram_service.cleanup()
+            except Exception as e:
+                logger.error(f"Error cleaning up Telegram service: {e}")
 
-        except Exception as e:
-            self.logger.error(f"Error during shutdown: {e}")
-
-    @classmethod
-    async def run(cls, enabled_interfaces: List[str] = ["telegram"]) -> None:
-        """Run the server"""
-        server = cls()
-        try:
-            await server.start(enabled_interfaces)
-            # Keep the server running
-            while True:
-                try:
-                    await asyncio.sleep(1)
-                except asyncio.CancelledError:
-                    break
-        except KeyboardInterrupt:
-            await server.shutdown()
-        finally:
-            await server.shutdown()
+            logger.info("Server shutdown complete")
+            print("Server shutdown complete")  # Direct console output

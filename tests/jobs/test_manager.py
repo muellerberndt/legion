@@ -63,6 +63,12 @@ def mock_session():
         session = Mock()
         session.__enter__ = Mock(return_value=session)
         session.__exit__ = Mock(return_value=None)
+
+        # Set up query chain to return None by default
+        query_mock = Mock()
+        query_mock.filter.return_value.first.return_value = None
+        session.query.return_value = query_mock
+
         mock.return_value = session
         yield session
 
@@ -79,14 +85,21 @@ def mock_notifier():
 @pytest.mark.asyncio
 async def test_submit_job_basic(job_manager, mock_job, mock_session, mock_notifier):
     """Test basic job submission"""
+    # Reset mock counts
+    mock_session.add.reset_mock()
+    mock_session.commit.reset_mock()
+
+    # Submit job
     job_id = await job_manager.submit_job(mock_job)
+
+    # Verify database record was created and updated
+    assert mock_session.add.call_count == 2  # Expect two calls - initial creation and completion update
+    assert mock_session.commit.call_count == 2  # Expect two commits as well
+
+    # Verify job registration
     assert job_id == mock_job.id
     assert mock_job.id in job_manager._jobs
     assert mock_job.id in job_manager._tasks
-
-    # Verify database record was created
-    mock_session.add.assert_called_once()
-    mock_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -252,14 +265,15 @@ async def test_job_result_handling(job_manager, mock_job, mock_session, mock_not
     mock_job.result.outputs = outputs
     mock_job.result.data = data
 
-    # Mock the JobRecord creation
-    def mock_add(record):
-        record.outputs = outputs
-        record.data = data
-        return record
+    # Create a mock record that will be returned by query
+    mock_record = Mock(spec=JobRecord)
+    mock_record.outputs = []
+    mock_record.data = {}
 
-    mock_session.add.side_effect = mock_add
+    # Configure query to return our mock record
+    mock_session.query.return_value.filter.return_value.first.return_value = mock_record
 
+    # Submit job
     job_id = await job_manager.submit_job(mock_job)
 
     # Wait for job to complete
@@ -267,11 +281,9 @@ async def test_job_result_handling(job_manager, mock_job, mock_session, mock_not
     await task
 
     # Verify result was saved to database
+    assert mock_record.outputs == outputs
+    assert mock_record.data == data
     mock_session.commit.assert_called()
-    job_record = mock_session.add.call_args[0][0]
-    assert isinstance(job_record, JobRecord)
-    assert job_record.outputs == outputs
-    assert job_record.data == data
 
 
 @pytest.mark.asyncio
