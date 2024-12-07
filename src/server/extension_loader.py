@@ -1,6 +1,7 @@
 import importlib
 import os
 import sys
+import inspect
 from typing import Dict, Type, List
 from src.actions.base import BaseAction
 from src.handlers.base import Handler
@@ -48,6 +49,40 @@ class ExtensionLoader:
                     
         return modules
         
+    def _discover_components(self, module) -> Dict[str, List]:
+        """Discover components in a module by inspecting all classes.
+        
+        Args:
+            module: The module to inspect
+            
+        Returns:
+            Dictionary containing discovered components by type
+        """
+        components = {
+            'actions': {},
+            'handlers': [],
+            'watchers': [],
+            'agents': []
+        }
+        
+        # Get all members that are classes
+        for name, member in inspect.getmembers(module, inspect.isclass):
+            # Skip imported classes (only process classes defined in this module)
+            if member.__module__ != module.__name__:
+                continue
+                
+            # Check each type and add to appropriate list
+            if issubclass(member, BaseAction) and member != BaseAction:
+                components['actions'][member.spec.name] = member
+            elif issubclass(member, Handler) and member != Handler:
+                components['handlers'].append(member)
+            elif issubclass(member, WatcherJob) and member != WatcherJob:
+                components['watchers'].append(member)
+            elif issubclass(member, BaseAgent) and member != BaseAgent:
+                components['agents'].append(member)
+                
+        return components
+        
     def load_extensions(self) -> None:
         """Load all extensions from the extensions directory"""
         extensions_dir = self.config.get("extensions_dir", "extensions")
@@ -92,21 +127,14 @@ class ExtensionLoader:
                 for module_path in modules:
                     try:
                         module = importlib.import_module(module_path)
+                        components = self._discover_components(module)
                         
-                        # Look for components in the module's __all__
-                        if hasattr(module, '__all__'):
-                            for item_name in module.__all__:
-                                item = getattr(module, item_name)
-                                if isinstance(item, type):
-                                    if issubclass(item, BaseAction) and item != BaseAction:
-                                        self.extensions[extension_dir]['actions'][item.spec.name] = item
-                                    elif issubclass(item, Handler) and item != Handler:
-                                        self.extensions[extension_dir]['handlers'].append(item)
-                                    elif issubclass(item, WatcherJob) and item != WatcherJob:
-                                        self.extensions[extension_dir]['watchers'].append(item)
-                                    elif issubclass(item, BaseAgent) and item != BaseAgent:
-                                        self.extensions[extension_dir]['agents'].append(item)
-                                        
+                        # Merge components into extension data
+                        self.extensions[extension_dir]['actions'].update(components['actions'])
+                        self.extensions[extension_dir]['handlers'].extend(components['handlers'])
+                        self.extensions[extension_dir]['watchers'].extend(components['watchers'])
+                        self.extensions[extension_dir]['agents'].extend(components['agents'])
+                        
                     except Exception as e:
                         self.logger.error(f"Failed to load module {module_path}: {e}")
                         

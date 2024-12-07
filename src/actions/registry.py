@@ -3,15 +3,8 @@ from src.actions.base import BaseAction, ActionSpec
 from src.util.logging import Logger
 from src.interfaces.base import Message
 from src.actions.result import ActionResult
-
-# Import all actions
-from src.actions.help import HelpAction
+from src.actions.builtin import get_builtin_actions
 from src.actions.semantic_search import SemanticSearchAction
-from src.actions.embeddings import EmbeddingsAction
-from src.actions.file_search import FileSearchAction
-from src.actions.db_query import DBQueryAction
-from src.actions.job import ListJobsAction, GetJobResultAction, StopJobAction
-from src.actions.sync.immunefi import ImmunefiSyncAction
 
 class ActionRegistry:
     """Registry for all available actions"""
@@ -33,21 +26,10 @@ class ActionRegistry:
         
         self.logger.info("Initializing action registry")
         
-        # Register core actions
-        self.register_action("help", HelpAction)
-        self.register_action("db_query", DBQueryAction)
-        self.register_action("embeddings", EmbeddingsAction)
-        self.register_action("files", FileSearchAction)
-        self.register_action("semantic", SemanticSearchAction)
-        
-        # Register job management actions
-        self.register_action("jobs", ListJobsAction)
-        self.register_action("job", GetJobResultAction)
-        self.register_action("stop", StopJobAction)
-        
-        # Register sync actions
-        self.register_action("sync", ImmunefiSyncAction)
-        
+        # Register built-in actions
+        for action_class in get_builtin_actions():
+            self.register_action(action_class.spec.name, action_class)
+            self.logger.info(f"Registered built-in action: {action_class.spec.name}")
         
         self._initialized = True
         

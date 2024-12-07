@@ -20,13 +20,13 @@ class HandlerTrigger(Enum):
         try:
             return cls[trigger_name]
         except KeyError:
-            # Dynamically add new trigger
-            new_trigger = len(cls.__members__) + 1
-            cls._value2member_map_[new_trigger] = new_member = object.__new__(cls)
+            # Create a new enum member
+            value = len(cls.__members__) + 1
+            new_member = object.__new__(cls)
+            new_member._value_ = value
             new_member._name_ = trigger_name
-            new_member._value_ = new_trigger
-            cls._member_names_.append(trigger_name)
-            cls._member_map_[trigger_name] = new_member
+            cls._value2member_map_[value] = new_member
+            cls.__members__[trigger_name] = new_member
             return new_member
 
 class Handler(ABC):

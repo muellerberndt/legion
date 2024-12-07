@@ -98,18 +98,26 @@ class ImmunefiIndexer:
                                 
                         # Trigger event for asset removal if not in initialize mode
                         if not self.initialize_mode and self.handler_registry:
-                            self.handler_registry.trigger_event(
-                                HandlerTrigger.ASSET_UPDATE,
+                            await self.handler_registry.trigger_event(
+                                HandlerTrigger.ASSET_REMOVE,
                                 {
                                     'asset': asset,
-                                    'old_revision': asset.extra_data.get('revision'),
-                                    'new_revision': None,
-                                    'removed': True
+                                    'project': project
                                 }
                             )
                             
                         # Delete asset from database
                         self.session.delete(asset)
+                    
+                    # Trigger project removal event if not in initialize mode
+                    if not self.initialize_mode and self.handler_registry:
+                        await self.handler_registry.trigger_event(
+                            HandlerTrigger.PROJECT_REMOVE,
+                            {
+                                'project': project,
+                                'removed': True
+                            }
+                        )
                     
                     # Delete project from database
                     self.session.delete(project)
@@ -135,45 +143,52 @@ class ImmunefiIndexer:
         current_asset_urls = {asset['url'] for asset in bounty_data.get('assets', []) if asset.get('url')}
         self.logger.info(f"Current asset URLs: {current_asset_urls}")
         
+        # Collect all keywords from various fields
+        keywords = set()
+        
+        # Add ecosystem items
+        if bounty_data.get('ecosystem'):
+            keywords.update(bounty_data['ecosystem'])
+            
+        # Add product types
+        if bounty_data.get('productType'):
+            keywords.update(bounty_data['productType'])
+            
+        # Add program types
+        if bounty_data.get('programType'):
+            keywords.update(bounty_data['programType'])
+            
+        # Add project types
+        if bounty_data.get('projectType'):
+            keywords.update(bounty_data['projectType'])
+            
+        # Add languages
+        if bounty_data.get('language'):
+            keywords.update(bounty_data['language'])
+            
+        # Add features
+        if bounty_data.get('features'):
+            keywords.update(bounty_data['features'])
+        
         if not existing_project:
             self.logger.info("Creating new project")
-            # Collect all keywords from various fields
-            keywords = set()
-            
-            # Add ecosystem items
-            if bounty_data.get('ecosystem'):
-                keywords.update(bounty_data['ecosystem'])
-                
-            # Add product types
-            if bounty_data.get('productType'):
-                keywords.update(bounty_data['productType'])
-                
-            # Add program types
-            if bounty_data.get('programType'):
-                keywords.update(bounty_data['programType'])
-                
-            # Add project types
-            if bounty_data.get('projectType'):
-                keywords.update(bounty_data['projectType'])
-                
-            # Add languages
-            if bounty_data.get('language'):
-                keywords.update(bounty_data['language'])
-                
-            # Add features
-            if bounty_data.get('features'):
-                keywords.update(bounty_data['features'])
-            
             new_project = Project(
                 name=bounty_data['project'],
-                description=bounty_data['description'],
+                description=bounty_data.get('description', ''),
                 project_type="bounty",
                 project_source="immunefi",
                 keywords=list(keywords),  # Convert set to list for JSON storage
                 extra_data={
                     'assets': bounty_data.get('assets', []),
                     'launchDate': bounty_data.get('launchDate'),
-                    'updatedDate': bounty_data.get('updatedDate')
+                    'updatedDate': bounty_data.get('updatedDate'),
+                    'maxBounty': bounty_data.get('maxBounty'),
+                    'ecosystem': bounty_data.get('ecosystem'),
+                    'productType': bounty_data.get('productType'),
+                    'programType': bounty_data.get('programType'),
+                    'projectType': bounty_data.get('projectType'),
+                    'language': bounty_data.get('language'),
+                    'features': bounty_data.get('features')
                 }
             )
             
@@ -187,7 +202,7 @@ class ImmunefiIndexer:
                 
                 # Only trigger events if not in initialize mode
                 if not self.initialize_mode and self.handler_registry:
-                    self.handler_registry.trigger_event(
+                    await self.handler_registry.trigger_event(
                         HandlerTrigger.NEW_PROJECT,
                         {'project': new_project}
                     )
@@ -197,12 +212,67 @@ class ImmunefiIndexer:
                 raise
         else:
             self.logger.info(f"Found existing project: {existing_project.name}")
-            self.logger.info(f"Project assets: {[a.id for a in existing_project.assets]}")
+            
+            # Store old project state for comparison
+            old_project = Project(
+                name=existing_project.name,
+                description=existing_project.description,
+                project_type=existing_project.project_type,
+                project_source=existing_project.project_source,
+                keywords=existing_project.keywords.copy() if existing_project.keywords else [],
+                extra_data=existing_project.extra_data.copy() if existing_project.extra_data else {},
+                assets=existing_project.assets.copy() if existing_project.assets else []
+            )
+            
+            # Check for changes
+            has_changes = False
+            
+            # Update basic fields
+            if existing_project.description != bounty_data.get('description', ''):
+                existing_project.description = bounty_data.get('description', '')
+                has_changes = True
+                
+            # Update keywords
+            if set(existing_project.keywords or []) != keywords:
+                existing_project.keywords = list(keywords)
+                has_changes = True
+                
+            # Update extra data
+            new_extra_data = {
+                'assets': bounty_data.get('assets', []),
+                'launchDate': bounty_data.get('launchDate'),
+                'updatedDate': bounty_data.get('updatedDate'),
+                'maxBounty': bounty_data.get('maxBounty'),
+                'ecosystem': bounty_data.get('ecosystem'),
+                'productType': bounty_data.get('productType'),
+                'programType': bounty_data.get('programType'),
+                'projectType': bounty_data.get('projectType'),
+                'language': bounty_data.get('language'),
+                'features': bounty_data.get('features')
+            }
+            
+            if existing_project.extra_data != new_extra_data:
+                existing_project.extra_data = new_extra_data
+                has_changes = True
+            
             # Download assets for existing project
             await self.download_assets(existing_project.id, bounty_data.get('assets', []))
             
             # Clean up out-of-scope assets
             await self.cleanup_removed_assets(existing_project, current_asset_urls)
+            
+            # Commit changes
+            self.session.commit()
+            
+            # Trigger update event if there were changes and not in initialize mode
+            if has_changes and not self.initialize_mode and self.handler_registry:
+                await self.handler_registry.trigger_event(
+                    HandlerTrigger.PROJECT_UPDATE,
+                    {
+                        'project': existing_project,
+                        'old_project': old_project
+                    }
+                )
 
     async def cleanup_removed_assets(self, project: Project, current_asset_urls: set):
         """Remove assets that are no longer in project scope"""
@@ -227,7 +297,7 @@ class ImmunefiIndexer:
                     
                     # Trigger event if not in initialize mode
                     if not self.initialize_mode and self.handler_registry:
-                        self.handler_registry.trigger_event(
+                        await self.handler_registry.trigger_event(
                             HandlerTrigger.ASSET_REMOVE,
                             {
                                 'asset': asset,
@@ -386,7 +456,7 @@ class ImmunefiIndexer:
                                 event_data['new_path'] = target_dir
                                 
                             self.logger.info(f"Triggering ASSET_UPDATE event with data: {event_data}")
-                            self.handler_registry.trigger_event(
+                            await self.handler_registry.trigger_event(
                                 HandlerTrigger.ASSET_UPDATE,
                                 event_data
                             )
@@ -396,7 +466,7 @@ class ImmunefiIndexer:
                                 await self._remove_file(old_path)
                     else:
                         self.logger.info("Triggering NEW_ASSET event")
-                        self.handler_registry.trigger_event(
+                        await self.handler_registry.trigger_event(
                             HandlerTrigger.NEW_ASSET,
                             {'asset': asset_record}
                         )
@@ -406,4 +476,6 @@ class ImmunefiIndexer:
             except Exception as e:
                 self.logger.warning(f"Error in asset processing loop for {url}: {str(e)}")
                 continue
+
+
 

@@ -1,8 +1,8 @@
 from typing import Dict, List, Type
 from src.handlers.base import Handler, HandlerTrigger
 from src.util.logging import Logger
-from src.handlers.asset_revision import AssetRevisionHandler
 from src.handlers.event_bus import EventBus
+from src.handlers.builtin import get_builtin_handlers
 
 class HandlerRegistry:
     """Registry for event handlers"""
@@ -18,8 +18,10 @@ class HandlerRegistry:
         self.logger = Logger("HandlerRegistry")
         self.event_bus = EventBus()
         
-        # Register default handlers
-        self.register_handler(AssetRevisionHandler)
+        # Register built-in handlers
+        for handler_class in get_builtin_handlers():
+            self.register_handler(handler_class)
+            self.logger.info(f"Registered built-in handler: {handler_class.__name__}")
     
     def register_handler(self, handler_class: Type[Handler]) -> None:
         """Register a handler"""
