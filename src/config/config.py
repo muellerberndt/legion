@@ -224,9 +224,17 @@ class Config:
 
     @property
     def database_url(self) -> Optional[str]:
+        """Get database URL from environment or config."""
+        # Check for DATABASE_URL environment variable first
+        db_url = os.environ.get("DATABASE_URL")
+        if db_url:
+            return db_url
+
+        # Fall back to config-based URL
         db = self.get("database", {})
         if all(key in db for key in ["host", "port", "name", "user", "password"]):
             return f"postgresql://{db['user']}:{db['password']}@{db['host']}:{db['port']}/{db['name']}"
+
         return None
 
     @property
