@@ -36,8 +36,16 @@ class Database:
             else:
                 # Fallback to config-based URL
                 db_config = config.get("database", {})
-                database_url = f"postgresql://{db_config.get('user')}:{db_config.get('password')}@{db_config.get('host')}:{db_config.get('port')}/{db_config.get('name')}"
-                async_url = f"postgresql+asyncpg://{db_config.get('user')}:{db_config.get('password')}@{db_config.get('host')}:{db_config.get('port')}/{db_config.get('name')}"
+                if not all(key in db_config and db_config[key] is not None for key in ["host", "port", "name", "user", "password"]):
+                    # Use test database URL in test mode
+                    if config._test_mode:
+                        database_url = "postgresql://test:test@localhost:5432/test_db"
+                        async_url = "postgresql+asyncpg://test:test@localhost:5432/test_db"
+                    else:
+                        raise ValueError("Database configuration is incomplete")
+                else:
+                    database_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
+                    async_url = f"postgresql+asyncpg://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
 
             # Create sync engine
             self._engine = create_engine(database_url, future=True)
