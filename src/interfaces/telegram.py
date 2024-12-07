@@ -143,7 +143,10 @@ class TelegramInterface(Interface):
 
     async def _register_handlers(self) -> None:
         """Register message handlers"""
-        # Register command handlers
+        # Register start command first
+        self.app.add_handler(CommandHandler("start", self._handle_start_command))
+
+        # Register other command handlers
         for name, (handler, spec) in self.action_registry.get_actions().items():
             self.app.add_handler(CommandHandler(name, self._create_command_handler(name, handler)))
 
@@ -194,7 +197,7 @@ class TelegramInterface(Interface):
             return
 
         try:
-            await self.app.bot.send_message(chat_id=session_id, text=content, parse_mode="HTML")
+            await self.app.bot.send_message(chat_id=session_id, text=content, parse_mode=telegram.constants.ParseMode.HTML)
         except Exception as e:
             self.logger.error(f"Failed to send message: {e}")
 
@@ -242,3 +245,8 @@ class TelegramInterface(Interface):
                 self.logger.error(f"Error in Telegram polling: {context.error}")
         except Exception as e:
             self.logger.error(f"Error in error handler: {e}")
+
+    async def _handle_start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle the /start command"""
+        welcome_message = "gm 👋\n" "How can I be of service today?"
+        await update.message.reply_text(welcome_message)

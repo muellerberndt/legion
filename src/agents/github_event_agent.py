@@ -87,7 +87,10 @@ Focus areas:
             context = [
                 f"Analyzing PR #{pr_data.get('number')} in {repo_url}",
                 f"Title: {pr_data.get('title')}",
-                f"Description: {pr_data.get('body', 'No description')}",
+                "\nPull Request Description:",
+                f"{pr_data.get('body', 'No description provided')}",
+                f"\nPR Link: {pr_data.get('html_url', 'No URL provided')}",
+                "\nStats:",
                 f"Changed files: {pr_data.get('changed_files', 0)}",
                 f"Additions: {pr_data.get('additions', 0)}",
                 f"Deletions: {pr_data.get('deletions', 0)}",
@@ -104,15 +107,14 @@ Focus areas:
                     ]
                 )
 
-            # Get AI analysis
+            # Get AI analysis with new prompt
             analysis_prompt = "\n".join(
                 [
-                    "Analyze this pull request for security implications.",
+                    "Analyze the title and description of this pull request. Your goal is to determine whether this pull request is relevant for security or not and provide a summary to the user.",
                     "Consider:",
-                    "1. What security-relevant changes are being made?",
-                    "2. Are there any potential vulnerability patterns?",
-                    "3. What specific areas should security researchers review?",
-                    "4. How does this relate to known vulnerability types?",
+                    "1. What is the purpose of this pull request?",
+                    "2. What is the scope of that bounty or contest?",
+                    "3. Would it be worth inspecting this change for potential security bugs?",
                     "\nContext:",
                     "\n".join(context),
                 ]
@@ -146,6 +148,7 @@ Focus areas:
                 f"Analyzing commit in {repo_url}",
                 f"Message: {commit_data.get('commit', {}).get('message', 'No message')}",
                 f"Author: {commit_data.get('commit', {}).get('author', {}).get('name', 'Unknown')}",
+                f"Commit Link: {commit_data.get('html_url', 'No URL provided')}",
             ]
 
             if asset_info:
@@ -159,24 +162,16 @@ Focus areas:
                     ]
                 )
 
-            # Search for similar patterns
-            similar_patterns = await self.execute_command(
-                "semantic_search", query=f"Find security issues similar to: {commit_data.get('commit', {}).get('message')}"
-            )
-
-            # Get AI analysis
+            # Get AI analysis with new prompt
             analysis_prompt = "\n".join(
                 [
-                    "Analyze this commit for security implications.",
+                    "Analyze the commit message and changes. Your goal is to determine whether this commit is relevant for security or not and provide a summary to the user.",
                     "Consider:",
-                    "1. What security-relevant changes are being made?",
-                    "2. Are there any potential vulnerability patterns?",
-                    "3. What specific areas should security researchers review?",
-                    "4. How does this relate to known vulnerability types?",
+                    "1. What is the purpose of this commit?",
+                    "2. What is the scope of that bounty or contest?",
+                    "3. Would it be worth inspecting this change for potential security bugs?",
                     "\nContext:",
                     "\n".join(context),
-                    "\nSimilar patterns found:",
-                    similar_patterns,
                 ]
             )
 

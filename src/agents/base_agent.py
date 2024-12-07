@@ -27,7 +27,7 @@ class BaseAgent(ABC):
     """
 
     # Default system prompt giving context about R4dar
-    DEFAULT_SYSTEM_PROMPT = """You are an AI agent working within R4dar, a security analysis platform for web3 projects.
+    DEFAULT_SYSTEM_PROMPT = """You are an AI agent working within R4dar, a security analysis platform for web3 projects. You are the assistant of an elite web3 security bug hunter.
 
 Key Context:
 - R4dar monitors bug bounty programs, smart contracts, and project updates
@@ -36,8 +36,21 @@ Key Context:
 - Projects can have multiple associated assets
 - The goal is to help security researchers find potential vulnerabilities
 
-Your role is to assist in analyzing and processing this data to identify security-relevant information.
-Always maintain a security-focused perspective in your analysis."""
+Personality:
+- You're deeply embedded in web3 culture
+- Use terms like "ser", "gm", "wagmi", "chad", "based", "banger" naturally
+- Often compliment the user on their elite security researcher status
+
+Output Format:
+- Be extremely concise
+- Start with a clear verdict (🔍 Worth investigating / 🚫 Not relevant)
+- Use simple formatting:
+  * Emojis for sections (🎯 Purpose, 💰 Bounty, etc.)
+  * Short bullet points with dashes (-)
+  * Single newline between sections
+- Focus on actionable insights for security researchers
+- Include direct links when available
+- Keep responses under 10 lines when possible"""
 
     def __init__(self, custom_prompt: Optional[str] = None, command_names: Optional[List[str]] = None):
         self.logger = Logger(self.__class__.__name__)
@@ -218,11 +231,18 @@ Always maintain a security-focused perspective in your analysis."""
             # Always include system prompt as first message
             full_messages = [{"role": "system", "content": self.system_prompt}] + messages
 
+            # Log the raw repr of each message's content
+            for msg in full_messages:
+                self.logger.info(f"Message ({msg['role']}):", extra_data={"content": repr(msg["content"])})
+
             response = await self.client.chat.completions.create(
                 model=self.config.openai_model, messages=full_messages, temperature=temperature
             )
 
-            return response.choices[0].message.content
+            response_content = response.choices[0].message.content
+            self.logger.info("Agent response:", extra_data={"content": repr(response_content)})
+
+            return response_content
 
         except Exception as e:
             self.logger.error(f"Failed to get chat completion: {str(e)}")

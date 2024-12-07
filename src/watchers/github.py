@@ -130,7 +130,8 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
         self.logger.info(f"Checking updates for {repo_url}")
         self.logger.debug(f"Current state: {repo}")
 
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
+        # Use interval * 2 for the cutoff time
+        cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=self.interval * 2)
 
         # Ensure cutoff time is timezone-aware
         if cutoff_time.tzinfo is None:
@@ -142,8 +143,6 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
 
         try:
             commits, prs = await asyncio.gather(commits_task, prs_task)
-            # self.logger.debug(f"Got commits: {commits}")
-            # self.logger.debug(f"Got PRs: {prs}")
         except Exception as e:
             self.logger.error(f"Failed to fetch updates for {repo_url}: {str(e)}")
             return

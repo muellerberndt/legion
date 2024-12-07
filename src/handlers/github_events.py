@@ -91,7 +91,7 @@ class GitHubEventJob(Job, DBSessionMixin):
                         f"Type: {project.project_type}",
                         "\nAsset Info:",
                         f"Type: {asset.asset_type}",
-                        f"URL: {asset.repo_url or asset.file_url or asset.explorer_url}",
+                        f"URL: {asset.source_url}",
                     ]
                 )
 
@@ -130,7 +130,7 @@ class GitHubEventJob(Job, DBSessionMixin):
                         f"Type: {project.project_type}",
                         "\nAsset Info:",
                         f"Type: {asset.asset_type}",
-                        f"URL: {asset.repo_url or asset.file_url or asset.explorer_url}",
+                        f"URL: {asset.source_url}",
                     ]
                 )
 
