@@ -2,7 +2,6 @@ from sqlalchemy import text
 from src.backend.database import db, Base, DBSessionMixin
 from src.util.logging import Logger, LogConfig
 from src.indexers.immunefi import ImmunefiIndexer
-from src.config.config import Config
 
 
 class Initializer(DBSessionMixin):
