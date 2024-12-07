@@ -5,7 +5,7 @@ See [extensions/example](../extensions/example) for an example extension.
 
 ## Extension System
 
-Extensions in R4dar are stored in the `/extensions` directory. You can organize your extensions in subdirectories:
+Extensions in r4dar are stored in the `/extensions` directory. Each extension is expected to be a directory containing Python files.
 
 ```
 /extensions
@@ -29,14 +29,14 @@ active_extensions:
 ## Core concepts
 
 1. **Actions** are the basic building blocks of R4dar's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents.
-2. **Jobs** handle long-running tasks and maintain state. The can be managed by users via the bot interface.
+2. **Jobs** handle long-running tasks and maintain state. They can be managed by users via the bot interface.
 3. **Agents** are AI-powered components that process messages and perform complex tasks.
 4. **Watchers** monitor external sources for events and trigger handlers when events occur.
 5. **Handlers** process events emitted by watchers.
 
 ## 1. Actions
 
-Actions are the basic building blocks of R4dar's functionality. Actions in registered extension automatically appear in Telegram as commands and are made available to the LLM agents.
+Actions are the basic building blocks of R4dar's functionality. Actions in registered extensions automatically appear in Telegram as commands and are made available to the LLM agents.
 
 ### Creating an Action
 
@@ -75,7 +75,9 @@ class MyCustomAction(BaseAction):
             ActionArgument(
                 name="verbose",
                 description="Enable verbose output",
-                required=False
+                required=False,
+                type=bool,  # Argument type (str, int, bool, etc.)
+                default=False  # Default value for optional arguments
             )
         ]
     )
@@ -103,6 +105,53 @@ class MyCustomAction(BaseAction):
 
 The action will be automatically discovered and registered when your extension is loaded. No additional registration code is needed.
 
+### Action Arguments
+
+Arguments define what parameters your action accepts. Each argument is defined using `ActionArgument`:
+
+```python
+ActionArgument(
+    name="arg_name",          # Name of the argument
+    description="Description", # Help text for the argument
+    required=True,            # Whether the argument is required
+    type=str,                 # Argument type (str, int, bool, float, etc.)
+    default=None,             # Default value for optional arguments
+    choices=None,             # List of valid values (optional)
+    help_text=None           # Detailed help text (optional)
+)
+```
+
+Arguments can be:
+- Required positional arguments: `arg1`
+- Optional flag arguments: `--verbose`
+- Optional value arguments: `--limit 10`
+
+The argument type determines how the input is parsed:
+- `str`: Text input (default)
+- `int`: Integer numbers
+- `float`: Decimal numbers
+- `bool`: True/False flags
+- `list`: List of values (comma-separated)
+
+### Action Results
+
+Actions can return results in two ways:
+
+1. Simple string return:
+```python
+return "Operation completed successfully"
+```
+
+2. Using `ActionResult` for more control:
+```python
+from src.actions.result import ActionResult
+
+return ActionResult(
+    content="Operation completed successfully",
+    error=None  # Optional error message
+)
+```
+
 ### Built-in Actions
 
 R4dar comes with several built-in actions:
@@ -116,10 +165,6 @@ R4dar comes with several built-in actions:
 - `sync` - Synchronize data from external sources
 
 You can find these in `src/actions/` for reference when building your own actions.
-
-### Action Arguments
-
-[... rest of the existing Actions documentation ...]
 
 ## 2. Agents
 
@@ -277,6 +322,44 @@ R4dar comes with several built-in handlers:
 - `GitHubEventHandler` - Processes GitHub webhook events
 
 You can find these in `src/handlers/` for reference when building your own handlers.
+
+### Custom Triggers
+
+In addition to the built-in triggers, you can define custom triggers for your handlers:
+
+```python
+from src.handlers.base import Handler, HandlerTrigger
+
+# Register a custom trigger
+MY_CUSTOM_TRIGGER = HandlerTrigger.register_custom_trigger("MY_CUSTOM_TRIGGER")
+
+class MyCustomHandler(Handler):
+    """Handler for custom events"""
+    
+    @classmethod
+    def get_triggers(cls) -> List[HandlerTrigger]:
+        return [MY_CUSTOM_TRIGGER]
+    
+    async def handle(self) -> None:
+        # Handle the custom event
+        pass
+
+# Emit the custom trigger from your code
+await handler_registry.trigger_event(MY_CUSTOM_TRIGGER, {
+    "data": "Custom event data"
+})
+```
+
+Built-in triggers include:
+- `HandlerTrigger.NEW_PROJECT` - New project added
+- `HandlerTrigger.PROJECT_UPDATE` - Project updated
+- `HandlerTrigger.PROJECT_REMOVE` - Project removed
+- `HandlerTrigger.NEW_ASSET` - New asset added
+- `HandlerTrigger.ASSET_UPDATE` - Asset updated
+- `HandlerTrigger.ASSET_REMOVE` - Asset removed
+- `HandlerTrigger.GITHUB_PUSH` - GitHub push event
+- `HandlerTrigger.GITHUB_PR` - GitHub pull request event
+- `HandlerTrigger.BLOCKCHAIN_EVENT` - Blockchain event
 
 ## 4. Watchers
 
