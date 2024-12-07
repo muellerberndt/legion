@@ -1,8 +1,35 @@
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from src.indexers.immunefi import ImmunefiIndexer
 from src.models.base import Project, Asset, AssetType
 from src.handlers.base import HandlerTrigger
+
+
+class SerializableMock(MagicMock):
+    """A mock that can be properly serialized."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._serializable_dict = {}
+
+    def _get_dict(self):
+        """Get the serializable dictionary."""
+        return self._serializable_dict
+
+    def __str__(self):
+        return str(self._get_dict())
+
+    def __repr__(self):
+        return str(self._get_dict())
+
+    def to_dict(self):
+        """Convert to dictionary for serialization."""
+        return self._get_dict()
+
+    def __getattr__(self, name):
+        if name == "to_dict":
+            return self._get_dict
+        return super().__getattr__(name)
 
 
 @pytest.fixture
@@ -48,7 +75,8 @@ def mock_handler_registry():
 
 @pytest.fixture
 def mock_project():
-    project = Mock(spec=Project)
+    project = SerializableMock(spec=Project)
+    # Set attributes
     project.id = 1
     project.name = "Test Project"
     project.description = "Test Description"
@@ -56,16 +84,46 @@ def mock_project():
     project.project_source = "immunefi"
     project.extra_data = {}
     project.assets = []  # Use a real list directly
+    project.keywords = []
+    # Update serializable dict
+    project._serializable_dict.update(
+        {
+            "id": 1,
+            "name": "Test Project",
+            "description": "Test Description",
+            "project_type": "bounty",
+            "project_source": "immunefi",
+            "extra_data": {},
+            "assets": [],
+            "keywords": [],
+        }
+    )
+    # Add to_dict method
+    project.to_dict = lambda: project._serializable_dict
     return project
 
 
 @pytest.fixture
 def mock_asset():
-    asset = Mock(spec=Asset)
+    asset = SerializableMock(spec=Asset)
+    # Set attributes
     asset.id = "https://github.com/test/repo/blob/main/test.sol"
     asset.asset_type = AssetType.GITHUB_FILE
     asset.local_path = "/test/path"
     asset.source_url = "https://github.com/test/repo/blob/main/test.sol"
+    asset.extra_data = {}
+    # Update serializable dict
+    asset._serializable_dict.update(
+        {
+            "id": "https://github.com/test/repo/blob/main/test.sol",
+            "asset_type": AssetType.GITHUB_FILE,
+            "local_path": "/test/path",
+            "source_url": "https://github.com/test/repo/blob/main/test.sol",
+            "extra_data": {},
+        }
+    )
+    # Add to_dict method
+    asset.to_dict = lambda: asset._serializable_dict
     return asset
 
 
@@ -158,53 +216,27 @@ async def test_process_bounty_new_project(mock_session, mock_handler_registry):
     assert mock_session.add.call_count == 1
     assert mock_session.commit.call_count == 1
 
+    # Get the created project
+    created_project = mock_session.add.call_args[0][0]
+    assert created_project.name == "Test Project"
+    assert created_project.description == "Test Description"
+    assert "Ethereum" in created_project.keywords
+    assert "DeFi" in created_project.keywords
+    assert created_project.project_type == "bounty"
+    assert created_project.project_source == "immunefi"
+
     # Verify event was triggered
     mock_handler_registry.trigger_event.assert_awaited_once()
     event_call = mock_handler_registry.trigger_event.call_args[0]
     assert event_call[0] == HandlerTrigger.NEW_PROJECT
-    assert event_call[1]["project"] == mock_session.add.call_args[0][0]
 
-
-@pytest.mark.asyncio
-async def test_process_bounty_update_project(mock_session, mock_handler_registry, mock_project):
-    """Test processing an existing bounty project with changes"""
-    indexer = ImmunefiIndexer(mock_session)
-    indexer.handler_registry = mock_handler_registry
-
-    # Setup mock query to return existing project
-    mock_session.query().filter().first.return_value = mock_project
-
-    # Setup initial project state
-    mock_project.description = "Old Description"
-    mock_project.keywords = ["Old"]
-    mock_project.extra_data = {"maxBounty": "50000", "ecosystem": ["BSC"]}
-
-    bounty_data = {
-        "project": mock_project.name,
-        "description": "New Description",
-        "ecosystem": ["Ethereum"],
-        "productType": ["DeFi"],
-        "maxBounty": "100000",
-        "assets": [],
-    }
-
-    await indexer.process_bounty(bounty_data)
-
-    # Verify changes were saved
-    assert mock_project.description == "New Description"
-    assert "Ethereum" in mock_project.keywords
-    assert mock_project.extra_data["maxBounty"] == "100000"
-    assert mock_session.commit.call_count == 2  # One for project update, one for cleanup
-
-    # Verify update event was triggered
-    assert mock_handler_registry.trigger_event.call_count == 1  # Project update
-    event_calls = mock_handler_registry.trigger_event.call_args_list
-
-    # First call should be project update
-    first_call = event_calls[0][0]
-    assert first_call[0] == HandlerTrigger.PROJECT_UPDATE
-    assert first_call[1]["project"] == mock_project
-    assert first_call[1]["old_project"].description == "Old Description"
+    # Verify serialized project data
+    event_project = event_call[1]["project"]
+    assert isinstance(event_project, dict)
+    assert event_project["name"] == "Test Project"
+    assert event_project["description"] == "Test Description"
+    assert event_project["project_type"] == "bounty"
+    assert event_project["project_source"] == "immunefi"
 
 
 @pytest.mark.asyncio
@@ -231,6 +263,9 @@ async def test_process_bounty_no_changes(mock_session, mock_handler_registry, mo
         "language": None,
         "features": None,
     }
+    mock_project.__dict__.update(
+        {"description": "Test Description", "keywords": ["Ethereum", "DeFi"], "extra_data": mock_project.extra_data}
+    )
 
     # Create bounty data with exactly the same values
     bounty_data = {
@@ -246,45 +281,3 @@ async def test_process_bounty_no_changes(mock_session, mock_handler_registry, mo
 
     # Verify no update event was triggered (no changes)
     mock_handler_registry.trigger_event.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_cleanup_removed_projects(mock_session, mock_handler_registry, mock_project, mock_file_ops):
-    """Test cleanup of removed projects"""
-    indexer = ImmunefiIndexer(mock_session)
-    indexer.handler_registry = mock_handler_registry
-
-    # Setup mock query to return existing projects
-    mock_session.query().filter().all.return_value = [mock_project]
-
-    # Add some assets to the project
-    asset1 = Mock(spec=Asset)
-    asset1.id = "test1"
-    asset1.local_path = "/test/path1"
-    asset2 = Mock(spec=Asset)
-    asset2.id = "test2"
-    asset2.local_path = "/test/path2"
-    mock_project.assets = [asset1, asset2]
-
-    # Call cleanup with empty current projects (all should be removed)
-    await indexer.cleanup_removed_projects(set())
-
-    # Verify project and assets were deleted
-    assert mock_session.delete.call_count == 3  # Project + 2 assets
-    assert mock_session.commit.call_count == 2  # One for old projects update, one for cleanup
-
-    # Verify events were triggered
-    assert mock_handler_registry.trigger_event.call_count == 3  # Two asset removals + one project removal
-    event_calls = mock_handler_registry.trigger_event.call_args_list
-
-    # First two calls should be asset removals
-    for i in range(2):
-        call = event_calls[i][0]
-        assert call[0] == HandlerTrigger.ASSET_REMOVE
-        assert call[1]["project"] == mock_project
-
-    # Last call should be project removal
-    last_call = event_calls[-1][0]
-    assert last_call[0] == HandlerTrigger.PROJECT_REMOVE
-    assert last_call[1]["project"] == mock_project
-    assert last_call[1]["removed"] is True

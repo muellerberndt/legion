@@ -3,6 +3,8 @@ from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime, timezone, timedelta
 from src.watchers.github import GitHubWatcher
 from src.util.logging import Logger
+from src.jobs.watcher import WatcherJob
+from src.backend.database import DBSessionMixin
 
 logger = Logger("TestGitHubWatcher")
 
@@ -49,14 +51,14 @@ async def mock_db_session():
 async def watcher(mock_session, mock_db_session):
     """Create a GitHub watcher instance"""
     with (
-        patch("src.config.config.Config") as mock_config,
+        patch("src.watchers.github.Config") as MockConfig,
         patch("src.backend.database.DBSessionMixin.get_async_session") as mock_get_session,
         patch("aiohttp.ClientSession", return_value=mock_session),
     ):
-        # Mock config
-        config = Mock()
-        config.get.return_value = {"poll_interval": 300, "api_token": "test-token"}  # 5 minutes  # Optional token
-        mock_config.return_value = config
+        # Create a mock instance
+        mock_config = Mock()
+        mock_config.get.return_value = {"poll_interval": 300, "api_token": "test-token"}
+        MockConfig.return_value = mock_config
 
         # Create a mock context manager
         cm = AsyncMock()
@@ -66,6 +68,9 @@ async def watcher(mock_session, mock_db_session):
 
         # Create watcher and initialize it
         watcher = GitHubWatcher()
+        # Initialize parent classes manually since we're not using super()
+        WatcherJob.__init__(watcher, "github", 300)
+        DBSessionMixin.__init__(watcher)
 
         # Mock the handler registry's trigger_event method
         watcher.handler_registry.trigger_event = AsyncMock()

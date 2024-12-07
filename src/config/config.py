@@ -1,7 +1,182 @@
 import os
+import json
 import yaml
-from typing import Dict, Any, Optional, List
-import re
+from typing import Any, Dict, List, Optional
+from .schema import CONFIG_SCHEMA
+import logging
+
+
+def _get_nested_value(config: Dict[str, Any], path: str) -> Any:
+    """Get a nested value from a dictionary using dot notation."""
+    keys = path.split(".")
+    value = config
+    for key in keys:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+        if value is None:
+            return None
+    return value
+
+
+def _set_nested_value(config: Dict[str, Any], path: str, value: Any) -> None:
+    """Set a nested value in a dictionary using dot notation."""
+    keys = path.split(".")
+    current = config
+    for key in keys[:-1]:
+        if not isinstance(current, dict):
+            current = {}
+        if key not in current:
+            current[key] = {}
+        current = current[key]
+    if not isinstance(current, dict):
+        current = {}
+    current[keys[-1]] = value
+
+
+def _convert_value(value: str, value_type: str) -> Any:
+    """Convert string value to the specified type."""
+    if value_type == "bool":
+        return value.lower() in ("true", "1", "yes", "y")
+    elif value_type == "int":
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
+    elif value_type == "list":
+        if not value:
+            return []
+        return [item.strip() for item in value.split(",")]
+    return value
+
+
+def _get_schema_type(path: str) -> str:
+    """Get the type of a field from the schema."""
+    current = CONFIG_SCHEMA["properties"]
+    for part in path.split("."):
+        if part in current:
+            if "type" in current[part]:
+                schema_type = current[part]["type"]
+                if schema_type == "integer":
+                    return "int"
+                elif schema_type == "boolean":
+                    return "bool"
+                elif schema_type == "array":
+                    return "list"
+                return "string"
+            current = current[part].get("properties", {})
+    return "string"
+
+
+def load_config(config_path: str, test_mode: bool = False) -> Dict[str, Any]:
+    """Load configuration from file and environment"""
+    logger = logging.getLogger("Config")
+
+    # Start with default config
+    config = {
+        "data_dir": "./data",
+        "block_explorers": {
+            "etherscan": {"key": None, "base_url": "https://api.etherscan.io/api"},
+            "basescan": {"key": None, "base_url": "https://api.basescan.org/api"},
+            "arbiscan": {"key": None, "base_url": "https://api.arbiscan.io/api"},
+            "polygonscan": {"key": None, "base_url": "https://api.polygonscan.com/api"},
+            "bscscan": {"key": None, "base_url": "https://api.bscscan.com/api"},
+        },
+        "llm": {"openai": {"key": None, "model": "gpt-4"}},
+        "watchers": {"active_watchers": []},
+        "telegram": {"bot_token": None, "chat_id": None},
+        "github": {},
+        "extensions_dir": "./extensions",
+        "active_extensions": [],
+    }
+
+    # Load from file if it exists
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            content = f.read()
+            try:
+                loaded = yaml.safe_load(content)
+                if loaded is not None:
+                    # Update nested dictionaries instead of replacing them
+                    for key, value in loaded.items():
+                        if isinstance(value, dict) and key in config and isinstance(config[key], dict):
+                            config[key].update(value)
+                        else:
+                            config[key] = value
+            except yaml.YAMLError:
+                try:
+                    loaded = json.loads(content)
+                    # Update nested dictionaries instead of replacing them
+                    for key, value in loaded.items():
+                        if isinstance(value, dict) and key in config and isinstance(config[key], dict):
+                            config[key].update(value)
+                        else:
+                            config[key] = value
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Failed to parse config file as YAML or JSON: {e}")
+
+    # Load from environment variables
+    logger.info("Loading environment variables...")
+    for config_path, env_info in ENV_MAPPINGS.items():
+        env_var = env_info if isinstance(env_info, str) else env_info["env"]
+        env_type = env_info.get("type") if isinstance(env_info, dict) else None
+
+        # Log the environment variable we're looking for
+        value = os.environ.get(env_var)
+        logger.info(f"Checking {env_var}: {'present' if value else 'missing'}")
+
+        if value is not None:
+            # Convert value based on type
+            if env_type == "bool":
+                value = value.lower() in ("true", "1", "yes", "on")
+            elif env_type == "int":
+                try:
+                    value = int(value)
+                except ValueError:
+                    logger.warning(f"Failed to convert {env_var} value to int: {value}")
+                    continue
+            elif env_type == "list":
+                value = [item.strip() for item in value.split(",") if item.strip()]
+
+            # Update config at the specified path
+            current = config
+            *path_parts, final_key = config_path.split(".")
+
+            # Ensure all parent paths exist
+            for part in path_parts:
+                if not isinstance(current, dict):
+                    current = {}
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+
+            # Ensure the final container is a dictionary if needed
+            if path_parts:  # Only if we're dealing with a nested path
+                if not isinstance(current, dict):
+                    current = {}
+
+            current[final_key] = value
+
+    # Ensure block_explorers structure is complete
+    if "block_explorers" not in config:
+        config["block_explorers"] = {}
+
+    for explorer in ["etherscan", "basescan", "arbiscan", "polygonscan", "bscscan"]:
+        if explorer not in config["block_explorers"]:
+            config["block_explorers"][explorer] = {"key": None}
+        elif not isinstance(config["block_explorers"][explorer], dict):
+            config["block_explorers"][explorer] = {"key": None}
+        elif "key" not in config["block_explorers"][explorer]:
+            config["block_explorers"][explorer]["key"] = None
+
+    # Log final block explorer config
+    logger.info("Final block explorer configuration:")
+    if isinstance(config.get("block_explorers"), dict):
+        for explorer, data in config["block_explorers"].items():
+            key_status = "present" if data.get("key") else "missing"
+            logger.info(f"{explorer}: API key {key_status}")
+
+    return config
 
 
 class Config:
@@ -9,119 +184,39 @@ class Config:
 
     _instance = None
     _config = None
+    _test_mode = False
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(Config, cls).__new__(cls)
+            cls._instance.initialize()
         return cls._instance
 
-    def __init__(self):
-        if Config._config is None:
+    def initialize(self):
+        """Initialize the configuration"""
+        if self._config is None:
             self.load_config()
 
-    def load_config(self) -> None:
+    def load_config(self):
         """Load configuration from file and environment"""
-        # Load base config
-        config_path = os.getenv("R4DAR_CONFIG", "config.yml")
-        if not os.path.exists(config_path):
-            config_path = "config.yml.example"
+        # Get config path from environment or use default
+        config_path = os.environ.get("R4DAR_CONFIG", "config.yml")
+        Config._config = load_config(config_path, test_mode=Config._test_mode)
 
-        try:
-            with open(config_path, "r") as f:
-                Config._config = yaml.safe_load(f) or {}
-        except Exception:
-            Config._config = {}
-
-        # Handle watchers from environment
-        watchers_env = os.getenv("R4DAR_WATCHERS")
-        if watchers_env:
-            Config._config["watchers"] = [w.strip() for w in watchers_env.split(",")]
-
-        # Handle extensions from environment
-        extensions_env = os.getenv("R4DAR_EXTENSIONS")
-        if extensions_env:
-            Config._config["active_extensions"] = [e.strip() for e in extensions_env.split(",")]
-
-        # Ensure base structure exists
-        if "llm" not in Config._config:
-            Config._config["llm"] = {}
-        if "openai" not in Config._config["llm"]:
-            Config._config["llm"]["openai"] = {}
-
-        # Handle Fly.io DATABASE_URL if present
-        database_url = os.getenv("DATABASE_URL")
-        if database_url:
-            # Parse DATABASE_URL into our config format
-            # Format: postgres://user:pass@host:5432/dbname
-            match = re.match(r"postgres://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)", database_url)
-            if match:
-                user, password, host, port, dbname = match.groups()
-                Config._config["database"] = {
-                    "host": host,
-                    "port": int(port),
-                    "name": dbname,
-                    "user": user,
-                    "password": password,
-                }
-
-        # Override with environment-specific values
-        env_overrides = {
-            "data_dir": os.getenv("R4DAR_DATA_DIR"),
-            "telegram": {
-                "bot_token": os.getenv("R4DAR_BOT_TOKEN"),
-                "chat_id": os.getenv("R4DAR_CHAT_ID"),
-            },
-            "database": {
-                "host": os.getenv("R4DAR_DB_HOST"),
-                "port": os.getenv("R4DAR_DB_PORT"),
-                "name": os.getenv("R4DAR_DB_NAME"),
-                "user": os.getenv("R4DAR_DB_USER"),
-                "password": os.getenv("R4DAR_DB_PASSWORD"),
-            },
-            "block_explorers": {
-                "etherscan": {"key": os.getenv("R4DAR_ETHERSCAN_KEY")},
-                "basescan": {"key": os.getenv("R4DAR_BASESCAN_KEY")},
-                "arbiscan": {"key": os.getenv("R4DAR_ARBISCAN_KEY")},
-                "polygonscan": {"key": os.getenv("R4DAR_POLYGONSCAN_KEY")},
-                "bscscan": {"key": os.getenv("R4DAR_BSCSCAN_KEY")},
-            },
-            "llm": {
-                "openai": {
-                    "key": os.getenv("R4DAR_OPENAI_KEY"),
-                    "model": os.getenv("R4DAR_OPENAI_MODEL"),
-                }
-            },
-        }
-
-        # Update config with non-None environment values
-        self._deep_update(Config._config, env_overrides)
-
-    def _deep_update(self, base: Dict, update: Dict) -> None:
-        """Recursively update a dictionary with non-None values"""
-        for key, value in update.items():
-            if value is None:
-                continue
-            if isinstance(value, dict):
-                if key not in base:
-                    base[key] = {}
-                if isinstance(base[key], dict):
-                    self._deep_update(base[key], value)
-            elif value is not None:  # Only update if value is not None
-                base[key] = value
+    @classmethod
+    def set_test_mode(cls, enabled: bool = True):
+        """Enable/disable test mode"""
+        cls._test_mode = enabled
+        # Reset config when changing test mode
+        cls._config = None
+        cls._instance = None
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value"""
         if not Config._config:
             return default
-
-        # Handle nested keys
-        current = Config._config
-        for part in key.split("."):
-            if isinstance(current, dict) and part in current:
-                current = current[part]
-            else:
-                return default
-        return current
+        value = _get_nested_value(Config._config, key)
+        return value if value is not None else default
 
     @property
     def data_dir(self) -> str:
@@ -129,12 +224,6 @@ class Config:
 
     @property
     def database_url(self) -> Optional[str]:
-        # First check for Fly.io DATABASE_URL
-        fly_url = os.getenv("DATABASE_URL")
-        if fly_url:
-            return fly_url
-
-        # Fall back to constructed URL from config
         db = self.get("database", {})
         if all(key in db for key in ["host", "port", "name", "user", "password"]):
             return f"postgresql://{db['user']}:{db['password']}@{db['host']}:{db['port']}/{db['name']}"
@@ -150,4 +239,43 @@ class Config:
 
     @property
     def watchers(self) -> List[str]:
-        return self.get("watchers", [])
+        return self.get("watchers.active_watchers", [])
+
+
+# Environment variable mappings
+ENV_MAPPINGS = {
+    # Core config
+    "data_dir": "R4DAR_DATA_DIR",
+    "database.url": "DATABASE_URL",
+    # Block explorer API keys
+    "block_explorers.etherscan.key": "R4DAR_ETHERSCAN_KEY",
+    "block_explorers.basescan.key": "R4DAR_BASESCAN_KEY",
+    "block_explorers.arbiscan.key": "R4DAR_ARBISCAN_KEY",
+    # Telegram config
+    "telegram.bot_token": "R4DAR_BOT_TOKEN",
+    "telegram.chat_id": "R4DAR_CHAT_ID",
+    # OpenAI config
+    "llm.openai.key": "R4DAR_OPENAI_KEY",
+    # Other config
+    "extensions_dir": "R4DAR_EXTENSIONS_DIR",
+    "active_extensions": {"env": "R4DAR_EXTENSIONS", "type": "list"},
+    "watchers.active_watchers": {"env": "R4DAR_WATCHERS", "type": "list"},
+}
+
+# Default configuration
+DEFAULT_CONFIG = {
+    "data_dir": "./data",
+    "block_explorers": {
+        "etherscan": {"key": None, "base_url": "https://api.etherscan.io/api"},
+        "basescan": {"key": None, "base_url": "https://api.basescan.org/api"},
+        "arbiscan": {"key": None, "base_url": "https://api.arbiscan.io/api"},
+        "polygonscan": {"key": None, "base_url": "https://api.polygonscan.com/api"},
+        "bscscan": {"key": None, "base_url": "https://api.bscscan.com/api"},
+    },
+    "llm": {"openai": {"key": None, "model": "gpt-4"}},
+    "watchers": {"active_watchers": []},
+    "telegram": {"bot_token": None, "chat_id": None},
+    "github": {},
+    "extensions_dir": "./extensions",
+    "active_extensions": [],
+}

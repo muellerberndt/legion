@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 from src.config.config import Config
+import os
 
 # Create base class for models
 Base = declarative_base()
@@ -24,15 +25,25 @@ class Database:
     def __init__(self):
         if self._engine is None:
             config = Config()
-            db_config = config.get("database", {})
-            database_url = f"postgresql://{db_config.get('user')}:{db_config.get('password')}@{db_config.get('host')}:{db_config.get('port')}/{db_config.get('name')}"
+
+            # Check for Fly's DATABASE_URL first
+            database_url = os.getenv("DATABASE_URL")
+            if database_url:
+                # Convert to asyncpg URL for async engine
+                async_url = database_url.replace("postgres://", "postgresql+asyncpg://")
+                # Convert to psycopg2 URL for sync engine
+                database_url = database_url.replace("postgres://", "postgresql://")
+            else:
+                # Fallback to config-based URL
+                db_config = config.get("database", {})
+                database_url = f"postgresql://{db_config.get('user')}:{db_config.get('password')}@{db_config.get('host')}:{db_config.get('port')}/{db_config.get('name')}"
+                async_url = f"postgresql+asyncpg://{db_config.get('user')}:{db_config.get('password')}@{db_config.get('host')}:{db_config.get('port')}/{db_config.get('name')}"
 
             # Create sync engine
             self._engine = create_engine(database_url, future=True)
             self._SessionLocal = sessionmaker(bind=self._engine, expire_on_commit=False)
 
             # Create async engine
-            async_url = f"postgresql+asyncpg://{db_config.get('user')}:{db_config.get('password')}@{db_config.get('host')}:{db_config.get('port')}/{db_config.get('name')}"
             self._async_engine = create_async_engine(async_url, future=True)
             self._AsyncSessionLocal = sessionmaker(bind=self._async_engine, class_=AsyncSession, expire_on_commit=False)
 

@@ -39,7 +39,10 @@ class EVMExplorer:
     }
 
     def __init__(self):
+        import logging
+
         self.config = Config()
+        self.logger = logging.getLogger("EVMExplorer")
 
     def is_supported_explorer(self, url: str) -> Tuple[bool, Optional[ExplorerType]]:
         """Check if a URL is from a supported explorer
@@ -62,7 +65,9 @@ class EVMExplorer:
             for explorer_type, config in self.EXPLORERS.items():
                 if domain == config["domain"]:
                     # Check if API key is configured
-                    api_key = self.config.get("block_explorers", {}).get(config["config_key"], {}).get("key")
+                    config_key = config["config_key"]
+                    api_key = self.config.get(f"block_explorers.{config_key}.key")
+                    self.logger.info(f"Checking API key for {config_key}: {'present' if api_key else 'missing'}")
                     if api_key:
                         return True, explorer_type
                     else:
@@ -70,7 +75,8 @@ class EVMExplorer:
 
             return False, None
 
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"Error checking explorer support: {str(e)}")
             return False, None
 
     def get_api_url(self, explorer_type: ExplorerType) -> str:
@@ -80,7 +86,10 @@ class EVMExplorer:
     def get_api_key(self, explorer_type: ExplorerType) -> Optional[str]:
         """Get the API key for an explorer type"""
         config_key = self.EXPLORERS[explorer_type]["config_key"]
-        return self.config.get("block_explorers", {}).get(config_key, {}).get("key")
+        config_path = f"block_explorers.{config_key}.key"
+        api_key = self.config.get(config_path)
+        self.logger.info(f"Getting API key for {config_key} from path {config_path}: {'present' if api_key else 'missing'}")
+        return api_key if api_key else None
 
 
 async def fetch_verified_sources(explorer_url: str, target_path: str) -> None:

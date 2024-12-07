@@ -18,3 +18,4 @@ asyncpg
 greenlet
 telegram
 python-telegram-bot
+jsonschema
