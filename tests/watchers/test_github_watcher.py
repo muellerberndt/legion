@@ -3,8 +3,7 @@ from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime, timezone, timedelta
 from src.watchers.github import GitHubWatcher
 from src.util.logging import Logger
-from src.jobs.watcher import WatcherJob
-from src.backend.database import DBSessionMixin
+from src.handlers.base import HandlerTrigger
 
 logger = Logger("TestGitHubWatcher")
 
@@ -45,42 +44,6 @@ async def mock_db_session():
     session.__aexit__ = AsyncMock(return_value=None)
 
     yield session
-
-
-@pytest.fixture
-async def watcher(mock_session, mock_db_session):
-    """Create a GitHub watcher instance"""
-    with (
-        patch("src.watchers.github.Config") as MockConfig,
-        patch("src.backend.database.DBSessionMixin.get_async_session") as mock_get_session,
-        patch("aiohttp.ClientSession", return_value=mock_session),
-    ):
-        # Create a mock instance
-        mock_config = Mock()
-        mock_config.get.return_value = {"poll_interval": 300, "api_token": "test-token"}
-        MockConfig.return_value = mock_config
-
-        # Create a mock context manager
-        cm = AsyncMock()
-        cm.__aenter__ = AsyncMock(return_value=mock_db_session)
-        cm.__aexit__ = AsyncMock(return_value=None)
-        mock_get_session.return_value = cm
-
-        # Create watcher and initialize it
-        watcher = GitHubWatcher()
-        # Initialize parent classes manually since we're not using super()
-        WatcherJob.__init__(watcher, "github", 300)
-        DBSessionMixin.__init__(watcher)
-
-        # Mock the handler registry's trigger_event method
-        watcher.handler_registry.trigger_event = AsyncMock()
-
-        await watcher.initialize()  # This will now use our mock session
-
-        yield watcher
-
-        # Clean up
-        await watcher.stop()
 
 
 @pytest.mark.asyncio
@@ -161,3 +124,92 @@ async def test_parse_repo_url():
     owner, repo = watcher._parse_repo_url("https://not-github.com/owner/repo")
     assert owner is None
     assert repo is None
+
+
+@pytest.fixture
+def watcher():
+    watcher = GitHubWatcher()
+    watcher.handler_registry.trigger_event = AsyncMock()
+    return watcher
+
+
+@pytest.mark.asyncio
+async def test_check_repo_updates_triggers_events_with_payload(watcher):
+    """Test that GitHub events are triggered with the correct payload structure"""
+    # Mock the API responses
+    test_commit = {
+        "sha": "abc123",
+        "commit": {"message": "Test commit", "author": {"name": "Test Author"}},
+        "html_url": "https://github.com/test/repo/commit/abc123",
+    }
+    test_pr = {
+        "number": 1,
+        "title": "Test PR",
+        "user": {"login": "test-user"},
+        "html_url": "https://github.com/test/repo/pull/1",
+    }
+
+    # Mock the API calls
+    watcher._get_new_commits = AsyncMock(return_value=[test_commit])
+    watcher._get_updated_prs = AsyncMock(return_value=[test_pr])
+    watcher._update_repo_state = AsyncMock()
+
+    # Test data
+    repo = {
+        "repo_url": "https://github.com/test/repo",
+        "last_commit_sha": None,  # No previous commits
+        "last_pr_number": None,  # No previous PRs
+        "last_check": None,
+    }
+
+    # Run the update check
+    await watcher._check_repo_updates(repo)
+
+    # Verify push event was triggered with correct payload structure
+    watcher.handler_registry.trigger_event.assert_any_call(
+        HandlerTrigger.GITHUB_PUSH, {"payload": {"repo_url": repo["repo_url"], "commit": test_commit}}
+    )
+
+    # Verify PR event was triggered with correct payload structure
+    watcher.handler_registry.trigger_event.assert_any_call(
+        HandlerTrigger.GITHUB_PR, {"payload": {"repo_url": repo["repo_url"], "pull_request": test_pr}}
+    )
+
+    # Verify both events were triggered exactly once
+    assert watcher.handler_registry.trigger_event.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_check_repo_updates_no_duplicate_events(watcher):
+    """Test that events are not triggered for already processed commits/PRs"""
+    # Mock the API responses
+    test_commit = {
+        "sha": "abc123",
+        "commit": {"message": "Test commit", "author": {"name": "Test Author"}},
+        "html_url": "https://github.com/test/repo/commit/abc123",
+    }
+    test_pr = {
+        "number": 1,
+        "title": "Test PR",
+        "user": {"login": "test-user"},
+        "html_url": "https://github.com/test/repo/pull/1",
+    }
+
+    # Mock the API calls
+    watcher._get_new_commits = AsyncMock(return_value=[test_commit])
+    watcher._get_updated_prs = AsyncMock(return_value=[test_pr])
+    watcher._update_repo_state = AsyncMock()
+
+    # Test data with existing commit and PR
+    repo = {
+        "repo_url": "https://github.com/test/repo",
+        "last_commit_sha": "abc123",  # Same as new commit
+        "last_pr_number": 1,  # Same as new PR
+        "last_check": datetime.now(timezone.utc),
+    }
+
+    # Run the update check
+    await watcher._check_repo_updates(repo)
+
+    # Verify no events were triggered for already processed items
+    watcher.handler_registry.trigger_event.assert_not_called()

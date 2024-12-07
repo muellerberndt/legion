@@ -4,7 +4,6 @@ from openai import AsyncOpenAI
 from src.config.config import Config
 from src.util.logging import Logger
 from dataclasses import dataclass
-from src.actions.registry import ActionRegistry
 
 
 @dataclass
@@ -46,6 +45,8 @@ Always maintain a security-focused perspective in your analysis."""
         self.client = AsyncOpenAI(api_key=self.config.openai_api_key)
 
         # Initialize action registry and wait for it to be ready
+        from src.actions.registry import ActionRegistry
+
         self.action_registry = ActionRegistry()
         self.action_registry.initialize()  # Explicitly call initialize
 
@@ -73,7 +74,7 @@ Always maintain a security-focused perspective in your analysis."""
         """Get the commands available to this agent
 
         Args:
-            command_names: Optional list of command names to include. If None, all commands are included.
+            command_names: List of command names to include. If None or empty, no commands are included.
 
         Returns:
             Dict mapping command names to AgentCommand objects
@@ -84,12 +85,12 @@ Always maintain a security-focused perspective in your analysis."""
         actions = self.action_registry.get_actions()
         self.logger.info("Found registered actions:", extra_data={"available_actions": list(actions.keys())})
 
-        # If command_names is None or empty, include all commands
+        # If command_names is None or empty, include no commands
         if not command_names:
-            command_names = list(actions.keys())
-            self.logger.info("Using all available commands")
-        else:
-            self.logger.info("Filtering actions by command names:", extra_data={"requested_commands": command_names})
+            self.logger.info("No commands specified, agent will have no commands")
+            return commands
+
+        self.logger.info("Filtering actions by command names:", extra_data={"requested_commands": command_names})
 
         # Convert actions to commands
         for name, (_, spec) in actions.items():

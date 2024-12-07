@@ -33,11 +33,7 @@ Focus areas:
 - Potential economic attack vectors"""
 
         # Specify commands this agent can use
-        command_names = [
-            "semantic_search",  # For searching code semantically
-            "grep_search",  # For pattern matching
-            "db_query",  # For database queries
-        ]
+        command_names = []
 
         super().__init__(custom_prompt=custom_prompt, command_names=command_names)
         DBSessionMixin.__init__(self)
@@ -108,11 +104,6 @@ Focus areas:
                     ]
                 )
 
-            # Search for similar patterns
-            similar_patterns = await self.execute_command(
-                "semantic_search", query=f"Find security issues similar to: {pr_data.get('title')} {pr_data.get('body')}"
-            )
-
             # Get AI analysis
             analysis_prompt = "\n".join(
                 [
@@ -124,8 +115,6 @@ Focus areas:
                     "4. How does this relate to known vulnerability types?",
                     "\nContext:",
                     "\n".join(context),
-                    "\nSimilar patterns found:",
-                    similar_patterns,
                 ]
             )
 

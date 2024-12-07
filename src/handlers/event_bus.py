@@ -25,24 +25,27 @@ class EventBus:
             if trigger not in self._handlers:
                 self._handlers[trigger] = []
             self._handlers[trigger].append(handler_class)
+            self.logger.debug(f"Registered {handler_class.__name__} for trigger {trigger.name}")
 
     async def trigger_event(self, trigger: HandlerTrigger, context: Dict) -> None:
         """Trigger handlers for a specific event"""
         if trigger not in self._handlers:
+            self.logger.warning(f"No handlers registered for trigger {trigger.name}")
             return
 
-        self.logger.info(f"Triggering {trigger.value} handlers", extra_data={"context": context})
+        self.logger.info(f"Triggering {len(self._handlers[trigger])} handlers for {trigger.name}")
 
         handler_tasks = []
         for handler_class in self._handlers[trigger]:
             try:
+                self.logger.debug(f"Creating handler instance for {handler_class.__name__}")
                 handler = handler_class()
-                handler.set_context(context)
+                handler.set_context(context, trigger)
                 handler_tasks.append(asyncio.create_task(handler.handle()))
             except Exception as e:
                 self.logger.error(
                     f"Handler {handler_class.__name__} failed: {str(e)}",
-                    extra_data={"trigger": trigger.value, "context": context},
+                    extra_data={"trigger": trigger.name, "context": context},
                 )
 
         # Wait for all handlers to complete

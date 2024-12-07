@@ -37,6 +37,7 @@ class Handler(ABC):
 
     def __init__(self):
         self.context = {}
+        self.trigger = None
 
     @classmethod
     @abstractmethod
@@ -47,6 +48,7 @@ class Handler(ABC):
     def handle(self) -> None:
         """Handle an event"""
 
-    def set_context(self, context: Dict[str, Any]) -> None:
-        """Set context for this handler"""
+    def set_context(self, context: Dict[str, Any], trigger: HandlerTrigger = None) -> None:
+        """Set context and trigger for this handler"""
         self.context = context
+        self.trigger = trigger

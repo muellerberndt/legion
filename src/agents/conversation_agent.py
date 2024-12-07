@@ -10,6 +10,14 @@ class ConversationAgent(BaseAgent):
     def __init__(self, command_names: Optional[List[str]] = None):
         self.logger = Logger("ConversationAgent")
 
+        # Get all available commands from action registry
+        from src.actions.registry import ActionRegistry
+
+        action_registry = ActionRegistry()
+        action_registry.initialize()
+        command_names = list(action_registry.get_actions().keys())
+        self.logger.info("Using all available commands:", extra_data={"commands": command_names})
+
         # Add specialized prompt for conversation handling
         custom_prompt = """You are specialized in having helpful conversations with security researchers.
 

@@ -8,6 +8,7 @@ from src.models.base import Asset, Project
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 from sqlalchemy import or_
+from src.agents.github_event_agent import GitHubSecurityAgent
 
 
 class GitHubEventJob(Job, DBSessionMixin):
@@ -57,6 +58,12 @@ class GitHubEventJob(Job, DBSessionMixin):
         pr = self.payload.get("pull_request", {})
         repo_url = self.payload.get("repo_url", "")
 
+        self.logger.debug(f"PROCESS PR: {repo_url} {pr}")
+
+        # Get security analysis
+        security_agent = GitHubSecurityAgent()
+        security_analysis = await security_agent.analyze_pr(repo_url, pr)
+
         # Basic PR info
         summary_lines = [
             f"🔍 New PR in {repo_url}\n",
@@ -67,6 +74,8 @@ class GitHubEventJob(Job, DBSessionMixin):
             f"Changed files: {pr.get('changed_files', 0)}",
             f"Additions: {pr.get('additions', 0)}",
             f"Deletions: {pr.get('deletions', 0)}",
+            "\n🔒 Security Analysis:",
+            security_analysis,
         ]
 
         # Look for related assets
@@ -93,12 +102,19 @@ class GitHubEventJob(Job, DBSessionMixin):
         repo_url = self.payload.get("repo_url", "")
         commit = self.payload.get("commit", {})
 
+        self.logger.debug(f"PROCESS PUSH: {repo_url} {commit}")
+        # Get security analysis
+        security_agent = GitHubSecurityAgent()
+        security_analysis = await security_agent.analyze_commit(repo_url, commit)
+
         # Basic push info
         summary_lines = [
             f"📦 New commit in {repo_url}\n",
             f"Message: {commit.get('commit', {}).get('message', 'No message')}",
             f"Author: {commit.get('commit', {}).get('author', {}).get('name', 'Unknown')}",
             f"URL: {commit.get('html_url', '')}",
+            "\n🔒 Security Analysis:",
+            security_analysis,
         ]
 
         # Look for related assets
@@ -123,9 +139,6 @@ class GitHubEventJob(Job, DBSessionMixin):
     async def start(self) -> None:
         """Process the GitHub event"""
         try:
-            self.status = JobStatus.RUNNING
-            self.started_at = datetime.now(timezone.utc)
-
             # Process based on event type
             if self.event_type == "pull_request":
                 summary = await self.process_pr()
@@ -161,38 +174,49 @@ class GitHubEventHandler(Handler):
     def __init__(self):
         super().__init__()
         self.logger = Logger("GitHubEventHandler")
+        self.logger.debug("GitHubEventHandler initialized")
 
     @classmethod
     def get_triggers(cls) -> List[HandlerTrigger]:
         """Get list of triggers this handler listens for"""
-        return [HandlerTrigger.GITHUB_PR, HandlerTrigger.GITHUB_PUSH]
+        triggers = [HandlerTrigger.GITHUB_PR, HandlerTrigger.GITHUB_PUSH]
+        Logger("GitHubEventHandler").debug(f"Registering triggers: {[t.name for t in triggers]}")
+        return triggers
 
     async def handle(self) -> None:
         """Handle a GitHub event"""
-        if not self.context:
-            self.logger.error("No context provided")
-            return
+        try:
+            self.logger.debug("Starting handler")
+            self.logger.debug(f"Trigger type: {type(self.trigger)}")
+            self.logger.debug(f"Trigger value: {self.trigger}")
+            self.logger.debug(f"Trigger dict: {self.trigger.__dict__}")
 
-        if not self.context.get("payload"):
-            self.logger.error("No payload in context")
-            return
+            if not self.context:
+                self.logger.error("No context provided")
+                return
 
-        # Get the event data from the context
-        event_data = self.context
-        if not event_data:
-            self.logger.error("No event data in context")
-            return
+            payload = self.context.get("payload")
 
-        # Determine event type from trigger
-        if self.trigger == HandlerTrigger.GITHUB_PR:
-            event_type = "pull_request"
-        elif self.trigger == HandlerTrigger.GITHUB_PUSH:
-            event_type = "push"
-        else:
-            self.logger.error(f"Unsupported trigger: {self.trigger}")
-            return
+            if not payload:
+                self.logger.error("No payload in context")
+                return
 
-        # Create and submit job
-        job = GitHubEventJob(event_type, event_data)
-        job_manager = JobManager()
-        await job_manager.submit_job(job)
+            # Determine event type from trigger
+            if self.trigger == HandlerTrigger.GITHUB_PR:
+                event_type = "pull_request"
+            elif self.trigger == HandlerTrigger.GITHUB_PUSH:
+                event_type = "push"
+            else:
+                self.logger.error(f"Unsupported trigger: {self.trigger}")
+                return
+
+            # Create and submit job
+            job = GitHubEventJob(event_type, payload)
+
+            job_manager = JobManager()
+
+            await job_manager.submit_job(job)
+
+        except Exception as e:
+            self.logger.error(f"Error handling GitHub event: {str(e)}", exc_info=True)
+            raise

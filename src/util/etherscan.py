@@ -42,7 +42,7 @@ class EVMExplorer:
         import logging
 
         self.config = Config()
-        self.logger = logging.getLogger("EVMExplorer")
+        self.logger = logging.getLogger("EVMExplorer")  # pylint: disable=no-member
 
     def is_supported_explorer(self, url: str) -> Tuple[bool, Optional[ExplorerType]]:
         """Check if a URL is from a supported explorer

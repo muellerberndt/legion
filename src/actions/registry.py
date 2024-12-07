@@ -3,7 +3,6 @@ from src.actions.base import BaseAction, ActionSpec
 from src.util.logging import Logger
 from src.actions.result import ActionResult
 from src.actions.builtin import get_builtin_actions
-from src.actions.semantic_search import SemanticSearchAction
 
 
 class ActionRegistry:
@@ -48,7 +47,7 @@ class ActionRegistry:
                 action = action_class()
 
                 # For semantic search, prepend "search" to the query
-                if action_class == SemanticSearchAction and args:
+                if action_class.__name__ == "SemanticSearchAction" and args:
                     query = f"search {' '.join(args)}"
                     result = await action.execute(query)
                 else:

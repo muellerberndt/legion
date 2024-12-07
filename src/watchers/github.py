@@ -142,8 +142,8 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
 
         try:
             commits, prs = await asyncio.gather(commits_task, prs_task)
-            self.logger.debug(f"Got commits: {commits}")
-            self.logger.debug(f"Got PRs: {prs}")
+            # self.logger.debug(f"Got commits: {commits}")
+            # self.logger.debug(f"Got PRs: {prs}")
         except Exception as e:
             self.logger.error(f"Failed to fetch updates for {repo_url}: {str(e)}")
             return
@@ -163,7 +163,9 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
             # Trigger event if this is a new commit
             if not last_commit_sha or commit["sha"] != last_commit_sha:
                 self.logger.info(f"Found new commit: {commit['sha']}")
-                await self.handler_registry.trigger_event(HandlerTrigger.GITHUB_PUSH, {"repo_url": repo_url, "commit": commit})
+                await self.handler_registry.trigger_event(
+                    HandlerTrigger.GITHUB_PUSH, {"payload": {"repo_url": repo_url, "commit": commit}}
+                )
 
         # Process PR updates
         last_pr_number = repo.get("last_pr_number") or 0  # Default to 0 if None
@@ -178,7 +180,9 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
             # Trigger event for new PRs
             if pr_number > last_pr_number:
                 self.logger.info(f"Found new PR: {pr_number}")
-                await self.handler_registry.trigger_event(HandlerTrigger.GITHUB_PR, {"repo_url": repo_url, "pull_request": pr})
+                await self.handler_registry.trigger_event(
+                    HandlerTrigger.GITHUB_PR, {"payload": {"repo_url": repo_url, "pull_request": pr}}
+                )
 
                 # Keep track of the highest PR number
                 last_pr_number = max(last_pr_number, pr_number)
