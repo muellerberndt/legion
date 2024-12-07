@@ -8,7 +8,7 @@ This guide provides detailed instructions for setting up R4dar on your system.
 - PostgreSQL 13 or higher
 - pgvector extension for PostgreSQL
 
-## System-specific Installation
+## System-specific preparation
 
 ### macOS
 
@@ -62,35 +62,42 @@ GRANT ALL PRIVILEGES ON DATABASE r4dar_db TO r4dar;
 
 ## R4dar Installation
 
-1. Clone the repository and install requirements:
+First, clone the repository:
 
 ```bash
 git clone git@github.com:muellerberndt/r4dar.git
 cd r4dar
+```
+
+### Local Installation
+
+1. Create a Python virtual environment:
+
+```bash
+pyenv virtualenv 3.12 r4dar
+pyenv activate r4dar
+```
+
+2. Clone the repository and install requirements:
+
+
 pip install -r requirements.txt
 ```
 
-2. Create the configuration file:
+3. Create the configuration file:
 
 ```bash
 cp config.example.yml config.yml
 ```
 
-3. Configure the following in `config.yml`:
+4. Configure the following in `config.yml`:
    - Telegram bot token and chat ID
    - Database credentials
    - API keys:
      - Block explorer API keys
      - OpenAI API key
-     - GitHub API token (for GitHub watcher)
-     - Quicknode API key
-
-4. Initialize the database:
-
-```bash
-./r4dar.sh init-db
-./r4dar.sh initial-sync
-```
+     - GitHub API token (for GitHub watchers)
+     - Quicknode API key (for onchain watchers)
 
 5. Start the service:
 
@@ -98,9 +105,88 @@ cp config.example.yml config.yml
 r4dar --log-level INFO server start
 ```
 
-You should now be able to interact with the bot on Telegram using the following commands:
+### Deploying to the cloud
+
+The easiest way to deploy R4dar to the cloud is to use a service like [Fly.io](https://fly.io).
+
+1. Install the [Fly.io CLI](https://fly.io/docs/hands-on/install-flyctl/)
+
+2. Login to Fly.io:
 
 ```bash
-/start
-/help0
+fly auth signup
+```
+
+3. Create your fly.toml configuration:
+
+```toml
+app = "your-r4dar-app-name"
+primary_region = "lax"
+
+[build]
+  builder = 'paketobuildpacks/builder:base'
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = '8080'
+  PYTHON_VERSION = '3.11'
+  R4DAR_DATA_DIR = '/data'
+  R4DAR_CONFIG = '/data/config.yml'
+  R4DAR_WATCHERS = "immunefi,github"
+  R4DAR_EXTENSIONS = "examples/proxy_implementation_upgrade_handler"
+  R4DAR_EXTENSIONS_DIR = "extensions"
+  PYTHONUNBUFFERED = "1"
+
+[mounts]
+  source = 'r4dar_data'
+  destination = '/data'
+  initial_size = '10gb'
+
+[[vm]]
+  memory = '4096MB'
+  cpu_kind = 'shared'
+  cpus = 2
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[deploy]
+  strategy = 'rolling'
+
+[processes]
+  app = "/cnb/lifecycle/launcher python -m src.cli.main --log-level=INFO server start"
+```
+
+4. Set the environment variables:
+
+```bash
+fly secrets set R4DAR_BOT_TOKEN="your-telegram-bot-token"
+fly secrets set R4DAR_CHAT_ID="your-telegram-chat-id"
+fly secrets set OPEN_AI_KEY="your-openai-api-key"
+fly secrets set R4DAR_ARBISCAN_KEY="your-arbiscan-api-key"
+fly secrets set R4DAR_BASESCAN_KEY="your-basescan-api-key"
+fly secrets set R4DAR_GITHUB_TOKEN="your-github-token"
+fly secrets set R4DAR_QUICKNODE_KEY="your-quicknode-api-key"
+# Add any additional API keys as needed
+```
+
+5. Create and attach a persistent volume:
+
+```bash
+fly volumes create r4dar_data --size 10 --region lax
+fly volumes list
+```
+
+6. Deploy the app:
+
+```bash
+fly deploy
+```
+
+## Syncing project data
+
+You should now be able to interact with the bot on Telegram. Run the following command to sync the database:
+
+```bash
+/immunefi silent
 ```
