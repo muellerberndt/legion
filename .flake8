@@ -1,10 +1,14 @@
 [flake8]
 max-line-length = 127
+# E203: whitespace before ':' - conflicts with black
+# E266: too many leading '#' for block comment
+# E501: line too long - handled by black
+# W503: line break before binary operator - conflicts with black
 extend-ignore =
-    E203,  # whitespace before ':' - conflicts with black
-    E266,  # too many leading '#' for block comment
-    E501,  # line too long - handled by black
-    W503,  # line break before binary operator - conflicts with black
+    E203,
+    E266,
+    E501,
+    W503
 max-complexity = 10
 exclude =
     .git,

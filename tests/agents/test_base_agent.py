@@ -2,8 +2,8 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from src.agents.base_agent import BaseAgent
 from src.actions.base import ActionSpec, ActionArgument
-from src.actions.registry import ActionRegistry
 import asyncio
+
 
 @pytest.fixture(autouse=True)
 async def cleanup_async():
@@ -16,9 +16,10 @@ async def cleanup_async():
     # Wait until all tasks are cancelled
     await asyncio.gather(*tasks, return_exceptions=True)
 
+
 @pytest.fixture
 async def mock_openai():
-    with patch('src.agents.base_agent.AsyncOpenAI') as mock:
+    with patch("src.agents.base_agent.AsyncOpenAI") as mock:
         client = AsyncMock()
         response = Mock()
         message = Mock()
@@ -32,30 +33,29 @@ async def mock_openai():
         yield client
         await client.close()
 
+
 @pytest.fixture
 async def mock_action_registry():
-    with patch('src.agents.base_agent.ActionRegistry') as mock:
+    with patch("src.agents.base_agent.ActionRegistry") as mock:
         registry = Mock()
-        
+
         # Create an async handler that returns a string
         async def async_execute(*args, **kwargs):
             return "Test command executed"
-            
+
         handler = AsyncMock()
         handler.execute = AsyncMock(side_effect=async_execute)
-        
+
         actions = {
-            'test': (
+            "test": (
                 handler,
                 ActionSpec(
                     name="test",
                     description="Test command",
                     help_text="Test help text",
                     agent_hint="Use this command for testing",
-                    arguments=[
-                        ActionArgument(name="options", description="Test options", required=False)
-                    ]
-                )
+                    arguments=[ActionArgument(name="options", description="Test options", required=False)],
+                ),
             )
         }
         registry.get_actions.return_value = actions
@@ -63,12 +63,14 @@ async def mock_action_registry():
         mock.return_value = registry
         yield registry
 
+
 @pytest.fixture
 async def base_agent(mock_openai, mock_action_registry):
     agent = BaseAgent(custom_prompt="You are a test agent")
     yield agent
-    if hasattr(agent.client, 'close'):
+    if hasattr(agent.client, "close"):
         await agent.client.close()
+
 
 @pytest.mark.asyncio
 async def test_base_agent_init():
@@ -76,6 +78,7 @@ async def test_base_agent_init():
     agent = BaseAgent(custom_prompt="Test prompt")
     assert "Test prompt" in agent.system_prompt
     assert isinstance(agent.commands, dict)
+
 
 @pytest.mark.asyncio
 async def test_base_agent_chat_completion(base_agent, mock_openai):
@@ -85,10 +88,11 @@ async def test_base_agent_chat_completion(base_agent, mock_openai):
     assert response == "Test response"
     assert mock_openai.chat.completions.create.called
 
+
 @pytest.mark.asyncio
 async def test_base_agent_error_handling(base_agent, mock_openai):
     """Test error handling in chat completion"""
     mock_openai.chat.completions.create.side_effect = Exception("Test error")
-    
+
     with pytest.raises(Exception):
         await base_agent.chat_completion([{"role": "user", "content": "Test"}])

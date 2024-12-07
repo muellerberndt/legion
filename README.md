@@ -40,6 +40,7 @@ You can then talk to the bot via Telegram. To get help, just type `/help`.
 ## Documentation
 
 - [Installation Guide](docs/installation.md) - Detailed setup instructions
+- [Development Guide](docs/development.md) - Development setup and guidelines
 - [Customization Guide](docs/customization.md) - How to extend r4dar
 
 ## Contributing

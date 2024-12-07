@@ -1,10 +1,10 @@
 from src.actions.base import BaseAction, ActionSpec
 from src.jobs.indexer import IndexerJob
-import asyncio
+
 
 class ImmunefiSyncAction(BaseAction):
     """Action to sync data from Immunefi"""
-    
+
     spec = ActionSpec(
         name="immunefi",
         description="Sync data from Immunefi",
@@ -22,18 +22,18 @@ This command will:
 Example:
 /sync immunefi  # Sync all Immunefi data""",
         agent_hint="Use this command to update the local database with the latest information from Immunefi bounty programs.",
-        arguments=[]
+        arguments=[],
     )
-    
+
     def __init__(self, initialize_mode: bool = False):
         """Initialize the action"""
         self.initialize_mode = initialize_mode
-    
+
     async def execute(self, *args, **kwargs) -> str:
         """Execute the sync action"""
         # Import JobManager here to avoid circular imports
         from src.jobs.manager import JobManager
-        
+
         job = IndexerJob(platform="immunefi", initialize_mode=self.initialize_mode)
         job_manager = JobManager()
         job_id = await job_manager.submit_job(job)

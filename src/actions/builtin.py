@@ -1,4 +1,5 @@
 """Built-in actions registration"""
+
 from typing import List, Type
 from src.actions.base import BaseAction
 from src.actions.help import HelpAction
@@ -8,6 +9,7 @@ from src.actions.file_search import FileSearchAction
 from src.actions.db_query import DBQueryAction
 from src.actions.job import ListJobsAction, GetJobResultAction, StopJobAction
 from src.actions.sync.immunefi import ImmunefiSyncAction
+
 
 def get_builtin_actions() -> List[Type[BaseAction]]:
     """Get all built-in actions that should be registered by default"""
@@ -20,5 +22,5 @@ def get_builtin_actions() -> List[Type[BaseAction]]:
         ListJobsAction,
         GetJobResultAction,
         StopJobAction,
-        ImmunefiSyncAction
-    ] 
+        ImmunefiSyncAction,
+    ]

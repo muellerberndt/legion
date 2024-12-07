@@ -12,8 +12,8 @@ setup(
         "pytest-asyncio",
     ],
     entry_points={
-        'console_scripts': [
-            'r4dar=src.cli.main:cli',
+        "console_scripts": [
+            "r4dar=src.cli.main:cli",
         ],
     },
-) 
+)

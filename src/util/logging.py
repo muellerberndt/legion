@@ -1,46 +1,40 @@
 from datetime import datetime
 from typing import Optional, Any, Dict
-import click
 import json
 import logging
 from src.models.base import LogEntry, LogLevel
 from src.backend.database import DBSessionMixin
-import enum
+
 
 class ModelJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder for SQLAlchemy models"""
+
     def default(self, obj):
-        if hasattr(obj, '__dict__'):
+        if hasattr(obj, "__dict__"):
             # Filter out SQLAlchemy internal attributes
-            return {k: v for k, v in obj.__dict__.items() 
-                   if not k.startswith('_')}
+            return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
         return super().default(obj)
+
 
 class LogConfig:
     """Global logging configuration"""
+
     _verbose = False
     _db_logging = True  # New flag to control database logging
     _log_level = logging.INFO
-    
+
     @classmethod
     def configure_logging(cls, level: str = "INFO"):
         """Configure logging globally"""
         # Map string levels to logging constants
-        level_map = {
-            "DEBUG": logging.DEBUG,
-            "INFO": logging.INFO,
-            "WARNING": logging.WARNING,
-            "ERROR": logging.ERROR
-        }
-        
+        level_map = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "WARNING": logging.WARNING, "ERROR": logging.ERROR}
+
         # Set level, defaulting to INFO if invalid
         cls._log_level = level_map.get(level.upper(), logging.INFO)
-        
+
         # Configure Python's logging
         logging.basicConfig(
-            level=cls._log_level,
-            format='[%(asctime)s] %(levelname)s - %(name)s - %(message)s',
-            datefmt='%Y-%m-%dT%H:%M:%S.%f'
+            level=cls._log_level, format="[%(asctime)s] %(levelname)s - %(name)s - %(message)s", datefmt="%Y-%m-%dT%H:%M:%S.%f"
         )
 
     @classmethod
@@ -65,14 +59,16 @@ class LogConfig:
     def is_db_logging_enabled(cls) -> bool:
         return cls._db_logging
 
+
 class Logger(DBSessionMixin):
     """
     Central logging service that handles both database and console logging
     """
+
     def __init__(self, source: str):
         """
         Initialize logger
-        
+
         Args:
             source: Name of the component/module using the logger
         """
@@ -89,28 +85,21 @@ class Logger(DBSessionMixin):
             # Format extra_data as pretty JSON
             extra_json = json.dumps(extra_data, indent=2, cls=ModelJSONEncoder)
             log_message = f"{message}\n{extra_json}"
-        
+
         # Log to Python's logging system
         log_func = getattr(self.python_logger, level.value.lower())
         log_func(log_message)
-        
+
         if not LogConfig.is_db_logging_enabled():
             return
 
         try:
             # Serialize extra_data with custom encoder
             if extra_data:
-                extra_data = json.loads(
-                    json.dumps(extra_data, cls=ModelJSONEncoder)
-                )
+                extra_data = json.loads(json.dumps(extra_data, cls=ModelJSONEncoder))
 
             # Create log entry
-            log_entry = LogEntry(
-                level=level,
-                message=message,
-                source=self.source,
-                extra_data=extra_data
-            )
+            log_entry = LogEntry(level=level, message=message, source=self.source, extra_data=extra_data)
 
             # Store in database
             with self.get_session() as session:
@@ -136,4 +125,4 @@ class Logger(DBSessionMixin):
 
     def error(self, message: str, extra_data: Optional[Dict[str, Any]] = None) -> None:
         """Log an error message"""
-        self._log(LogLevel.ERROR, message, extra_data) 
+        self._log(LogLevel.ERROR, message, extra_data)

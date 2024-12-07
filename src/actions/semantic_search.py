@@ -1,14 +1,13 @@
-from typing import List, Dict, Any
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.backend.database import DBSessionMixin
-from src.models.base import Asset
 from src.util.embeddings import generate_embedding
 from sqlalchemy import text
 import json
 
+
 class SemanticSearchAction(BaseAction, DBSessionMixin):
     """Action to perform semantic search over assets"""
-    
+
     spec = ActionSpec(
         name="semantic_search",
         description="Search assets using natural language",
@@ -29,37 +28,35 @@ Examples:
 /semantic_search "Find code related to access control"
 
 Results are ranked by semantic similarity to your query.""",
-        agent_hint="Use this command when you want to find code or assets based on concepts and meaning rather than exact text matches. Great for finding implementations of specific patterns or concepts.",
-        arguments=[
-            ActionArgument(
-                name="query",
-                description="Natural language search query",
-                required=True
-            )
-        ]
+        agent_hint=(
+            "Use this command when you want to find code or assets based on concepts and meaning rather than exact text matches. "
+            "Great for finding implementations of specific patterns or concepts."
+        ),
+        arguments=[ActionArgument(name="query", description="Natural language search query", required=True)],
     )
-    
+
     def __init__(self):
         DBSessionMixin.__init__(self)
-        
+
     async def execute(self, query: str) -> str:
         """Execute semantic search
-        
+
         Args:
             query: Natural language search query
-            
+
         Returns:
             JSON string containing search results
         """
         try:
             # Generate embedding for query
             embedding = await generate_embedding(query)
-            
+
             # Search for similar assets
             with self.get_session() as session:
                 # Use vector similarity search
-                sql = text("""
-                    SELECT 
+                sql = text(
+                    """
+                    SELECT
                         a.id,
                         a.asset_type,
                         a.source_url,
@@ -71,25 +68,20 @@ Results are ranked by semantic similarity to your query.""",
                     WHERE a.embedding IS NOT NULL
                     ORDER BY a.embedding <=> :embedding
                     LIMIT 10
-                """)
-                
+                """
+                )
+
                 results = []
                 for row in session.execute(sql, {"embedding": embedding}):
                     result = {
                         "id": row.id,
                         "asset_type": row.asset_type,
                         "url": row.source_url or row.file_url or row.repo_url or row.explorer_url,
-                        "similarity": float(row.similarity)
+                        "similarity": float(row.similarity),
                     }
                     results.append(result)
-                    
-                return json.dumps({
-                    "query": query,
-                    "results": results
-                })
-                
+
+                return json.dumps({"query": query, "results": results})
+
         except Exception as e:
-            return json.dumps({
-                "error": f"Search failed: {str(e)}",
-                "query": query
-            })
+            return json.dumps({"error": f"Search failed: {str(e)}", "query": query})

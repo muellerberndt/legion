@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from src.models.base import Base
 from src.config.config import Config
-from src.models import *
+
 
 def init_db():
     """Initialize the database with all models"""

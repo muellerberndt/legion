@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 from src.actions.help import HelpAction
 from src.actions.registry import ActionRegistry
 from src.actions.base import ActionSpec, ActionArgument
-from src.actions.result import ActionResult
+
 
 @pytest.fixture
 def mock_registry():
@@ -25,38 +25,38 @@ Examples:
         agent_hint="Use this action when you need to test something or demonstrate help formatting",
         arguments=[
             ActionArgument(name="arg1", description="First argument", required=True),
-            ActionArgument(name="arg2", description="Second argument", required=False)
-        ]
+            ActionArgument(name="arg2", description="Second argument", required=False),
+        ],
     )
-    
-    actions = {
-        'test_action': (Mock(), action_spec)
-    }
-    
+
+    actions = {"test_action": (Mock(), action_spec)}
+
     registry.get_actions.return_value = actions
     registry.get_action.side_effect = lambda name: actions.get(name)
     return registry
 
+
 @pytest.mark.asyncio
 async def test_help_action_no_args(mock_registry):
     """Test help action without arguments (should list all actions)"""
-    with patch('src.actions.registry.ActionRegistry', return_value=mock_registry):
+    with patch("src.actions.registry.ActionRegistry", return_value=mock_registry):
         action = HelpAction()
         result = await action.execute()
-        
+
         # Verify help text contains action info
         assert "Available Commands:" in result
         assert "test_action" in result
         assert "Test action description" in result
         assert "Test action help text" not in result  # Should not include detailed help
 
+
 @pytest.mark.asyncio
 async def test_help_action_with_command(mock_registry):
     """Test help action with specific command"""
-    with patch('src.actions.registry.ActionRegistry', return_value=mock_registry):
+    with patch("src.actions.registry.ActionRegistry", return_value=mock_registry):
         action = HelpAction()
         result = await action.execute("test_action")
-        
+
         # Verify help text contains detailed command info
         assert "test_action" in result
         assert "Test action help text" in result
@@ -68,12 +68,13 @@ async def test_help_action_with_command(mock_registry):
         assert "arg2" in result
         assert "Second argument" in result
 
+
 @pytest.mark.asyncio
 async def test_help_action_unknown_command(mock_registry):
     """Test help action with unknown command"""
-    with patch('src.actions.registry.ActionRegistry', return_value=mock_registry):
+    with patch("src.actions.registry.ActionRegistry", return_value=mock_registry):
         action = HelpAction()
         result = await action.execute("unknown_action")
-        
+
         # Verify error message
-        assert "Command 'unknown_action' not found" in result 
+        assert "Command 'unknown_action' not found" in result
