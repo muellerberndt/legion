@@ -1,0 +1,17 @@
+[flake8]
+max-line-length = 127
+extend-ignore =
+    E203,  # whitespace before ':' - conflicts with black
+    E266,  # too many leading '#' for block comment
+    E501,  # line too long - handled by black
+    W503,  # line break before binary operator - conflicts with black
+max-complexity = 10
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    docs
+per-file-ignores =
+    __init__.py:F401
+    tests/*:E402,F401,F811 

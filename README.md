@@ -1,6 +1,6 @@
 # R4dar
 
-![Tests](https://github.com/[your-username]/r4dar/actions/workflows/tests.yml/badge.svg)
+![Tests](https://github.com/muellerberndt/r4dar/actions/workflows/tests.yml/badge.svg)
 
 R4dar is an AI agent-driven bot that does the dirty work for web3 bug hunters. Its goal is to optimize the use of the researchers' time by automatically correlating data from various sources. It keeps track of assets associated with ongoing bounty programs and contests, monitors on-chain and off-chain events related to those assets, and spawns agents that automate tasks on behalf of the user.
 

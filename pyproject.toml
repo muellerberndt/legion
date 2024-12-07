@@ -6,4 +6,35 @@ pythonpath = [
 ]
 testpaths = [
     "tests"
+]
+
+[tool.black]
+line-length = 127
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+# A regex preceded with ^/ will apply only to files and directories
+# in the root of the project.
+^/docs
+'''
+
+[tool.flake8]
+max-line-length = 127
+extend-ignore = [
+    "E203",  # whitespace before ':' - conflicts with black
+    "E266",  # too many leading '#' for block comment
+    "E501",  # line too long - handled by black
+    "W503",  # line break before binary operator - conflicts with black
+]
+max-complexity = 10
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    "docs",
+]
+per-file-ignores = [
+    "__init__.py:F401",  # imported but unused - ignore in __init__ files
+    "tests/*:E402,F401,F811",  # module level import not at top of file, imported but unused, redefinition of unused
 ] 
