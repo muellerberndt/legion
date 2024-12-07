@@ -36,7 +36,9 @@ class Database:
             else:
                 # Fallback to config-based URL
                 db_config = config.get("database", {})
-                if not all(key in db_config and db_config[key] is not None for key in ["host", "port", "name", "user", "password"]):
+                if not all(
+                    key in db_config and db_config[key] is not None for key in ["host", "port", "name", "user", "password"]
+                ):
                     # Use test database URL in test mode
                     if config._test_mode:
                         database_url = "postgresql://test:test@localhost:5432/test_db"
