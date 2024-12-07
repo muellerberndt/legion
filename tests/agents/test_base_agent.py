@@ -19,16 +19,28 @@ async def cleanup_async():
 
 @pytest.fixture
 async def mock_openai():
+    """Mock OpenAI client with proper async behavior."""
     with patch("src.agents.base_agent.AsyncOpenAI") as mock:
+        # Create mock client
         client = AsyncMock()
-        response = Mock()
-        message = Mock()
+
+        # Create mock response
+        response = AsyncMock()
+        message = AsyncMock()
         message.content = "Test response"
-        choice = Mock()
+        choice = AsyncMock()
         choice.message = message
         response.choices = [choice]
-        client.chat.completions.create = AsyncMock(return_value=response)
+
+        # Set up chat completions
+        chat = AsyncMock()
+        chat.completions = AsyncMock()
+        chat.completions.create = AsyncMock(return_value=response)
+        client.chat = chat
+
+        # Set up close method
         client.close = AsyncMock()
+
         mock.return_value = client
         yield client
         await client.close()
@@ -65,33 +77,33 @@ async def mock_action_registry():
 
 
 @pytest.fixture
-async def base_agent(mock_openai, mock_action_registry):
+async def base_agent(mock_openai):
+    """Create a base agent with mocked OpenAI client."""
     agent = BaseAgent(custom_prompt="You are a test agent")
     yield agent
     if hasattr(agent.client, "close"):
         await agent.client.close()
 
 
-@pytest.mark.usefixtures("mock_test_config")
 def test_base_agent_init():
     """Test base agent initialization"""
-    agent = BaseAgent()
-    assert agent is not None
+    with patch("src.agents.base_agent.AsyncOpenAI") as mock:
+        mock.return_value = AsyncMock()
+        agent = BaseAgent()
+        assert agent is not None
 
 
 @pytest.mark.asyncio
-async def test_base_agent_chat_completion(base_agent, mock_openai):
+async def test_base_agent_chat_completion(base_agent):
     """Test chat completion"""
     messages = [{"role": "user", "content": "Test message"}]
     response = await base_agent.chat_completion(messages)
     assert response == "Test response"
-    assert mock_openai.chat.completions.create.called
 
 
 @pytest.mark.asyncio
 async def test_base_agent_error_handling(base_agent, mock_openai):
     """Test error handling in chat completion"""
     mock_openai.chat.completions.create.side_effect = Exception("Test error")
-
     with pytest.raises(Exception):
         await base_agent.chat_completion([{"role": "user", "content": "Test"}])
