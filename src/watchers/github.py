@@ -6,6 +6,7 @@ from src.handlers.base import HandlerTrigger
 from src.config.config import Config
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
+from src.handlers.registry import HandlerRegistry
 import aiohttp
 from sqlalchemy import text
 from datetime import datetime, timedelta, timezone
@@ -29,6 +30,7 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
         # Initialize API client
         self.api_token = github_config.get('api_token')
         self.session = None
+        self.handler_registry = HandlerRegistry()
         
     async def initialize(self) -> None:
         """Initialize the watcher"""
@@ -47,32 +49,27 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
         if self.session:
             await self.session.close()
             
-    async def check(self) -> List[Dict[str, Any]]:
+    async def check(self) -> None:
         """Check for updates in GitHub repositories"""
         try:
             # Get all repos in scope
             repos = await self._get_repos_in_scope()
             if not repos:
                 self.logger.info("No GitHub repositories found in scope")
-                return []
+                return
                 
             self.logger.info(f"Found {len(repos)} repositories to check")
             
             # Check each repo for updates
-            events = []
             for repo in repos:
                 try:
-                    repo_events = await self._check_repo_updates(repo)
-                    events.extend(repo_events)
+                    await self._check_repo_updates(repo)
                 except Exception as e:
                     self.logger.error(f"Failed to check repo {repo['repo_url']}: {str(e)}")
                     continue
-                    
-            return events
             
         except Exception as e:
             self.logger.error(f"Failed to check GitHub updates: {str(e)}")
-            return []
             
     async def _get_repos_in_scope(self) -> List[Dict[str, Any]]:
         """Get all GitHub repositories from bounty projects"""
@@ -124,23 +121,17 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
             self.logger.error(f"Failed to get repos in scope: {str(e)}")
             return []
             
-    async def _check_repo_updates(self, repo: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async def _check_repo_updates(self, repo: Dict[str, Any]) -> None:
         """Check a single repository for updates"""
-        events = []
         repo_url = repo['repo_url']
         owner, name = self._parse_repo_url(repo_url)
         if not owner or not name:
             self.logger.debug(f"Invalid repo URL: {repo_url}")
-            return []
+            return
             
         self.logger.info(f"Checking updates for {repo_url}")
         self.logger.debug(f"Current state: {repo}")
             
-        # Get the cutoff time (4 hours ago or last check time)
-        # cutoff_time = repo['last_check'] if repo['last_check'] else (
-        #     datetime.now(timezone.utc) - timedelta(hours=4)
-        # )
-
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
         
         # Ensure cutoff time is timezone-aware
@@ -157,7 +148,7 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
             self.logger.debug(f"Got PRs: {prs}")
         except Exception as e:
             self.logger.error(f"Failed to fetch updates for {repo_url}: {str(e)}")
-            return []
+            return
             
         # Process commit updates - GitHub returns newest commits first
         last_commit_sha = repo.get('last_commit_sha')
@@ -171,16 +162,16 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
                 newest_sha = commit['sha']  # First commit is the newest
                 self.logger.debug(f"Set newest_sha to: {newest_sha}")
                 
-            # Generate event if this is a new commit
+            # Trigger event if this is a new commit
             if not last_commit_sha or commit['sha'] != last_commit_sha:
                 self.logger.info(f"Found new commit: {commit['sha']}")
-                events.append({
-                    'trigger': HandlerTrigger.GITHUB_PUSH,
-                    'data': {
+                await self.handler_registry.trigger_event(
+                    HandlerTrigger.GITHUB_PUSH,
+                    {
                         'repo_url': repo_url,
                         'commit': commit
                     }
-                })
+                )
                 
         # Process PR updates
         last_pr_number = repo.get('last_pr_number') or 0  # Default to 0 if None
@@ -192,16 +183,16 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
                 self.logger.warning(f"PR missing number field: {pr}")
                 continue
                 
-            # Only process new PRs
+            # Trigger event for new PRs
             if pr_number > last_pr_number:
                 self.logger.info(f"Found new PR: {pr_number}")
-                events.append({
-                    'trigger': HandlerTrigger.GITHUB_PR,
-                    'data': {
+                await self.handler_registry.trigger_event(
+                    HandlerTrigger.GITHUB_PR,
+                    {
                         'repo_url': repo_url,
                         'pull_request': pr
                     }
-                })
+                )
                 
                 # Keep track of the highest PR number
                 last_pr_number = max(last_pr_number, pr_number)
@@ -215,9 +206,6 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
                 last_pr_number
             )
             
-        self.logger.debug(f"Returning events: {events}")
-        return events
-        
     def _parse_repo_url(self, url: str) -> tuple[Optional[str], Optional[str]]:
         """Parse owner and repo name from GitHub URL"""
         try:

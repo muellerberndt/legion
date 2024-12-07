@@ -164,14 +164,14 @@ class GitHubEventHandler(Handler):
         """Get list of triggers this handler listens for"""
         return [HandlerTrigger.GITHUB_PR, HandlerTrigger.GITHUB_PUSH]
     
-    def handle(self) -> None:
+    async def handle(self) -> None:
         """Handle a GitHub event"""
         if not self.context:
             self.logger.error("No context provided")
             return
             
         # Get the event data from the context
-        event_data = self.context.get('data', {})
+        event_data = self.context
         if not event_data:
             self.logger.error("No event data in context")
             return
@@ -188,7 +188,4 @@ class GitHubEventHandler(Handler):
         # Create and submit job
         job = GitHubEventJob(event_type, event_data)
         job_manager = JobManager()
-        
-        # Use asyncio.create_task since we're in a sync context
-        import asyncio
-        asyncio.create_task(job_manager.submit_job(job)) 
+        await job_manager.submit_job(job) 
