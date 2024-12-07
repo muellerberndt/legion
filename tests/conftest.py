@@ -1,10 +1,8 @@
 # isort: skip_file
 # flake8: noqa: E402
 from unittest.mock import patch, Mock
-import pytest
-from src.config.config import Config
 
-
+# Create test config
 TEST_CONFIG = {
     "data_dir": "./test_data",
     "database": {"host": "localhost", "port": 5432, "name": "test_db", "user": "test", "password": "test"},
@@ -22,24 +20,23 @@ TEST_CONFIG = {
     "active_extensions": [],
 }
 
+# Start config patch
+config_patcher = patch("src.config.config.load_config", return_value=TEST_CONFIG)
+config_patcher.start()
 
-def pytest_configure():
-    """Configure test environment."""
-    Config.set_test_mode(True)
-
-
-def pytest_unconfigure():
-    """Clean up test environment."""
-    Config.set_test_mode(False)
+# Now import pytest and other modules
+import pytest
+from src.config.config import Config
 
 
 @pytest.fixture(autouse=True)
-def setup_test_env(request, tmp_path):
+def setup_test_env(request):
     """Set up test environment."""
-    # Skip config patching for config tests
-    if "config/test_config.py" not in str(request.node.fspath):
-        with patch("src.config.config.load_config", return_value=TEST_CONFIG):
-            yield
+    # For config tests, stop the patch temporarily
+    if "config/test_config.py" in str(request.node.fspath):
+        config_patcher.stop()
+        yield
+        config_patcher.start()
     else:
         yield
 
@@ -74,3 +71,14 @@ def mock_database():
 
     with patch("src.backend.database.db", mock_db):
         yield mock_db
+
+
+def pytest_configure():
+    """Configure test environment."""
+    Config.set_test_mode(True)
+
+
+def pytest_unconfigure():
+    """Clean up test environment."""
+    Config.set_test_mode(False)
+    config_patcher.stop()
