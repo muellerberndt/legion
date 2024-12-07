@@ -1,11 +1,9 @@
 # isort: skip_file
-# flake8: noqa: E402, F401
+# flake8: noqa: E402
 import os
 from unittest.mock import patch, Mock
 import pytest
 import yaml
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 from src.config.config import Config, DEFAULT_CONFIG
 
 
