@@ -50,8 +50,18 @@ class TelegramService(NotificationService):
                 raise RuntimeError("No chat_id configured")
 
             self.logger.debug(f"Prerequisites OK. Bot: {bool(self.bot)}, Chat ID: {self.chat_id}")
-            self.logger.debug(f"Attempting to send message to chat {self.chat_id}")
             self.logger.debug(f"Message preview: {message[:100]}...")
+
+            # Telegram message limit is 4096 characters
+            MAX_LENGTH = 4096
+            if len(message) > MAX_LENGTH:
+                self.logger.debug(f"Message length {len(message)} exceeds limit, truncating...")
+                # Find the last complete line that fits
+                truncated = message[: MAX_LENGTH - 3]
+                last_newline = truncated.rfind("\n")
+                if last_newline > 0:
+                    truncated = truncated[:last_newline]
+                message = truncated + "..."
 
             await self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode="HTML")
 
