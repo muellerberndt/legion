@@ -29,6 +29,19 @@ import pytest
 from src.config.config import Config
 
 
+def pytest_configure(config):
+    """Configure test environment."""
+    # Register custom marks
+    config.addinivalue_line("markers", "no_collect: mark a class to prevent collection as a test case")
+    Config.set_test_mode(True)
+
+
+def pytest_unconfigure(config):
+    """Clean up test environment."""
+    Config.set_test_mode(False)
+    config_patcher.stop()
+
+
 @pytest.fixture(autouse=True)
 def setup_test_env(request):
     """Set up test environment."""
@@ -71,14 +84,3 @@ def mock_database():
 
     with patch("src.backend.database.db", mock_db):
         yield mock_db
-
-
-def pytest_configure():
-    """Configure test environment."""
-    Config.set_test_mode(True)
-
-
-def pytest_unconfigure():
-    """Clean up test environment."""
-    Config.set_test_mode(False)
-    config_patcher.stop()

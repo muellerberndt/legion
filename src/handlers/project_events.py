@@ -1,8 +1,8 @@
-from typing import List
-from src.handlers.base import Handler, HandlerTrigger
-from src.models.base import Project
-from src.util.logging import Logger
+from typing import List, Union, Dict, Any
+from src.handlers.base import Handler, HandlerTrigger, HandlerResult
 from src.services.telegram import TelegramService
+from src.util.logging import Logger
+from src.models.base import Project
 
 
 class ProjectEventHandler(Handler):
@@ -21,12 +21,12 @@ class ProjectEventHandler(Handler):
         """Get list of triggers this handler listens for"""
         return [HandlerTrigger.NEW_PROJECT, HandlerTrigger.PROJECT_UPDATE, HandlerTrigger.PROJECT_REMOVE]
 
-    async def handle(self) -> None:
+    async def handle(self) -> HandlerResult:
         """Handle project events"""
         try:
             if not self.context:
                 self.logger.error("No context provided")
-                return
+                return HandlerResult(success=False, data={"error": "No context provided"})
 
             self.logger.debug(
                 "Event details:",
@@ -42,82 +42,93 @@ class ProjectEventHandler(Handler):
             project_data = self.context.get("project")
             if not project_data:
                 self.logger.error("No project data in context")
-                return
+                return HandlerResult(success=False, data={"error": "No project data in context"})
 
             old_project = self.context.get("old_project")
             removed = self.context.get("removed", False)
 
             self.logger.debug(f"Processing event - Removed: {removed}, Old project exists: {old_project is not None}")
 
+            result = None
             if removed:
                 self.logger.info("Handling project removal")
-                await self._handle_project_removal(project_data)
+                result = await self._handle_project_removal(project_data)
             elif old_project:
                 self.logger.info("Handling project update")
-                await self._handle_project_update(old_project, project_data)
+                result = await self._handle_project_update(old_project, project_data)
             else:
                 self.logger.info("Handling new project")
-                await self._handle_new_project(project_data)
+                result = await self._handle_new_project(project_data)
+
+            return HandlerResult(success=True, data=result)
 
         except Exception as e:
             self.logger.error(f"Failed to handle project event: {str(e)}")
-            raise
+            return HandlerResult(success=False, data={"error": str(e)})
 
-    async def _handle_new_project(self, project: dict) -> None:
-        """Handle new project addition"""
-        try:
-            self.logger.debug("Building notification message for new project", extra_data={"project": project})
+    def _get_project_attr(self, project: Union[Project, Dict[str, Any]], attr: str, default: Any = None) -> Any:
+        """Helper method to get attribute from either Project object or dictionary"""
+        if isinstance(project, dict):
+            return project.get(attr, default)
+        return getattr(project, attr, default)
 
-            message = (
-                "🆕 New Project Alert!\n\n"
-                f"🎯 Project: {project.get('name')}\n"
-                f"📝 Description: {project.get('description')}\n"
-                f"💰 Max Bounty: ${project.get('extra_data', {}).get('maxBounty', 'Unknown')}\n"
-                f"🔧 Type: {project.get('project_type')}\n"
-                f"🌐 Ecosystem: {', '.join(project.get('extra_data', {}).get('ecosystem', []))}\n"
-                f"💻 Language: {', '.join(project.get('extra_data', {}).get('language', []))}\n\n"
-            )
+    async def _handle_new_project(self, project: Union[Project, Dict[str, Any]]) -> dict:
+        """Handle new project"""
+        project_name = self._get_project_attr(project, "name")
+        project_type = self._get_project_attr(project, "project_type")
+        description = self._get_project_attr(project, "description")
+        extra_data = self._get_project_attr(project, "extra_data", {})
 
-            # self.logger.debug("Message built, attempting to send", extra_data={"message": message})
+        message = [
+            "🆕 New Project Added",
+            f"Name: {project_name}",
+            f"Type: {project_type}",
+        ]
 
-            # if not self.telegram:
-            #     self.logger.error("Telegram service not initialized")
-            #     return
+        if description:
+            message.append(f"Description: {description}")
 
-            # if not self.telegram.bot:
-            #     self.logger.error("Telegram bot not initialized")
-            #     return
+        if extra_data:
+            message.append("\nAdditional Info:")
+            for key, value in extra_data.items():
+                if value:
+                    message.append(f"{key}: {value}")
 
-            # if not self.telegram.chat_id:
-            #     self.logger.error("Telegram chat_id not configured")
-            #     return
+        await self.telegram.send_message("\n".join(message))
+        return {"event": "new_project", "project_name": project_name, "project_type": project_type}
 
-            # self.logger.debug("Telegram service exists, sending message...")
-            await self.telegram.send_message(message)
-            self.logger.info(f"Successfully sent notification for new project: {project.get('name')}")
+    async def _handle_project_removal(self, project: Union[Project, Dict[str, Any]]) -> dict:
+        """Handle project removal"""
+        project_name = self._get_project_attr(project, "name")
+        message = f"❌ Project Removed: {project_name}"
+        await self.telegram.send_message(message)
+        return {"event": "project_removed", "project_name": project_name}
 
-        except Exception as e:
-            self.logger.error(f"Failed to send Telegram notification: {str(e)}")
-            self.logger.error(f"Telegram service state - Bot: {bool(self.telegram.bot)}, Chat ID: {self.telegram.chat_id}")
-            raise
-
-    async def _handle_project_update(self, old_project: Project, new_project: Project) -> None:
+    async def _handle_project_update(
+        self, old_project: Union[Project, Dict[str, Any]], new_project: Union[Project, Dict[str, Any]]
+    ) -> dict:
         """Handle project update"""
         changes = []
 
         # Check basic attributes
-        if old_project.name != new_project.name:
-            changes.append(f"Name: {old_project.name} → {new_project.name}")
+        old_name = self._get_project_attr(old_project, "name")
+        new_name = self._get_project_attr(new_project, "name")
+        if old_name != new_name:
+            changes.append(f"Name: {old_name} → {new_name}")
 
-        if old_project.description != new_project.description:
+        old_desc = self._get_project_attr(old_project, "description")
+        new_desc = self._get_project_attr(new_project, "description")
+        if old_desc != new_desc:
             changes.append("Description updated")
 
-        if old_project.project_type != new_project.project_type:
-            changes.append(f"Type: {old_project.project_type} → {new_project.project_type}")
+        old_type = self._get_project_attr(old_project, "project_type")
+        new_type = self._get_project_attr(new_project, "project_type")
+        if old_type != new_type:
+            changes.append(f"Type: {old_type} → {new_type}")
 
         # Check extra data changes
-        old_extra = old_project.extra_data or {}
-        new_extra = new_project.extra_data or {}
+        old_extra = self._get_project_attr(old_project, "extra_data", {}) or {}
+        new_extra = self._get_project_attr(new_project, "extra_data", {}) or {}
 
         for key in set(old_extra.keys()) | set(new_extra.keys()):
             old_value = old_extra.get(key)
@@ -126,8 +137,8 @@ class ProjectEventHandler(Handler):
                 changes.append(f"{key}: {old_value} → {new_value}")
 
         # Check asset changes
-        old_assets = {a.id: a for a in old_project.assets}
-        new_assets = {a.id: a for a in new_project.assets}
+        old_assets = {a.id: a for a in self._get_project_attr(old_project, "assets", [])}
+        new_assets = {a.id: a for a in self._get_project_attr(new_project, "assets", [])}
 
         added_assets = set(new_assets.keys()) - set(old_assets.keys())
         removed_assets = set(old_assets.keys()) - set(new_assets.keys())
@@ -138,22 +149,11 @@ class ProjectEventHandler(Handler):
             changes.append(f"Removed {len(removed_assets)} assets")
 
         if changes:
-            message = f"📝 Project Updated: {new_project.name}\n" f"Changes detected:\n- " + "\n- ".join(changes)
+            message = f"📝 Project Updated: {new_name}\n" f"Changes detected:\n- " + "\n- ".join(changes)
 
-            self.logger.info(f"Project updated: {new_project.name}")
+            self.logger.info(f"Project updated: {new_name}")
             await self.telegram.send_message(message)
+            return {"event": "project_updated", "project_name": new_name, "changes": changes}
         else:
-            self.logger.debug(f"No significant changes detected for project: {new_project.name}")
-
-    async def _handle_project_removal(self, project: Project) -> None:
-        """Handle project removal"""
-        message = (
-            "🗑️ Project Removed\n\n"
-            f"🎯 Project: {project.name}\n"
-            f"💰 Type: {project.project_type}\n"
-            f"📊 Assets removed: {len(project.assets)}\n\n"
-            "ser, pour one out for another one gone 🫡"
-        )
-
-        self.logger.info(f"Project removed: {project.name}")
-        await self.telegram.send_message(message)
+            self.logger.debug(f"No significant changes detected for project: {new_name}")
+            return {"event": "project_updated", "project_name": new_name, "changes": []}

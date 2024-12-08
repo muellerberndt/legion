@@ -1,8 +1,0 @@
-CLI: Starting server...
-Starting server with interface: telegram
-[2024-12-04T02:38:30.491141] INFO - Server - Server initialized
-CLI: Server created, calling start...
-Server start method called
-[2024-12-04T02:38:30.492249] INFO - Server - Starting server with interfaces: ['telegram']
-[2024-12-04T02:38:30.493534] INFO - ExtensionLoader - Loaded extension: example
-[2024-12-04T02:38:30.496621] INFO - WatcherManager - Registered watcher: example

@@ -2,9 +2,12 @@ from typing import Dict, List, Type
 import asyncio
 from src.handlers.base import Handler, HandlerTrigger
 from src.util.logging import Logger
+from src.models.event_log import EventLog
+from src.backend.database import DBSessionMixin
+import uuid
 
 
-class EventBus:
+class EventBus(DBSessionMixin):
     """Central event bus for triggering handlers"""
 
     _instance = None
@@ -41,7 +44,7 @@ class EventBus:
                 self.logger.debug(f"Creating handler instance for {handler_class.__name__}")
                 handler = handler_class()
                 handler.set_context(context, trigger)
-                handler_tasks.append(asyncio.create_task(handler.handle()))
+                handler_tasks.append(self._execute_handler(handler, trigger))
             except Exception as e:
                 self.logger.error(
                     f"Handler {handler_class.__name__} failed: {str(e)}",
@@ -51,3 +54,34 @@ class EventBus:
         # Wait for all handlers to complete
         if handler_tasks:
             await asyncio.gather(*handler_tasks, return_exceptions=True)
+
+    async def _execute_handler(self, handler: Handler, trigger: HandlerTrigger) -> None:
+        """Execute a handler and log the result"""
+        try:
+            result = await handler.handle()
+
+            # Create event log
+            log = EventLog(
+                id=str(uuid.uuid4()),
+                handler_name=handler.__class__.__name__,
+                trigger=trigger.name,
+                result={"success": result.success if result else True, "data": result.data if result else None},
+            )
+
+            # Save to database
+            with self.get_session() as session:
+                session.add(log)
+                session.commit()
+
+        except Exception as e:
+            self.logger.error(f"Handler execution failed: {str(e)}")
+            # Log error result
+            log = EventLog(
+                id=str(uuid.uuid4()),
+                handler_name=handler.__class__.__name__,
+                trigger=trigger.name,
+                result={"success": False, "error": str(e)},
+            )
+            with self.get_session() as session:
+                session.add(log)
+                session.commit()

@@ -1,6 +1,15 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from enum import Enum, auto
+from dataclasses import dataclass
+
+
+@dataclass
+class HandlerResult:
+    """Result of a handler execution"""
+
+    success: bool = True
+    data: Optional[Dict[str, Any]] = None
 
 
 class HandlerTrigger(Enum):
@@ -45,8 +54,12 @@ class Handler(ABC):
         """Get list of triggers this handler listens for"""
 
     @abstractmethod
-    def handle(self) -> None:
-        """Handle an event"""
+    async def handle(self) -> Optional[HandlerResult]:
+        """Handle an event
+
+        Returns:
+            Optional[HandlerResult]: Result of the handler execution, if any
+        """
 
     def set_context(self, context: Dict[str, Any], trigger: HandlerTrigger = None) -> None:
         """Set context and trigger for this handler"""

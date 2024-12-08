@@ -232,8 +232,9 @@ Handlers must inherit from `Handler` and implement the `handle` method. Create a
 
 ```python
 # extensions/my-extension/my_custom_handler.py
-from src.handlers.base import Handler, HandlerTrigger
+from src.handlers.base import Handler, HandlerTrigger, HandlerResult
 from src.util.logging import Logger
+from typing import List
 
 class MyCustomHandler(Handler):
     """Custom handler for project events"""
@@ -250,38 +251,58 @@ class MyCustomHandler(Handler):
             HandlerTrigger.NEW_PROJECT
         ]
     
-    async def handle(self) -> None:
+    async def handle(self) -> HandlerResult:
         """Handle the event
         
         The event context is available in self.context
+        Returns a HandlerResult indicating success/failure and any relevant data
         """
         try:
             # Get event data from context
             project = self.context.get('project')
             if not project:
-                return
+                return HandlerResult(success=False, data={"error": "No project in context"})
                 
             if self.trigger == HandlerTrigger.PROJECT_UPDATE:
                 old_project = self.context.get('old_project')
-                await self._handle_project_update(project, old_project)
+                result = await self._handle_project_update(project, old_project)
             elif self.trigger == HandlerTrigger.NEW_PROJECT:
-                await self._handle_new_project(project)
+                result = await self._handle_new_project(project)
+                
+            return HandlerResult(success=True, data=result)
                 
         except Exception as e:
             self.logger.error(f"Error in handler: {str(e)}")
+            return HandlerResult(success=False, data={"error": str(e)})
     
-    async def _handle_project_update(self, project, old_project):
+    async def _handle_project_update(self, project, old_project) -> dict:
         """Handle project update event"""
         # Your update logic here
-        pass
+        return {"status": "updated", "project_id": project.id}
         
-    async def _handle_new_project(self, project):
+    async def _handle_new_project(self, project) -> dict:
         """Handle new project event"""
         # Your new project logic here
-        pass
+        return {"status": "created", "project_id": project.id}
+
+### Handler Results
+
+Handlers must return a `HandlerResult` object that indicates the success or failure of the operation and includes any relevant data:
+
+```python
+from src.handlers.base import HandlerResult
+
+# Successful result with data
+return HandlerResult(success=True, data={"status": "completed", "items_processed": 5})
+
+# Failed result with error information
+return HandlerResult(success=False, data={"error": "Failed to process project"})
 ```
 
-The handler will be automatically discovered and registered when your extension is loaded. No additional registration code is needed.
+The `HandlerResult` is used by the event bus to:
+1. Track handler execution success/failure
+2. Log handler results in the event log
+3. Provide feedback to other system components
 
 ### Available Triggers
 

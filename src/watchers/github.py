@@ -63,14 +63,14 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
         if self.session:
             await self.session.close()
 
-    async def check(self) -> None:
+    async def check(self) -> List[Dict[str, Any]]:
         """Check for updates in GitHub repositories"""
         try:
             # Get all repos in scope
             repos = await self._get_repos_in_scope()
             if not repos:
                 self.logger.info("No GitHub repositories found in scope")
-                return
+                return []
 
             self.logger.info(f"Found {len(repos)} repositories to check")
 
@@ -82,8 +82,11 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
                     self.logger.error(f"Failed to check repo {repo['repo_url']}: {str(e)}")
                     continue
 
+            return []
+
         except Exception as e:
             self.logger.error(f"Failed to check GitHub updates: {str(e)}")
+            return []
 
     async def _get_repos_in_scope(self) -> List[Dict[str, Any]]:
         """Get all GitHub repositories from bounty projects"""

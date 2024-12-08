@@ -28,45 +28,25 @@ def handler(telegram_mock):
 
 @pytest.fixture
 def sample_project():
-    project = Mock()
-    # Set up dictionary-like access for the mock
+    project = Mock(spec=Project)
     project.name = "Test Project"
     project.description = "Test Description"
     project.project_type = "bounty"
     project.extra_data = {"maxBounty": "100000", "ecosystem": [], "language": []}
     project.assets = []
-
-    # Mock the get method to return attributes
-    def mock_get(key, default=None):
-        return {
-            "name": project.name,
-            "description": project.description,
-            "project_type": project.project_type,
-            "extra_data": project.extra_data,
-        }.get(key, default)
-
-    project.get = mock_get
     return project
 
 
 @pytest.mark.asyncio
 async def test_new_project_event(handler, sample_project):
     """Test handling of new project event"""
-    # Convert sample_project to a dict-like structure
-    project_dict = {
-        "name": sample_project.name,
-        "description": sample_project.description,
-        "project_type": sample_project.project_type,
-        "extra_data": sample_project.extra_data,
-    }
-
-    handler.context = {"project": project_dict}
+    handler.context = {"project": sample_project}
     await handler.handle()
 
     # Verify notification was sent
     handler.telegram.send_message.assert_called_once()
     message = handler.telegram.send_message.call_args[0][0]
-    assert "New Project Alert" in message
+    assert "New Project Added" in message
     assert sample_project.name in message
     assert sample_project.project_type in message
 

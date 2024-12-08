@@ -1,5 +1,5 @@
 from typing import List
-from src.handlers.base import Handler, HandlerTrigger
+from src.handlers.base import Handler, HandlerTrigger, HandlerResult
 from src.util.logging import Logger
 from src.services.telegram import TelegramService
 
@@ -17,24 +17,24 @@ class ImmunefiAssetEventHandler(Handler):
         """Get list of triggers this handler listens for"""
         return [HandlerTrigger.ASSET_UPDATE]
 
-    async def handle(self) -> None:
+    async def handle(self) -> HandlerResult:
         """Handle asset update events"""
         self.logger.info("Handling asset update event")
         self.logger.debug("Context received:", extra_data={"context": self.context})
 
         if not self.context:
             self.logger.error("No context provided")
-            return
+            return HandlerResult(success=False, data={"error": "No context provided"})
 
         asset = self.context.get("asset")
         if not asset:
             self.logger.error("No asset in context")
-            return
+            return HandlerResult(success=False, data={"error": "No asset in context"})
 
         project = self.context.get("project")
         if not project:
             self.logger.error("No project in context")
-            return
+            return HandlerResult(success=False, data={"error": "No project in context"})
 
         old_revision = self.context.get("old_revision")
         new_revision = self.context.get("new_revision")
@@ -72,3 +72,14 @@ class ImmunefiAssetEventHandler(Handler):
 
         # Send notification
         await self.telegram.send_message("\n".join(message))
+
+        return HandlerResult(
+            success=True,
+            data={
+                "project": project.name,
+                "asset_url": asset.source_url,
+                "old_revision": old_revision,
+                "new_revision": new_revision,
+                "has_diff": bool(old_path and new_path),
+            },
+        )
