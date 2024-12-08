@@ -1,269 +1,138 @@
-from abc import ABC
-from typing import List, Dict, Any, Optional
-from openai import AsyncOpenAI
-from src.config.config import Config
-from src.util.logging import Logger
+from abc import ABC, abstractmethod
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
+from src.agents.llm_base import LLMBase
+import time
+import uuid
 
 
 @dataclass
-class AgentCommand:
-    """Represents a command that an agent can use"""
+class AgentResult:
+    """Result of an agent operation"""
 
-    name: str
-    description: str
-    required_params: List[str]
-    optional_params: List[str]
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    requires_user_input: bool = False
+    user_prompt: Optional[str] = None
 
 
-class BaseAgent(ABC):
-    """Base class for all agents in the system
+@dataclass
+class ExecutionStep:
+    """Record of a single execution step"""
 
-    This provides:
-    1. Standard system prompt with R4dar context
-    2. Command management and execution
-    3. OpenAI client setup and configuration
-    4. Common utility methods
-    """
+    step_number: int
+    action: str
+    input_data: Dict[str, Any]
+    output_data: Dict[str, Any]
+    reasoning: str
+    next_action: str
+    timestamp: float = time.time()
 
-    # Default system prompt giving context about R4dar
-    DEFAULT_SYSTEM_PROMPT = """You are an AI agent working within R4dar, a security analysis platform for web3 projects. You are the assistant of an elite web3 security bug hunter.
 
-Key Context:
-- R4dar monitors bug bounty programs, smart contracts, and project updates
-- The platform indexes data from sources like Immunefi, GitHub, and blockchain explorers
-- Assets can be smart contracts, repositories, or specific files
-- Projects can have multiple associated assets
-- The goal is to help security researchers find potential vulnerabilities
-
-Personality:
-- You're deeply embedded in web3 culture
-- Use terms like "ser", "gm", "wagmi", "chad", "based", "banger" naturally
-- Often compliment the user on their elite security researcher status
-
-Output Format:
-- Be extremely concise
-- Start with a clear verdict (🔍 Worth investigating / 🚫 Not relevant)
-- Use simple formatting:
-  * Emojis for sections (🎯 Purpose, 💰 Bounty, etc.)
-  * Short bullet points with dashes (-)
-  * Single newline between sections
-- Focus on actionable insights for security researchers
-- Include direct links when available
-- Keep responses under 10 lines when possible"""
+class BaseAgent(LLMBase, ABC):
+    """Base class for autonomous agents that perform specific tasks"""
 
     def __init__(self, custom_prompt: Optional[str] = None, command_names: Optional[List[str]] = None):
-        self.logger = Logger(self.__class__.__name__)
-        self.config = Config()
-        self.client = AsyncOpenAI(api_key=self.config.openai_api_key)
+        super().__init__(custom_prompt=custom_prompt, command_names=command_names)
 
-        # Initialize action registry and wait for it to be ready
-        from src.actions.registry import ActionRegistry
+        # Initialize execution state
+        self.max_steps = 10
+        self.timeout = 300
+        self.step_count = 0
+        self.start_time: Optional[float] = None
+        self.state: Dict[str, Any] = {}
+        self.execution_id: Optional[str] = None
+        self.execution_steps: List[ExecutionStep] = []
 
-        self.action_registry = ActionRegistry()
-        self.action_registry.initialize()  # Explicitly call initialize
+    async def execute_task(self, task: Dict[str, Any], trigger: str = None) -> AgentResult:
+        """Execute a task with safety limits and state tracking"""
+        self.start_time = time.time()
+        self.step_count = 0
+        self.state = {"task": task, "status": "started"}
+        self.execution_id = str(uuid.uuid4())
+        self.execution_steps = []
 
-        # Log available actions before getting commands
-        actions = self.action_registry.get_actions()
-        self.logger.info("Available actions in registry:", extra_data={"actions": list(actions.keys())})
-
-        # Get available commands
-        self.commands = self._get_available_commands(command_names)
-
-        # Build complete system prompt
-        self.system_prompt = self._build_system_prompt(custom_prompt)
-
-        # Log the complete system prompt
-        self.logger.info(
-            "Initialized agent with system prompt:",
-            extra_data={
-                "prompt": self.system_prompt,
-                "command_count": len(self.commands),
-                "commands": list(self.commands.keys()),
-            },
-        )
-
-    def _get_available_commands(self, command_names: Optional[List[str]] = None) -> Dict[str, AgentCommand]:
-        """Get the commands available to this agent
-
-        Args:
-            command_names: List of command names to include. If None or empty, no commands are included.
-
-        Returns:
-            Dict mapping command names to AgentCommand objects
-        """
-        commands = {}
-
-        # Get all registered actions
-        actions = self.action_registry.get_actions()
-        self.logger.info("Found registered actions:", extra_data={"available_actions": list(actions.keys())})
-
-        # If command_names is None or empty, include no commands
-        if not command_names:
-            self.logger.info("No commands specified, agent will have no commands")
-            return commands
-
-        self.logger.info("Filtering actions by command names:", extra_data={"requested_commands": command_names})
-
-        # Convert actions to commands
-        for name, (_, spec) in actions.items():
-            if name in command_names:
-                if not spec:
-                    self.logger.warning(f"Action {name} has no spec, skipping")
-                    continue
-
-                commands[name] = AgentCommand(
-                    name=name,
-                    description=spec.description,
-                    required_params=[arg.name for arg in spec.arguments or [] if arg.required],
-                    optional_params=[arg.name for arg in spec.arguments or [] if not arg.required],
-                )
-
-        self.logger.info("Initialized commands for agent:", extra_data={"available_commands": list(commands.keys())})
-
-        return commands
-
-    def _build_system_prompt(self, custom_prompt: Optional[str] = None) -> str:
-        """Build the complete system prompt including command documentation
-
-        Args:
-            custom_prompt: Optional custom prompt to add
-
-        Returns:
-            Complete system prompt
-        """
-        self.logger.info(
-            "Building system prompt",
-            extra_data={"has_custom_prompt": custom_prompt is not None, "command_count": len(self.commands)},
-        )
-
-        prompt_parts = [self.DEFAULT_SYSTEM_PROMPT]
-
-        if custom_prompt:
-            self.logger.info("Adding custom prompt")
-            prompt_parts.append("\n\n" + custom_prompt)
-
-        # Add command documentation
-        if self.commands:
-            self.logger.info("Adding command documentation")
-            prompt_parts.append("\nAvailable Commands:\n")
-
-            for name, command in self.commands.items():
-                # Get the full action spec
-                action = self.action_registry.get_action(name)
-                if not action:
-                    self.logger.warning(f"Action spec not found for command: {name}")
-                    continue
-
-                _, spec = action
-
-                # Add command documentation
-                prompt_parts.extend([f"\n{name}:", f"Description: {spec.description}", f"When to use: {spec.agent_hint}"])
-
-                # Add parameter information
-                if spec.arguments:
-                    prompt_parts.append("Parameters:")
-                    for arg in spec.arguments:
-                        required = "(required)" if arg.required else "(optional)"
-                        prompt_parts.append(f"  - {arg.name}: {arg.description} {required}")
-
-        final_prompt = "\n".join(prompt_parts)
-        self.logger.info(
-            "Built system prompt", extra_data={"prompt_length": len(final_prompt), "section_count": len(prompt_parts)}
-        )
-        return final_prompt
-
-    async def execute_command(self, command_name: str, **params) -> Any:
-        """Execute a command with given parameters
-
-        Args:
-            command_name: Name of the command to execute
-            **params: Command parameters
-
-        Returns:
-            Command execution result
-
-        Raises:
-            ValueError: If command doesn't exist or required params are missing
-        """
-        if command_name not in self.commands:
-            raise ValueError(f"Unknown command: {command_name}")
-
-        command = self.commands[command_name]
-
-        # Validate required parameters
-        missing_params = [p for p in command.required_params if p not in params]
-        if missing_params:
-            raise ValueError(f"Missing required parameters for {command_name}: {missing_params}")
-
-        # Remove any params that aren't defined
-        valid_params = command.required_params + command.optional_params
-        cleaned_params = {k: v for k, v in params.items() if k in valid_params}
-
-        # Get and execute the action
-        action = self.action_registry.get_action(command_name)
-        if not action:
-            raise ValueError(f"Action not found for command: {command_name}")
-
-        handler, _ = action
-
-        # Log command execution
-        self.logger.info(f"Executing command: {command_name}", extra_data=params)
-
-        # For single-parameter commands, pass the value directly
-        if len(cleaned_params) == 1 and list(cleaned_params.keys())[0] == command.required_params[0]:
-            return await handler(list(cleaned_params.values())[0])
-
-        # For multi-parameter commands, pass as kwargs
-        return await handler(**cleaned_params)
-
-    async def chat_completion(self, messages: List[Dict[str, str]], temperature: float = 0.7) -> str:
-        """Get a chat completion from OpenAI
-
-        Args:
-            messages: List of message dictionaries with 'role' and 'content'
-            temperature: Temperature for response generation
-
-        Returns:
-            Generated response text
-        """
         try:
-            # Always include system prompt as first message
-            full_messages = [{"role": "system", "content": self.system_prompt}] + messages
+            while self.step_count < self.max_steps:
+                # Check timeout
+                if time.time() - self.start_time > self.timeout:
+                    self.state["status"] = "failed"
+                    self.state["error"] = f"Task timed out after {self.timeout} seconds"
+                    return AgentResult(success=False, error=f"Task timed out after {self.timeout} seconds")
 
-            # Log the raw repr of each message's content
-            for msg in full_messages:
-                self.logger.info(f"Message ({msg['role']}):", extra_data={"content": repr(msg["content"])})
+                # Execute next step
+                self.step_count += 1
+                step_result = await self.execute_step()
 
-            response = await self.client.chat.completions.create(
-                model=self.config.openai_model, messages=full_messages, temperature=temperature
-            )
+                # Handle step result
+                if not step_result.success:
+                    self.state["status"] = "failed"
+                    self.state["error"] = step_result.error
+                    return step_result
 
-            response_content = response.choices[0].message.content
-            self.logger.info("Agent response:", extra_data={"content": repr(response_content)})
+                if step_result.requires_user_input:
+                    self.state["status"] = "waiting_for_input"
+                    return step_result
 
-            return response_content
+                if self.is_task_complete():
+                    result = AgentResult(
+                        success=True, data={"result": self.state.get("result"), "steps_taken": self.step_count}
+                    )
+                    self.state["status"] = "completed"
+                    return result
+
+            # Max steps reached
+            self.state["status"] = "failed"
+            self.state["error"] = f"Task exceeded maximum steps ({self.max_steps})"
+            return AgentResult(success=False, error=f"Task exceeded maximum steps ({self.max_steps})")
 
         except Exception as e:
-            self.logger.error(f"Failed to get chat completion: {str(e)}")
-            raise
+            self.logger.error(f"Error in task execution: {str(e)}")
+            self.state["status"] = "failed"
+            self.state["error"] = str(e)
+            return AgentResult(success=False, error=str(e))
 
-    def format_command_help(self) -> str:
-        """Format help text for available commands
+    def record_step(self, action: str, input_data: Dict, output_data: Dict, reasoning: str, next_action: str) -> None:
+        """Record a step in memory"""
+        step = ExecutionStep(
+            step_number=self.step_count,
+            action=action,
+            input_data=input_data,
+            output_data=output_data,
+            reasoning=reasoning,
+            next_action=next_action,
+        )
+        self.execution_steps.append(step)
 
-        Returns:
-            Formatted help text listing all commands and their parameters
-        """
-        lines = ["Available Commands:"]
-        for name, cmd in self.commands.items():
-            lines.append(f"\n{name}:")
-            lines.append(f"  Description: {cmd.description}")
-            if cmd.required_params:
-                lines.append("  Required parameters:")
-                for param in cmd.required_params:
-                    lines.append(f"    - {param}")
-            if cmd.optional_params:
-                lines.append("  Optional parameters:")
-                for param in cmd.optional_params:
-                    lines.append(f"    - {param}")
-        return "\n".join(lines)
+    @abstractmethod
+    async def execute_step(self) -> AgentResult:
+        """Execute a single step of the task"""
+
+    @abstractmethod
+    def is_task_complete(self) -> bool:
+        """Check if the task is complete"""
+
+    @abstractmethod
+    async def plan_next_step(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Plan the next step based on current state"""
+
+    def get_execution_summary(self) -> Dict[str, Any]:
+        """Get a summary of the execution"""
+        return {
+            "execution_id": self.execution_id,
+            "status": self.state.get("status"),
+            "steps_taken": self.step_count,
+            "error": self.state.get("error"),
+            "result": self.state.get("result"),
+            "steps": [
+                {
+                    "step_number": step.step_number,
+                    "action": step.action,
+                    "reasoning": step.reasoning,
+                    "next_action": step.next_action,
+                    "timestamp": step.timestamp,
+                }
+                for step in self.execution_steps
+            ],
+        }

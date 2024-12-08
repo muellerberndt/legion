@@ -6,7 +6,7 @@ from src.actions.registry import ActionRegistry
 from src.util.logging import Logger
 from src.config.config import Config
 from src.services.telegram import TelegramService
-from src.agents.conversation_agent import ConversationAgent
+from src.agents.chatbot import Chatbot
 import shlex
 import telegram
 
@@ -20,7 +20,7 @@ class TelegramInterface(Interface):
         self.action_registry = action_registry
         self.app = None
         self.service = TelegramService.get_instance()
-        self._agents = {}  # Session ID -> ConversationAgent
+        self._agents = {}  # Session ID -> Chat
         self._polling_task = None
         self._initialized = False
 
@@ -180,7 +180,7 @@ class TelegramInterface(Interface):
         try:
             # Get or create conversation agent for this session
             if session_id not in self._agents:
-                self._agents[session_id] = ConversationAgent()
+                self._agents[session_id] = Chatbot()
 
             agent = self._agents[session_id]
             response = await agent.process_message(content)

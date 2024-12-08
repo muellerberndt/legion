@@ -1,19 +1,12 @@
-from typing import Dict, Any, Optional, Tuple
-from src.agents.base_agent import BaseAgent
+from typing import Dict, Any, Optional
+from src.agents.base_agent import BaseAgent, AgentResult
 from src.backend.database import DBSessionMixin
 from src.models.base import Asset, Project
 from sqlalchemy import or_
 
 
-class GitHubSecurityAgent(BaseAgent, DBSessionMixin):
-    """Agent specialized in analyzing GitHub events for security implications
-
-    This agent:
-    1. Analyzes PR and commit content for security relevance
-    2. Links changes to known vulnerabilities and patterns
-    3. Provides context from associated bounty programs
-    4. Generates summaries focused on security implications
-    """
+class GithubEventAgent(BaseAgent, DBSessionMixin):
+    """Agent specialized in analyzing GitHub events for security implications"""
 
     def __init__(self):
         # Add specialized prompt for security analysis
@@ -30,15 +23,21 @@ Focus areas:
 - Protocol design issues
 - Integration and dependency risks
 - Gas optimization problems
-- Potential economic attack vectors"""
+- Potential economic attack vectors
+
+You have access to several commands to help with your analysis:
+- /semantic_search to find similar vulnerabilities
+- /grep_search to find specific code patterns
+- /file_search to locate relevant files"""
 
         # Specify commands this agent can use
         command_names = []
 
-        super().__init__(custom_prompt=custom_prompt, command_names=command_names)
+        # Initialize both base classes
+        BaseAgent.__init__(self, custom_prompt=custom_prompt, command_names=command_names)
         DBSessionMixin.__init__(self)
 
-    def find_related_asset(self, repo_url: str) -> Optional[Tuple[Asset, Project]]:
+    def find_related_asset(self, repo_url: str) -> Optional[tuple[Asset, Project]]:
         """Find an asset and its project related to the given repo URL"""
         try:
             with self.get_session() as session:
@@ -70,116 +69,146 @@ Focus areas:
             return None
 
     async def analyze_pr(self, repo_url: str, pr_data: Dict[str, Any]) -> str:
-        """Analyze a pull request for security implications
-
-        Args:
-            repo_url: URL of the repository
-            pr_data: Pull request data from GitHub
-
-        Returns:
-            Analysis summary
-        """
+        """Analyze a pull request for security implications"""
         try:
             # Find related asset and project
             asset_info = self.find_related_asset(repo_url)
 
-            # Build context for analysis
-            context = [
-                f"Analyzing PR #{pr_data.get('number')} in {repo_url}",
-                f"Title: {pr_data.get('title')}",
-                "\nPull Request Description:",
-                f"{pr_data.get('body', 'No description provided')}",
-                f"\nPR Link: {pr_data.get('html_url', 'No URL provided')}",
-                "\nStats:",
-                f"Changed files: {pr_data.get('changed_files', 0)}",
-                f"Additions: {pr_data.get('additions', 0)}",
-                f"Deletions: {pr_data.get('deletions', 0)}",
-            ]
+            # Prepare event data
+            event_data = {
+                "event_type": "pr",
+                "event_data": {
+                    "repository": repo_url,
+                    "number": pr_data.get("number"),
+                    "title": pr_data.get("title"),
+                    "body": pr_data.get("body", ""),
+                    "changes": pr_data,  # Full PR data for analysis
+                },
+            }
 
+            # Add project context if available
             if asset_info:
                 asset, project = asset_info
-                context.extend(
-                    [
-                        "\nProject Context:",
-                        f"Project: {project.name}",
-                        f"Type: {project.project_type}",
-                        f"Description: {project.description}",
-                    ]
-                )
+                event_data["event_data"]["project"] = {
+                    "name": project.name,
+                    "type": project.project_type,
+                    "description": project.description,
+                }
 
-            # Get AI analysis with new prompt
-            analysis_prompt = "\n".join(
-                [
-                    "Analyze the title and description of this pull request. Your goal is to determine whether this pull request is relevant for security or not and provide a summary to the user.",
-                    "Consider:",
-                    "1. What is the purpose of this pull request?",
-                    "2. What is the scope of that bounty or contest?",
-                    "3. Would it be worth inspecting this change for potential security bugs?",
-                    "\nContext:",
-                    "\n".join(context),
-                ]
-            )
-
-            messages = [{"role": "user", "content": analysis_prompt}]
-            analysis = await self.chat_completion(messages)
-
-            return analysis
+            # Execute analysis task
+            result = await self.execute_task(event_data)
+            if result.success and result.data:
+                return result.data.get("result", {}).get("analysis", "No analysis available")
+            else:
+                return f"Analysis failed: {result.error}"
 
         except Exception as e:
             self.logger.error(f"Failed to analyze PR: {str(e)}")
-            raise
+            return f"Error analyzing PR: {str(e)}"
 
     async def analyze_commit(self, repo_url: str, commit_data: Dict[str, Any]) -> str:
-        """Analyze a commit for security implications
-
-        Args:
-            repo_url: URL of the repository
-            commit_data: Commit data from GitHub
-
-        Returns:
-            Analysis summary
-        """
+        """Analyze a commit for security implications"""
         try:
             # Find related asset and project
             asset_info = self.find_related_asset(repo_url)
 
-            # Build context for analysis
-            context = [
-                f"Analyzing commit in {repo_url}",
-                f"Message: {commit_data.get('commit', {}).get('message', 'No message')}",
-                f"Author: {commit_data.get('commit', {}).get('author', {}).get('name', 'Unknown')}",
-                f"Commit Link: {commit_data.get('html_url', 'No URL provided')}",
-            ]
+            # Prepare event data
+            event_data = {
+                "event_type": "commit",
+                "event_data": {
+                    "repository": repo_url,
+                    "sha": commit_data.get("sha"),
+                    "message": commit_data.get("commit", {}).get("message", ""),
+                    "changes": commit_data,  # Full commit data for analysis
+                },
+            }
 
+            # Add project context if available
             if asset_info:
                 asset, project = asset_info
+                event_data["event_data"]["project"] = {
+                    "name": project.name,
+                    "type": project.project_type,
+                    "description": project.description,
+                }
+
+            # Execute analysis task
+            result = await self.execute_task(event_data)
+            if result.success and result.data:
+                return result.data.get("result", {}).get("analysis", "No analysis available")
+            else:
+                return f"Analysis failed: {result.error}"
+
+        except Exception as e:
+            self.logger.error(f"Failed to analyze commit: {str(e)}")
+            return f"Error analyzing commit: {str(e)}"
+
+    async def execute_step(self) -> AgentResult:
+        """Execute a single step based on current state"""
+        current_state = self.state
+        event_type = current_state.get("event_type")
+        event_data = current_state.get("event_data", {})
+
+        try:
+
+            # Build analysis context
+            context = [
+                f"Analyzing {'PR' if event_type == 'pr' else 'commit'} in {event_data.get('repository')}",
+                f"Message: {event_data.get('message', 'No message')}",
+                f"Changes: {event_data.get('changes', 'No changes provided')}",
+            ]
+
+            # Add project context if available
+            if "project" in event_data:
                 context.extend(
                     [
                         "\nProject Context:",
-                        f"Project: {project.name}",
-                        f"Type: {project.project_type}",
-                        f"Description: {project.description}",
+                        f"Name: {event_data['project']['name']}",
+                        f"Type: {event_data['project']['type']}",
+                        f"Description: {event_data['project']['description']}",
                     ]
                 )
 
-            # Get AI analysis with new prompt
-            analysis_prompt = "\n".join(
+            # Get AI analysis
+            prompt = "\n".join(
                 [
-                    "Analyze the commit message and changes. Your goal is to determine whether this commit is relevant for security or not and provide a summary to the user.",
-                    "Consider:",
-                    "1. What is the purpose of this commit?",
-                    "2. What is the scope of that bounty or contest?",
-                    "3. Would it be worth inspecting this change for potential security bugs?",
+                    f"Analyze this {event_type} for security implications. Consider:",
+                    "1. What is the purpose of these changes?",
+                    "2. Are there any potential security impacts?",
+                    "3. What specific vulnerabilities should be checked?",
                     "\nContext:",
                     "\n".join(context),
                 ]
             )
 
-            messages = [{"role": "user", "content": analysis_prompt}]
+            messages = [{"role": "user", "content": prompt}]
             analysis = await self.chat_completion(messages)
 
-            return analysis
+            # Record the step
+            self.record_step(
+                action=f"analyze_{event_type}",
+                input_data=event_data,
+                output_data={"analysis": analysis},
+                reasoning="Analyzing changes to identify security implications",
+                next_action="complete",
+            )
+
+            # Store result
+            self.state["result"] = {"type": event_type, "analysis": analysis}
+
+            return AgentResult(success=True)
 
         except Exception as e:
-            self.logger.error(f"Failed to analyze commit: {str(e)}")
-            raise
+            return AgentResult(success=False, error=str(e))
+
+    def is_task_complete(self) -> bool:
+        """Check if the analysis is complete"""
+        return "result" in self.state
+
+    async def plan_next_step(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Plan the next step based on current state"""
+        if "result" not in current_state:
+            event_type = current_state.get("event_type")
+            if event_type in ["commit", "pr"]:
+                return {"action": f"analyze_{event_type}"}
+        return {"action": "complete"}

@@ -8,7 +8,7 @@ from src.models.base import Asset, Project
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 from sqlalchemy import or_
-from src.agents.github_event_agent import GitHubSecurityAgent
+from src.agents.github_event_agent import GithubEventAgent
 
 
 class GitHubEventJob(Job, DBSessionMixin):
@@ -61,8 +61,8 @@ class GitHubEventJob(Job, DBSessionMixin):
         self.logger.debug(f"PROCESS PR: {repo_url} {pr}")
 
         # Get security analysis
-        security_agent = GitHubSecurityAgent()
-        security_analysis = await security_agent.analyze_pr(repo_url, pr)
+        github_agent = GithubEventAgent()
+        security_analysis = await github_agent.analyze_pr(repo_url, pr)
 
         # Basic PR info
         summary_lines = [
@@ -104,8 +104,8 @@ class GitHubEventJob(Job, DBSessionMixin):
 
         self.logger.debug(f"PROCESS PUSH: {repo_url} {commit}")
         # Get security analysis
-        security_agent = GitHubSecurityAgent()
-        security_analysis = await security_agent.analyze_commit(repo_url, commit)
+        github_agent = GithubEventAgent()
+        security_analysis = await github_agent.analyze_commit(repo_url, commit)
 
         # Basic push info
         summary_lines = [
