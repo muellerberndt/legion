@@ -18,7 +18,7 @@ class Server:
         """Run the server with specified interfaces"""
         logger = Logger("Server")
         initializer = Initializer()
-        watcher_manager = WatcherManager()
+        watcher_manager = WatcherManager.get_instance()
         action_registry = ActionRegistry()
         job_manager = JobManager()
 

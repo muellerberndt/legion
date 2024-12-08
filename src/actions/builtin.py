@@ -9,6 +9,7 @@ from src.actions.file_search import FileSearchAction
 from src.actions.db_query import DBQueryAction
 from src.actions.job import ListJobsAction, GetJobResultAction, StopJobAction
 from src.actions.sync.immunefi import ImmunefiSyncAction
+from src.actions.status import StatusAction
 
 
 def get_builtin_actions() -> List[Type[BaseAction]]:
@@ -23,4 +24,5 @@ def get_builtin_actions() -> List[Type[BaseAction]]:
         GetJobResultAction,
         StopJobAction,
         ImmunefiSyncAction,
+        StatusAction,
     ]

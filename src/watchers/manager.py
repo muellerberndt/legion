@@ -12,11 +12,23 @@ import asyncio
 class WatcherManager:
     """Manages watcher jobs and their lifecycle"""
 
+    _instance = None
+
+    @classmethod
+    def get_instance(cls) -> "WatcherManager":
+        """Get the singleton instance"""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
     def __init__(self):
+        if WatcherManager._instance is not None:
+            raise RuntimeError("Use get_instance() instead")
         self.logger = Logger("WatcherManager")
         self.config = Config()
         self.watchers: Dict[str, WatcherJob] = {}
         self.webhook_server: Optional[WebhookServer] = None
+        WatcherManager._instance = self
 
     def _discover_watchers(self) -> Dict[str, Type[WatcherJob]]:
         """Discover all available watcher classes"""
