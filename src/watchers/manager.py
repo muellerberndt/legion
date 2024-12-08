@@ -7,6 +7,7 @@ import importlib
 import pkgutil
 import inspect
 import asyncio
+import os
 
 
 class WatcherManager:
@@ -48,22 +49,30 @@ class WatcherManager:
     async def start(self) -> None:
         """Start enabled watchers based on configuration"""
         watcher_config = self.config.get("watchers", {})
+        self.logger.info("Starting WatcherManager with config:", extra_data={"config": watcher_config})
 
-        # If watchers section is missing or enabled is not explicitly set, don't start watchers
-        if not watcher_config or "enabled" not in watcher_config:
-            self.logger.info("No watcher configuration found, watchers disabled")
-            return
+        # Check environment variable first
+        env_watchers = os.getenv("R4DAR_WATCHERS")
+        if env_watchers:
+            self.logger.info(f"Found watchers in environment: {env_watchers}")
+            active_watchers = [w.strip() for w in env_watchers.split(",")]
+            watcher_config["enabled"] = True
+        else:
+            # If watchers section is missing or enabled is not explicitly set, don't start watchers
+            if not watcher_config or "enabled" not in watcher_config:
+                self.logger.info("No watcher configuration found, watchers disabled")
+                return
 
-        # Check if watchers are explicitly enabled
-        if not watcher_config.get("enabled"):
-            self.logger.info("Watchers disabled in config")
-            return
+            # Check if watchers are explicitly enabled
+            if not watcher_config.get("enabled"):
+                self.logger.info("Watchers disabled in config")
+                return
 
-        # Get active watchers from config, default to empty list
-        active_watchers = watcher_config.get("active_watchers", [])
-        if not active_watchers:
-            self.logger.info("No active watchers configured")
-            return
+            # Get active watchers from config, default to empty list
+            active_watchers = watcher_config.get("active_watchers", [])
+            if not active_watchers:
+                self.logger.info("No active watchers configured")
+                return
 
         # Get webhook server instance first
         webhook_port = watcher_config.get("webhook_port", 8080)
@@ -71,14 +80,22 @@ class WatcherManager:
 
         # Discover and initialize enabled watchers
         watcher_classes = self._discover_watchers()
-        start_tasks = []
+        self.logger.info(f"Discovered watcher classes: {list(watcher_classes.keys())}")
 
+        self.logger.info(f"Starting watchers: {active_watchers}")
         for watcher_name in active_watchers:
             if watcher_name in watcher_classes:
                 try:
                     # Create and initialize watcher
                     watcher = watcher_classes[watcher_name]()
+                    self.logger.info(f"Created watcher instance: {watcher_name}")
+
+                    # Log watcher configuration
+                    if hasattr(watcher, "config"):
+                        self.logger.info(f"Watcher {watcher_name} config:", extra_data={"config": watcher.config})
+
                     await watcher.initialize()
+                    self.logger.info(f"Initialized watcher: {watcher_name}")
                     self.watchers[watcher_name] = watcher
 
                     # Register webhook routes if supported
@@ -86,25 +103,27 @@ class WatcherManager:
                         watcher.register_routes(self.webhook_server.app)
                         self.logger.info(f"Registered webhook routes for {watcher_name}")
 
-                    # Start watcher in background
-                    start_tasks.append(watcher.start())
-                    self.logger.info(f"Initialized watcher: {watcher_name}")
-                except Exception as e:
-                    self.logger.error(f"Failed to initialize watcher {watcher_name}: {e}")
-            else:
-                self.logger.warning(f"Watcher {watcher_name} not found")
+                    # Start watcher and wait for it to be running
+                    self.logger.info(f"Starting watcher: {watcher_name}")
+                    await watcher.start()
 
-        # Start all watchers concurrently
-        if start_tasks:
-            try:
-                await asyncio.gather(*start_tasks)
-                for name in self.watchers:
-                    self.logger.info(f"Started watcher: {name}")
-            except Exception as e:
-                self.logger.error(f"Failed to start watchers: {e}")
+                    # Verify watcher is running
+                    if hasattr(watcher, "_watch_task"):
+                        task_status = "running" if not watcher._watch_task.done() else "done"
+                        self.logger.info(f"Watcher {watcher_name} task status: {task_status}")
+
+                    self.logger.info(f"Started watcher: {watcher_name}")
+                except Exception as e:
+                    self.logger.error(f"Failed to initialize/start watcher {watcher_name}: {e}", exc_info=True)
+            else:
+                self.logger.warning(f"Watcher {watcher_name} not found in available classes: {list(watcher_classes.keys())}")
 
         # Start webhook server after all endpoints are registered
-        await self.webhook_server.start(webhook_port)
+        try:
+            await self.webhook_server.start(webhook_port)
+            self.logger.info(f"Started webhook server on port {webhook_port}")
+        except Exception as e:
+            self.logger.error(f"Failed to start webhook server: {e}", exc_info=True)
 
     async def stop(self) -> None:
         """Stop all running watchers"""
