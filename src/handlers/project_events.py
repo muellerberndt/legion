@@ -69,14 +69,13 @@ class ProjectEventHandler(Handler):
             self.logger.debug("Building notification message for new project", extra_data={"project": project})
 
             message = (
-                "🆕 gm ser! New Project Alert!\n\n"
+                "🆕 New Project Alert!\n\n"
                 f"🎯 Project: {project.get('name')}\n"
                 f"📝 Description: {project.get('description')}\n"
                 f"💰 Max Bounty: ${project.get('extra_data', {}).get('maxBounty', 'Unknown')}\n"
                 f"🔧 Type: {project.get('project_type')}\n"
                 f"🌐 Ecosystem: {', '.join(project.get('extra_data', {}).get('ecosystem', []))}\n"
                 f"💻 Language: {', '.join(project.get('extra_data', {}).get('language', []))}\n\n"
-                "Based project ser, might be worth a look 👀"
             )
 
             # self.logger.debug("Message built, attempting to send", extra_data={"message": message})
