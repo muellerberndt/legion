@@ -23,15 +23,10 @@ Focus areas:
 - Protocol design issues
 - Integration and dependency risks
 - Gas optimization problems
-- Potential economic attack vectors
-
-You have access to several commands to help with your analysis:
-- /semantic_search to find similar vulnerabilities
-- /grep_search to find specific code patterns
-- /file_search to locate relevant files"""
+- Potential economic attack vectors"""
 
         # Specify commands this agent can use
-        command_names = []
+        command_names = ["semantic_search", "grep_search", "file_search"]
 
         # Initialize both base classes
         BaseAgent.__init__(self, custom_prompt=custom_prompt, command_names=command_names)
@@ -150,7 +145,6 @@ You have access to several commands to help with your analysis:
         event_data = current_state.get("event_data", {})
 
         try:
-
             # Build analysis context
             context = [
                 f"Analyzing {'PR' if event_type == 'pr' else 'commit'} in {event_data.get('repository')}",

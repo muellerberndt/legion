@@ -1,7 +1,6 @@
 from typing import Dict, List
 from src.agents.llm_base import LLMBase
 from src.util.logging import Logger
-from src.actions.registry import ActionRegistry
 import json
 import html
 
@@ -10,14 +9,6 @@ class Chatbot(LLMBase):
     """Chatbot that maintains conversation history and can execute commands"""
 
     def __init__(self, max_history: int = 10):
-        self.logger = Logger("Chatbot")
-
-        # Get all available commands from action registry
-        action_registry = ActionRegistry()
-        action_registry.initialize()
-        command_names = list(action_registry.get_actions().keys())
-        self.logger.info("Using all available commands:", extra_data={"commands": command_names})
-
         # Add specialized prompt for conversation and command handling
         custom_prompt = """You are a helpful assistant specialized in security research and analysis.
 
@@ -28,9 +19,6 @@ Your capabilities:
 4. Guide users toward security-relevant information
 5. Maintain context across conversation turns
 
-Available commands:
-{commands}
-
 Communication style:
 - Be professional but conversational
 - Focus on security relevance
@@ -39,11 +27,11 @@ Communication style:
 - Use clear formatting for better readability
 - Do not use HTML formatting in responses"""
 
-        # Format prompt with actual commands
-        custom_prompt = custom_prompt.format(commands="\n".join(f"- {cmd}" for cmd in command_names))
+        # Initialize LLMBase with all commands (pass None for command_names)
+        super().__init__(custom_prompt=custom_prompt, command_names=None)
 
-        # Call parent constructor with custom prompt and command names
-        super().__init__(custom_prompt=custom_prompt, command_names=command_names)
+        self.logger = Logger("Chatbot")
+        self.logger.info("Initialized with commands:", extra_data={"commands": list(self.commands.keys())})
 
         # Initialize conversation history
         self.max_history = max_history

@@ -12,6 +12,8 @@ class AgentCommand:
 
     name: str
     description: str
+    help_text: str
+    agent_hint: str
     required_params: List[str]
     optional_params: List[str]
 
@@ -78,6 +80,8 @@ class LLMBase(ABC):
                 commands[name] = AgentCommand(
                     name=name,
                     description=spec.description,
+                    help_text=spec.help_text or "",
+                    agent_hint=spec.agent_hint or "",
                     required_params=[arg.name for arg in spec.arguments or [] if arg.required],
                     optional_params=[arg.name for arg in spec.arguments or [] if not arg.required],
                 )
@@ -92,6 +96,7 @@ class LLMBase(ABC):
         # Add command descriptions
         command_descriptions = []
         for name, cmd in self.commands.items():
+            # Build parameter string
             params = []
             if cmd.required_params:
                 params.extend([f"<{p}>" for p in cmd.required_params])
@@ -99,10 +104,19 @@ class LLMBase(ABC):
                 params.extend([f"[{p}]" for p in cmd.optional_params])
 
             param_str = " ".join(params)
-            command_descriptions.append(f"/{name} {param_str}\n{cmd.description}")
+
+            # Build command description with help text and agent hint
+            command_desc = [f"/{name} {param_str}", cmd.description]
+
+            if cmd.help_text:
+                command_desc.append(f"Help: {cmd.help_text}")
+            if cmd.agent_hint:
+                command_desc.append(f"Usage hint: {cmd.agent_hint}")
+
+            command_descriptions.append("\n".join(command_desc))
 
         if command_descriptions:
-            base_prompt += "\n\nAvailable commands:\n" + "\n\n".join(command_descriptions)
+            base_prompt += "\n\nAvailable commands:\n\n" + "\n\n".join(command_descriptions)
 
         return base_prompt
 
@@ -139,6 +153,8 @@ class LLMBase(ABC):
             model = model or llm_config.get("model", "gpt-4")
 
             client = AsyncOpenAI(api_key=api_key)
+
+            self.logger.info("Sending chat completion request", extra_data={"messages": messages})
             response = await client.chat.completions.create(model=model, messages=messages, temperature=0.7)
 
             return response.choices[0].message.content

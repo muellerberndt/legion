@@ -1,9 +1,6 @@
 from src.agents.base_agent import BaseAgent
 from src.util.logging import Logger
-from typing import Dict, Any
-import json
-
-__all__ = ["ProxyImplementationUpgradeAgent"]
+from typing import Dict, Any, Tuple
 
 
 class ProxyImplementationUpgradeAgent(BaseAgent):
@@ -17,13 +14,59 @@ Your responsibilities:
 1. Analyze new implementation code for changes
 2. Identify potential security implications
 3. Compare with previous implementations
-4. Generate clear summaries for security researchers"""
+4. Generate clear summaries for security researchers
+
+You should focus on:
+- Storage layout changes
+- Function selector changes
+- Access control modifications
+- State variable modifications
+- Critical functionality changes"""
 
         # Specify commands this agent can use
         command_names = []
 
         super().__init__(custom_prompt=custom_prompt, command_names=command_names)
         self.logger = Logger("ProxyImplementationUpgradeAgent")
+        self._source_code = None
+        self._analysis = None
+
+    async def plan_next_step(self) -> Tuple[str, Dict[str, Any]]:
+        """Plan the next step in the analysis process.
+
+        Returns:
+            Tuple of command name and parameters
+        """
+        if not self._source_code:
+            return "wait", {"message": "No source code provided for analysis"}
+        if not self._analysis:
+            self._analysis = await self.analyze_implementation(self._source_code)
+            return "complete", {"analysis": self._analysis}
+        return "complete", {"analysis": self._analysis}
+
+    async def execute_step(self, command_name: str, parameters: Dict[str, Any]) -> bool:
+        """Execute a step in the analysis process.
+
+        Args:
+            command_name: The name of the command to execute
+            parameters: The parameters for the command
+
+        Returns:
+            Whether the step was executed successfully
+        """
+        if command_name == "wait":
+            return True
+        if command_name == "complete":
+            return True
+        return False
+
+    def is_task_complete(self) -> bool:
+        """Check if the analysis task is complete.
+
+        Returns:
+            Whether the task is complete
+        """
+        return self._analysis is not None
 
     async def analyze_implementation(self, source_code: str) -> Dict[str, Any]:
         """Analyze implementation source code
@@ -34,12 +77,14 @@ Your responsibilities:
         Returns:
             Dictionary containing analysis results
         """
+        self._source_code = source_code
         self.logger.info("Starting implementation analysis")
 
-        # Create prompt for code analysis
         prompt = f"""Please analyze this smart contract implementation code and provide:
 1. A brief summary of the main functionality
 2. Any potential security concerns or critical bugs
+3. Storage layout analysis
+4. Function selector changes
 
 Source code:
 {source_code}
@@ -54,16 +99,27 @@ SECURITY CONCERNS:
 - Second concern
 (etc.)
 
+STORAGE ANALYSIS:
+(Describe any storage layout changes)
+
+FUNCTION CHANGES:
+(List significant function modifications)
+
 RISK LEVEL: (low|medium|high)"""
 
         self.logger.info("Sending prompt to OpenAI")
-        # Get analysis from OpenAI
         response = await self.chat_completion([{"role": "user", "content": prompt}])
         self.logger.info("Received response from OpenAI", extra_data={"response": response})
 
         # Parse the response into sections
         sections = response.split("\n\n")
-        analysis = {"summary": "", "security_concerns": [], "risk_level": "unknown"}
+        analysis = {
+            "summary": "",
+            "security_concerns": [],
+            "storage_analysis": "",
+            "function_changes": "",
+            "risk_level": "unknown",
+        }
 
         for section in sections:
             if section.startswith("SUMMARY:"):
@@ -71,6 +127,10 @@ RISK LEVEL: (low|medium|high)"""
             elif section.startswith("SECURITY CONCERNS:"):
                 concerns = section.replace("SECURITY CONCERNS:", "").strip().split("\n")
                 analysis["security_concerns"] = [c.strip("- ").strip() for c in concerns if c.strip("- ").strip()]
+            elif section.startswith("STORAGE ANALYSIS:"):
+                analysis["storage_analysis"] = section.replace("STORAGE ANALYSIS:", "").strip()
+            elif section.startswith("FUNCTION CHANGES:"):
+                analysis["function_changes"] = section.replace("FUNCTION CHANGES:", "").strip()
             elif section.startswith("RISK LEVEL:"):
                 risk_level = section.replace("RISK LEVEL:", "").strip().lower()
                 if risk_level in ["low", "medium", "high"]:
@@ -113,49 +173,29 @@ RISK LEVEL: (low|medium|high)"""
         """
         risk_emojis = {"low": "🟢", "medium": "🟡", "high": "🔴", "unknown": "⚪"}
 
-        # Extract and format the summary
-        summary = analysis.get("summary", "No summary available")
-        if isinstance(summary, dict):
-            summary = summary.get("summary", "No summary available")
-        elif isinstance(summary, str):
-            try:
-                # Try to parse if it's a JSON string
-                summary_data = json.loads(summary)
-                if isinstance(summary_data, dict):
-                    summary = summary_data.get("summary", summary)
-            except json.JSONDecodeError:
-                # If it's not JSON, use as is
-                pass
-
         message = [
             "🔍 Implementation Analysis",
             "",
             f"Risk Level: {risk_emojis.get(analysis.get('risk_level', 'unknown'), '⚪')} {analysis.get('risk_level', 'unknown').upper()}",
             "",
             "📝 Summary:",
-            summary,
+            analysis.get("summary", "No summary available"),
             "",
         ]
 
-        # Extract and format security concerns
         security_concerns = analysis.get("security_concerns", [])
-        if isinstance(security_concerns, dict):
-            security_concerns = security_concerns.get("security_concerns", [])
-        elif isinstance(security_concerns, str):
-            try:
-                # Try to parse if it's a JSON string
-                concerns_data = json.loads(security_concerns)
-                if isinstance(concerns_data, (list, dict)):
-                    security_concerns = (
-                        concerns_data if isinstance(concerns_data, list) else concerns_data.get("security_concerns", [])
-                    )
-            except json.JSONDecodeError:
-                security_concerns = [security_concerns]
-
         if security_concerns:
             message.extend(["⚠️ Security Concerns:", *[f"• {concern}" for concern in security_concerns], ""])
 
-            # Add recommendation footer if there are security concerns
+        storage_analysis = analysis.get("storage_analysis")
+        if storage_analysis:
+            message.extend(["📦 Storage Analysis:", storage_analysis, ""])
+
+        function_changes = analysis.get("function_changes")
+        if function_changes:
+            message.extend(["🔧 Function Changes:", function_changes, ""])
+
+        if security_concerns:
             message.extend(
                 ["🚨 Recommendation:", "Please review the security concerns carefully before proceeding with the upgrade.", ""]
             )
