@@ -36,9 +36,16 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
         # Set up API session with or without token
         headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "R4dar-Security-Bot"}
         if self.api_token:
-            headers["Authorization"] = f"token {self.api_token}"
+            headers["Authorization"] = f"Bearer {self.api_token}"
+            self.logger.debug("GitHub API token configured")
+        else:
+            self.logger.warning("No GitHub API token configured - rate limits will be strict")
 
         self.session = aiohttp.ClientSession(headers=headers)
+        self.logger.debug(
+            "GitHub API session initialized",
+            extra_data={"headers": {k: "..." if k == "Authorization" else v for k, v in headers.items()}},
+        )
 
     async def cleanup(self) -> None:
         """Clean up resources"""
@@ -210,30 +217,64 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
     async def _get_new_commits(self, owner: str, repo: str, since: datetime) -> List[Dict[str, Any]]:
         """Get new commits for a repository"""
         if not self.session:
+            self.logger.warning("No session available for GitHub API calls")
             return []
 
-        url = f"https://api.github.com/repos/{owner}/{repo}/commits"
-        params = {"since": since.isoformat()}
+        try:
+            url = f"https://api.github.com/repos/{owner}/{repo}/commits"
+            params = {"since": since.isoformat()}
 
-        response = await self.session.get(url, params=params)
-        if response.status == 200:
-            return await response.json()
-        return []
+            self.logger.debug(f"Fetching commits from {url}", extra_data={"params": params})
+            response = await self.session.get(url, params=params)
+
+            self.logger.debug(f"Commits API response status: {response.status}")
+            if response.status == 200:
+                data = await response.json() or []
+                self.logger.debug(f"Found {len(data)} commits")
+                return data
+            elif response.status == 403:
+                self.logger.warning("GitHub API rate limit exceeded or authentication required")
+            elif response.status == 404:
+                self.logger.warning(f"Repository not found: {owner}/{repo}")
+            else:
+                response_text = await response.text()
+                self.logger.warning(f"Failed to get commits: HTTP {response.status}", extra_data={"response": response_text})
+            return []
+        except Exception as e:
+            self.logger.error(f"Error fetching commits: {str(e)}", exc_info=True)
+            return []
 
     async def _get_updated_prs(self, owner: str, repo: str, since: datetime) -> List[Dict[str, Any]]:
         """Get updated pull requests for a repository"""
         if not self.session:
+            self.logger.warning("No session available for GitHub API calls")
             return []
 
-        url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
-        params = {"state": "all", "sort": "updated", "direction": "desc"}
+        try:
+            url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+            params = {"state": "all", "sort": "updated", "direction": "desc"}
 
-        response = await self.session.get(url, params=params)
-        if response.status == 200:
-            prs = await response.json()
-            # Filter PRs updated since cutoff
-            return [pr for pr in prs if datetime.fromisoformat(pr["updated_at"].replace("Z", "+00:00")) > since]
-        return []
+            self.logger.debug(f"Fetching PRs from {url}", extra_data={"params": params})
+            response = await self.session.get(url, params=params)
+
+            self.logger.debug(f"PRs API response status: {response.status}")
+            if response.status == 200:
+                prs = await response.json() or []
+                self.logger.debug(f"Found {len(prs)} PRs before filtering")
+                filtered_prs = [pr for pr in prs if datetime.fromisoformat(pr["updated_at"].replace("Z", "+00:00")) > since]
+                self.logger.debug(f"Found {len(filtered_prs)} PRs after filtering by date")
+                return filtered_prs
+            elif response.status == 403:
+                self.logger.warning("GitHub API rate limit exceeded or authentication required")
+            elif response.status == 404:
+                self.logger.warning(f"Repository not found: {owner}/{repo}")
+            else:
+                response_text = await response.text()
+                self.logger.warning(f"Failed to get PRs: HTTP {response.status}", extra_data={"response": response_text})
+            return []
+        except Exception as e:
+            self.logger.error(f"Error fetching PRs: {str(e)}", exc_info=True)
+            return []
 
     async def _update_repo_state(self, repo_url: str, commit_sha: str, pr_number: int) -> None:
         """Update repository state in database"""
