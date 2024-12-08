@@ -20,16 +20,27 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
         # Get poll interval from config or use default (5 minutes)
         config = Config()
         github_config = config.get("github", {})
-        interval = github_config.get("poll_interval", 300)  # 5 minutes default
+        interval = github_config.get("poll_interval", 5)  # 5 minutes default
 
         super().__init__("github", interval)
         DBSessionMixin.__init__(self)
         self.logger = Logger("GitHubWatcher")
 
-        # Initialize API client
         self.api_token = github_config.get("api_token")
+
+        self.logger.info(f"Github API token configured: {bool(self.api_token)}")
         self.session = None
         self.handler_registry = HandlerRegistry()
+
+        # Log configuration state
+        self.logger.info(
+            "GitHub watcher initialized with config:",
+            extra_data={
+                "has_token": bool(self.api_token),
+                "interval": interval,
+                "config": {k: "..." if k == "api_token" else v for k, v in github_config.items()},
+            },
+        )
 
     async def initialize(self) -> None:
         """Initialize the watcher"""
@@ -78,7 +89,28 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
         """Get all GitHub repositories from bounty projects"""
         try:
             async with self.get_async_session() as session:
-                # Query to get all repos and their states
+                # First, check if we have any bounty projects
+                project_query = text("SELECT COUNT(*) FROM projects WHERE project_type = 'bounty'")
+                project_count = await session.scalar(project_query)
+                self.logger.info(f"Found {project_count} bounty projects")
+
+                # Check direct GitHub repos first
+                direct_repos_query = text(
+                    """
+                    SELECT DISTINCT a.source_url, a.asset_type
+                    FROM assets a
+                    JOIN project_assets pa ON a.id = pa.asset_id
+                    JOIN projects p ON pa.project_id = p.id
+                    WHERE p.project_type = 'bounty'
+                    AND a.asset_type IN ('github_repo', 'github_file')
+                    LIMIT 5
+                """
+                )
+                direct_result = await session.execute(direct_repos_query)
+                direct_rows = direct_result.all()
+                self.logger.info(f"Sample assets: {[(row.source_url, row.asset_type) for row in direct_rows]}")
+
+                # Now try the full query
                 query = text(
                     """
                     WITH repo_urls AS (
@@ -112,6 +144,13 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
 
                 result = await session.execute(query)
                 rows = result.all()
+                self.logger.info(f"Found {len(rows)} repositories to watch")
+
+                # Log some sample URLs for debugging
+                if rows:
+                    sample_urls = [row.repo_url for row in rows[:5]]
+                    self.logger.info(f"Sample repository URLs: {sample_urls}")
+
                 return [
                     {
                         "repo_url": row.repo_url,
@@ -241,7 +280,7 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
                 self.logger.warning(f"Failed to get commits: HTTP {response.status}", extra_data={"response": response_text})
             return []
         except Exception as e:
-            self.logger.error(f"Error fetching commits: {str(e)}", exc_info=True)
+            self.logger.error(f"Error fetching commits: {str(e)}")
             return []
 
     async def _get_updated_prs(self, owner: str, repo: str, since: datetime) -> List[Dict[str, Any]]:
@@ -273,7 +312,7 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
                 self.logger.warning(f"Failed to get PRs: HTTP {response.status}", extra_data={"response": response_text})
             return []
         except Exception as e:
-            self.logger.error(f"Error fetching PRs: {str(e)}", exc_info=True)
+            self.logger.error(f"Error fetching PRs: {str(e)}")
             return []
 
     async def _update_repo_state(self, repo_url: str, commit_sha: str, pr_number: int) -> None:

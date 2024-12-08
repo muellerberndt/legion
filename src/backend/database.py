@@ -5,6 +5,8 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 from src.config.config import Config
 import os
+from urllib.parse import urlparse, parse_qs
+from src.util.logging import Logger
 
 # Create base class for models
 Base = declarative_base()
@@ -25,14 +27,50 @@ class Database:
     def __init__(self):
         if self._engine is None:
             config = Config()
+            logger = Logger("Database")
 
             # Check for Fly's DATABASE_URL first
             database_url = os.getenv("DATABASE_URL")
             if database_url:
+                # Parse the URL and its parameters
+                parsed = urlparse(database_url)
+                params = parse_qs(parsed.query)
+
+                logger.debug(
+                    "Initializing database from URL",
+                    extra_data={
+                        "scheme": parsed.scheme,
+                        "has_params": bool(params),
+                        "params": {k: v[0] if len(v) == 1 else v for k, v in params.items()},
+                    },
+                )
+
+                # Build base URLs without params
+                base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
                 # Convert to asyncpg URL for async engine
-                async_url = database_url.replace("postgres://", "postgresql+asyncpg://")
+                async_url = base_url.replace("postgres://", "postgresql+asyncpg://")
+
+                # Handle SSL parameters for asyncpg
+                connect_args_async = {}
+                if "sslmode" in params:
+                    connect_args_async["ssl"] = params["sslmode"][0] != "disable"
+                    logger.debug(
+                        "Configuring asyncpg SSL",
+                        extra_data={"ssl_enabled": connect_args_async["ssl"], "original_sslmode": params["sslmode"][0]},
+                    )
+
                 # Convert to psycopg2 URL for sync engine
-                database_url = database_url.replace("postgres://", "postgresql://")
+                sync_url = base_url.replace("postgres://", "postgresql://")
+
+                # Handle SSL parameters for psycopg2
+                connect_args_sync = {}
+                if "sslmode" in params:
+                    connect_args_sync["sslmode"] = params["sslmode"][0]
+                    logger.debug(
+                        "Configuring psycopg2 SSL",
+                        extra_data={"sslmode": connect_args_sync["sslmode"]},
+                    )
             else:
                 # Fallback to config-based URL
                 db_config = config.get("database", {})
@@ -41,20 +79,26 @@ class Database:
                 ):
                     # Use test database URL in test mode
                     if config._test_mode:
-                        database_url = "postgresql://test:test@localhost:5432/test_db"
+                        sync_url = "postgresql://test:test@localhost:5432/test_db"
                         async_url = "postgresql+asyncpg://test:test@localhost:5432/test_db"
+                        connect_args_sync = {}
+                        connect_args_async = {}
+                        logger.debug("Using test database configuration")
                     else:
                         raise ValueError("Database configuration is incomplete")
                 else:
-                    database_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
+                    sync_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
                     async_url = f"postgresql+asyncpg://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
+                    connect_args_sync = {}
+                    connect_args_async = {}
+                    logger.debug("Using config-based database configuration")
 
             # Create sync engine
-            self._engine = create_engine(database_url, future=True)
+            self._engine = create_engine(sync_url, future=True, connect_args=connect_args_sync)
             self._SessionLocal = sessionmaker(bind=self._engine, expire_on_commit=False)
 
             # Create async engine
-            self._async_engine = create_async_engine(async_url, future=True)
+            self._async_engine = create_async_engine(async_url, future=True, connect_args=connect_args_async)
             self._AsyncSessionLocal = sessionmaker(bind=self._async_engine, class_=AsyncSession, expire_on_commit=False)
 
     @contextmanager

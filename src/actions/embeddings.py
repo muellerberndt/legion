@@ -10,7 +10,7 @@ class EmbeddingsAction(BaseAction):
     spec = ActionSpec(
         name="embeddings",
         description="Generate embeddings for text input",
-        help_text="""Generate vector embeddings for text input.
+        help_text="""Generate vector embeddings for semantic search
 
 Usage:
 /embeddings <text>

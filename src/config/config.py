@@ -268,6 +268,7 @@ ENV_MAPPINGS = {
     "extensions_dir": "R4DAR_EXTENSIONS_DIR",
     "active_extensions": {"env": "R4DAR_EXTENSIONS", "type": "list"},
     "watchers.active_watchers": {"env": "R4DAR_WATCHERS", "type": "list"},
+    "github.api_token": "R4DAR_GITHUB_TOKEN",
 }
 
 # Default configuration

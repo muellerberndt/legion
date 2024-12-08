@@ -125,7 +125,6 @@ primary_region = "lax"
 
 [build]
   builder = 'paketobuildpacks/builder:base'
-  dockerfile = "Dockerfile"
 
 [env]
   PORT = '8080'

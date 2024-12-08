@@ -90,10 +90,6 @@ class WatcherManager:
                     watcher = watcher_classes[watcher_name]()
                     self.logger.info(f"Created watcher instance: {watcher_name}")
 
-                    # Log watcher configuration
-                    if hasattr(watcher, "config"):
-                        self.logger.info(f"Watcher {watcher_name} config:", extra_data={"config": watcher.config})
-
                     await watcher.initialize()
                     self.logger.info(f"Initialized watcher: {watcher_name}")
                     self.watchers[watcher_name] = watcher
@@ -114,7 +110,7 @@ class WatcherManager:
 
                     self.logger.info(f"Started watcher: {watcher_name}")
                 except Exception as e:
-                    self.logger.error(f"Failed to initialize/start watcher {watcher_name}: {e}", exc_info=True)
+                    self.logger.error(f"Failed to initialize/start watcher {watcher_name}: {e}")
             else:
                 self.logger.warning(f"Watcher {watcher_name} not found in available classes: {list(watcher_classes.keys())}")
 
@@ -123,7 +119,7 @@ class WatcherManager:
             await self.webhook_server.start(webhook_port)
             self.logger.info(f"Started webhook server on port {webhook_port}")
         except Exception as e:
-            self.logger.error(f"Failed to start webhook server: {e}", exc_info=True)
+            self.logger.error(f"Failed to start webhook server: {e}")
 
     async def stop(self) -> None:
         """Stop all running watchers"""

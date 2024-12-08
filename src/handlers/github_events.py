@@ -218,5 +218,5 @@ class GitHubEventHandler(Handler):
             await job_manager.submit_job(job)
 
         except Exception as e:
-            self.logger.error(f"Error handling GitHub event: {str(e)}", exc_info=True)
+            self.logger.error(f"Error handling GitHub event: {str(e)}")
             raise
