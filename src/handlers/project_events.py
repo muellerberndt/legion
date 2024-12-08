@@ -2,16 +2,19 @@ from typing import List
 from src.handlers.base import Handler, HandlerTrigger
 from src.models.base import Project
 from src.util.logging import Logger
-from src.services.notification_service import NotificationService
+from src.services.telegram import TelegramService
 
 
 class ProjectEventHandler(Handler):
-    """Handler that tracks project additions, updates, and removals"""
+    """Handler for project-related events"""
 
     def __init__(self):
         super().__init__()
         self.logger = Logger("ProjectEventHandler")
-        self.notification_service = NotificationService.get_instance()
+        self.telegram = TelegramService.get_instance()
+        self.logger.debug(f"Telegram service initialized: {bool(self.telegram)}")
+        self.logger.debug(f"Telegram bot initialized: {bool(self.telegram.bot)}")
+        self.logger.debug(f"Telegram chat_id configured: {bool(self.telegram.chat_id)}")
 
     @classmethod
     def get_triggers(cls) -> List[HandlerTrigger]:
@@ -20,42 +23,84 @@ class ProjectEventHandler(Handler):
 
     async def handle(self) -> None:
         """Handle project events"""
-        if not self.context:
-            self.logger.error("No context provided")
-            return
+        try:
+            if not self.context:
+                self.logger.error("No context provided")
+                return
 
-        project = self.context.get("project")
-        if not project:
-            self.logger.error("No project in context")
-            return
+            self.logger.debug(
+                "Event details:",
+                extra_data={
+                    "old_project": self.context.get("old_project"),
+                    "removed": self.context.get("removed", False),
+                    "trigger": self.trigger.name if self.trigger else None,
+                    "context_keys": list(self.context.keys()),
+                    "project_data": self.context.get("project"),
+                },
+            )
 
-        old_project = self.context.get("old_project")  # For updates
-        removed = self.context.get("removed", False)
+            project_data = self.context.get("project")
+            if not project_data:
+                self.logger.error("No project data in context")
+                return
 
-        if removed:
-            await self._handle_project_removal(project)
-        elif old_project:
-            await self._handle_project_update(old_project, project)
-        else:
-            await self._handle_new_project(project)
+            old_project = self.context.get("old_project")
+            removed = self.context.get("removed", False)
 
-    async def _handle_new_project(self, project: Project) -> None:
+            self.logger.debug(f"Processing event - Removed: {removed}, Old project exists: {old_project is not None}")
+
+            if removed:
+                self.logger.info("Handling project removal")
+                await self._handle_project_removal(project_data)
+            elif old_project:
+                self.logger.info("Handling project update")
+                await self._handle_project_update(old_project, project_data)
+            else:
+                self.logger.info("Handling new project")
+                await self._handle_new_project(project_data)
+
+        except Exception as e:
+            self.logger.error(f"Failed to handle project event: {str(e)}")
+            raise
+
+    async def _handle_new_project(self, project: dict) -> None:
         """Handle new project addition"""
-        message = (
-            f"🆕 New Project Added\n"
-            f"Name: {project.name}\n"
-            f"Type: {project.project_type}\n"
-            f"Description: {project.description}\n"
-            f"Assets: {len(project.assets)}"
-        )
+        try:
+            self.logger.debug("Building notification message for new project", extra_data={"project": project})
 
-        if project.extra_data:
-            message += "\nAdditional Info:"
-            for key, value in project.extra_data.items():
-                message += f"\n- {key}: {value}"
+            message = (
+                "🆕 gm ser! New Project Alert!\n\n"
+                f"🎯 Project: {project.get('name')}\n"
+                f"📝 Description: {project.get('description')}\n"
+                f"💰 Max Bounty: ${project.get('extra_data', {}).get('maxBounty', 'Unknown')}\n"
+                f"🔧 Type: {project.get('project_type')}\n"
+                f"🌐 Ecosystem: {', '.join(project.get('extra_data', {}).get('ecosystem', []))}\n"
+                f"💻 Language: {', '.join(project.get('extra_data', {}).get('language', []))}\n\n"
+                "Based project ser, might be worth a look 👀"
+            )
 
-        self.logger.info(f"New project added: {project.name}")
-        await self.notification_service.send_message(message)
+            # self.logger.debug("Message built, attempting to send", extra_data={"message": message})
+
+            # if not self.telegram:
+            #     self.logger.error("Telegram service not initialized")
+            #     return
+
+            # if not self.telegram.bot:
+            #     self.logger.error("Telegram bot not initialized")
+            #     return
+
+            # if not self.telegram.chat_id:
+            #     self.logger.error("Telegram chat_id not configured")
+            #     return
+
+            # self.logger.debug("Telegram service exists, sending message...")
+            await self.telegram.send_message(message)
+            self.logger.info(f"Successfully sent notification for new project: {project.get('name')}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to send Telegram notification: {str(e)}")
+            self.logger.error(f"Telegram service state - Bot: {bool(self.telegram.bot)}, Chat ID: {self.telegram.chat_id}")
+            raise
 
     async def _handle_project_update(self, old_project: Project, new_project: Project) -> None:
         """Handle project update"""
@@ -97,18 +142,19 @@ class ProjectEventHandler(Handler):
             message = f"📝 Project Updated: {new_project.name}\n" f"Changes detected:\n- " + "\n- ".join(changes)
 
             self.logger.info(f"Project updated: {new_project.name}")
-            await self.notification_service.send_message(message)
+            await self.telegram.send_message(message)
         else:
             self.logger.debug(f"No significant changes detected for project: {new_project.name}")
 
     async def _handle_project_removal(self, project: Project) -> None:
         """Handle project removal"""
         message = (
-            f"🗑️ Project Removed\n"
-            f"Name: {project.name}\n"
-            f"Type: {project.project_type}\n"
-            f"Assets removed: {len(project.assets)}"
+            "🗑️ Project Removed\n\n"
+            f"🎯 Project: {project.name}\n"
+            f"💰 Type: {project.project_type}\n"
+            f"📊 Assets removed: {len(project.assets)}\n\n"
+            "ser, pour one out for another one gone 🫡"
         )
 
         self.logger.info(f"Project removed: {project.name}")
-        await self.notification_service.send_message(message)
+        await self.telegram.send_message(message)

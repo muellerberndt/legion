@@ -17,12 +17,12 @@ Built-in features:
 - Automated monitoring of Github repos in scope
 - On-chain monitoring via Quicknode integration
 
-Extensions you can build:
+Some possible extensions:
 
-- Notify the user when a smart contract in scope is upgraded (see [example](examples/proxy_contract_handler.py))
-- Extract new semgrep patterns whenever a new audit report is published
-- Pre-assess the codebase of new bounties and contests
-- Daily data analysis to prioritize bounties, contests and assets
+- Auto-analysis when proxy implementation in scope is upgraded (see [example](examples/proxy_contract_handler.py))
+- Diff and analysis when an asset in scope is updated
+- Daily prioritization targets based on EV
+- Semgrep the code all bounties and conteststo find candidate bugs
 - ?
 
 ## Running R4dar

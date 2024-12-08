@@ -38,13 +38,28 @@ class TelegramService(NotificationService):
 
     async def send_message(self, message: str) -> None:
         """Send a message to the configured chat"""
-        if not self.bot:
-            raise RuntimeError("Bot not initialized")
-
         try:
+            self.logger.debug("Checking Telegram service prerequisites...")
+
+            if not self.bot:
+                self.logger.error("Bot not initialized")
+                raise RuntimeError("Bot not initialized")
+
+            if not self.chat_id:
+                self.logger.error("No chat_id configured")
+                raise RuntimeError("No chat_id configured")
+
+            self.logger.debug(f"Prerequisites OK. Bot: {bool(self.bot)}, Chat ID: {self.chat_id}")
+            self.logger.debug(f"Attempting to send message to chat {self.chat_id}")
+            self.logger.debug(f"Message preview: {message[:100]}...")
+
             await self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode="HTML")
+
+            self.logger.debug("Message sent successfully")
         except Exception as e:
-            self.logger.error(f"Failed to send message: {e}")
+            self.logger.error(f"Failed to send message: {str(e)}")
+            self.logger.debug(f"Bot state: {self.bot}")
+            self.logger.debug(f"Chat ID: {self.chat_id}")
             raise
 
     async def send_file(self, file_path: str, caption: str = None) -> None:

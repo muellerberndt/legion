@@ -179,8 +179,8 @@ class ImmunefiIndexer:
             self.session.rollback()
             raise
 
-    async def process_bounty(self, bounty_data):
-        """Process and store bounty data as a Project."""
+    async def process_bounty(self, bounty_data: dict) -> None:
+        """Process a single bounty program"""
         try:
             self.logger.info(f"Processing bounty: {bounty_data['project']}")
 
