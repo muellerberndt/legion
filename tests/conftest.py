@@ -1,6 +1,8 @@
 # isort: skip_file
 # flake8: noqa: E402
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, AsyncMock, MagicMock
+from src.backend.database import Database
+from src.config.config import Config
 
 # Create test config
 TEST_CONFIG = {
@@ -70,38 +72,42 @@ inspect_patcher.start()
 config_patcher = patch("src.config.config.load_config", return_value=TEST_CONFIG)
 config_patcher.start()
 
-# Now import pytest and other modules
+# Now import pytest
 import pytest
-from src.config.config import Config
-from unittest.mock import AsyncMock, MagicMock
 
 
-def pytest_configure(config):
-    """Configure test environment."""
-    # Register custom marks
-    config.addinivalue_line("markers", "no_collect: mark a class to prevent collection as a test case")
-    Config.set_test_mode(True)
-
-
-def pytest_unconfigure(config):
-    """Clean up test environment."""
-    Config.set_test_mode(False)
-    config_patcher.stop()
-    db_patcher.stop()
-    db_instance_patcher.stop()
-    inspect_patcher.stop()
+def pytest_configure():
+    """Configure test environment before any tests run"""
+    # Set test mode before any config is loaded
+    Config._test_mode = True
+    Config._instance = None
 
 
 @pytest.fixture(autouse=True)
 def setup_test_env(request):
-    """Set up test environment."""
-    # For config tests, stop the patch temporarily
-    if "config/test_config.py" in str(request.node.fspath):
+    """Setup test environment for each test"""
+    # Reset singleton instances
+    Config._instance = None
+    Database._instance = None
+
+    # For config tests, stop the config patch temporarily
+    is_config_test = "tests/config/test_config.py" in str(request.node.fspath)
+    if is_config_test:
         config_patcher.stop()
-        yield
+
+    # Initialize config in test mode
+    Config._test_mode = True
+    config = Config()
+
+    yield
+
+    # Cleanup
+    Config._instance = None
+    Database._instance = None
+
+    # Restore config patch for non-config tests
+    if is_config_test:
         config_patcher.start()
-    else:
-        yield
 
 
 @pytest.fixture
