@@ -21,8 +21,8 @@ class ExtensionLoader:
         self.logger = Logger("ExtensionLoader")
         self.extensions = {}
         self.action_registry = ActionRegistry()
-        self.handler_registry = HandlerRegistry()
-        self.watcher_manager = WatcherManager()
+        self.handler_registry = HandlerRegistry.get_instance()
+        self.watcher_manager = WatcherManager.get_instance()
         self.config = Config()
 
     def _find_python_modules(self, directory: str) -> List[str]:
@@ -35,17 +35,16 @@ class ExtensionLoader:
             List of module paths relative to the extensions directory
         """
         modules = []
-        extensions_dir = self.config.get("extensions_dir", "extensions").strip("./")  # Remove ./ prefix if present
-        base_dir = os.path.dirname(directory)  # Get the parent of the extension directory
+        extensions_dir = os.path.abspath(self.config.get("extensions_dir", "extensions"))
 
         for root, _, files in os.walk(directory):
             for file in files:
                 if file.endswith(".py") and not file.startswith("_"):
-                    # Get path relative to base_dir and convert to module path
-                    rel_path = os.path.relpath(root, base_dir)
+                    # Get path relative to extensions directory
+                    rel_path = os.path.relpath(root, extensions_dir)
                     module_name = os.path.splitext(file)[0]
-                    # Use configured extensions directory name
-                    module_path = f"{extensions_dir}.{rel_path.replace(os.sep, '.')}.{module_name}"
+                    # Convert path to module path
+                    module_path = ".".join(rel_path.split(os.sep) + [module_name])
                     modules.append(module_path)
 
         return modules
@@ -84,6 +83,9 @@ class ExtensionLoader:
         extensions_dir = self.config.get("extensions_dir", "extensions")
         active_extensions = self.config.get("active_extensions", [])
 
+        # Convert to absolute path
+        extensions_dir = os.path.abspath(extensions_dir)
+
         if not os.path.exists(extensions_dir):
             self.logger.info(f"Extensions directory {extensions_dir} not found")
             return
@@ -93,7 +95,7 @@ class ExtensionLoader:
 
         # Add extensions dir to Python path if not already there
         if extensions_dir not in sys.path:
-            sys.path.append(os.path.dirname(extensions_dir))
+            sys.path.append(extensions_dir)
 
         # Process each extension directory
         for extension_dir in active_extensions:

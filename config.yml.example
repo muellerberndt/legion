@@ -1,8 +1,7 @@
 # Data directory for storing downloaded files (required)
 data_dir: "~/.r4dar/data"
 extensions_dir: "./extensions"
-active_extensions:
-  - examples
+active_extensions: []
 
 # Database configuration (required)
 database:

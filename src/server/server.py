@@ -8,6 +8,7 @@ from src.watchers.manager import WatcherManager
 from src.services.telegram import TelegramService
 from src.actions.registry import ActionRegistry
 from src.jobs.manager import JobManager
+from src.server.extension_loader import ExtensionLoader
 
 
 class Server:
@@ -21,6 +22,7 @@ class Server:
         watcher_manager = WatcherManager.get_instance()
         action_registry = ActionRegistry()
         job_manager = JobManager()
+        interface_instances: List[Interface] = []
 
         try:
             print("Starting server...")  # Direct console output
@@ -28,6 +30,12 @@ class Server:
 
             # Initialize database
             await initializer.init_db()
+
+            # Load extensions
+            logger.info("Loading extensions...")
+            extension_loader = ExtensionLoader()
+            extension_loader.load_extensions()
+            extension_loader.register_components()
 
             # Start job manager first
             logger.info("Starting job manager...")
@@ -37,7 +45,6 @@ class Server:
             await watcher_manager.start()
 
             # Initialize interfaces
-            interface_instances: List[Interface] = []
             for interface_name in interfaces:
                 if interface_name == "telegram":
                     interface = TelegramInterface(action_registry=action_registry)

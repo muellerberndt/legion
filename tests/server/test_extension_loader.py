@@ -46,23 +46,26 @@ def extension_loader():
         patch("src.server.extension_loader.HandlerRegistry") as mock_handler_registry,
         patch("src.server.extension_loader.WatcherManager") as mock_watcher_manager,
     ):
-
         # Mock config to return test values
         config_instance = mock_config.return_value
         config_instance.get.side_effect = lambda key, default=None: {
-            "extensions_dir": "extensions",
+            "extensions_dir": "/test/extensions",
             "active_extensions": ["test_extension"],
         }.get(key, default)
 
         # Create mock registries
         action_registry = mock_action_registry.return_value
-        handler_registry = mock_handler_registry.return_value
-        watcher_manager = mock_watcher_manager.return_value
+        handler_registry = Mock()
+        watcher_manager = Mock()
 
         # Set up mock methods
         action_registry.register_action = Mock()
         handler_registry.register_handler = Mock()
         watcher_manager.register_watcher = Mock()
+
+        # Set up singleton mocks
+        mock_handler_registry.get_instance.return_value = handler_registry
+        mock_watcher_manager.get_instance.return_value = watcher_manager
 
         loader = ExtensionLoader()
         loader.action_registry = action_registry
@@ -116,12 +119,11 @@ def test_load_extensions(mock_walk, mock_exists, mock_import, mock_open, extensi
     """Test loading extensions from files"""
     # Setup mocks
     mock_exists.return_value = True
-    mock_walk.return_value = [("extensions/test_extension", [], ["test_components.py"])]
+    mock_walk.return_value = [("/test/extensions/test_extension", [], ["test_components.py"])]
 
     # Create a mock module with our test content
     mock_module = MagicMock()
-    module_name = "extensions.test_extension.test_components"
-    mock_module.__name__ = module_name
+    mock_module.__name__ = "test_extension.test_components"
 
     # Add test components to the module
     class TestHandler(Handler):
@@ -139,8 +141,8 @@ def test_load_extensions(mock_walk, mock_exists, mock_import, mock_open, extensi
             pass
 
     # Set the module name for the test classes
-    TestHandler.__module__ = module_name
-    TestAction.__module__ = module_name
+    TestHandler.__module__ = mock_module.__name__
+    TestAction.__module__ = mock_module.__name__
 
     mock_module.TestHandler = TestHandler
     mock_module.TestAction = TestAction
@@ -218,3 +220,57 @@ def test_discover_components_base_classes(extension_loader):
     assert len(components["handlers"]) == 0
     assert len(components["watchers"]) == 0
     assert len(components["agents"]) == 0
+
+
+def test_load_extensions_nonexistent_directory(extension_loader):
+    """Test loading extensions from a nonexistent directory"""
+    with patch("os.path.exists", return_value=False):
+        extension_loader.load_extensions()
+        assert len(extension_loader.extensions) == 0
+
+
+def test_load_extensions_empty_directory(extension_loader):
+    """Test loading extensions from an empty directory"""
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("os.walk", return_value=[]),
+        patch.object(
+            extension_loader.config,
+            "get",
+            side_effect=lambda key, default=None: {
+                "extensions_dir": "/test/extensions",
+                "active_extensions": [],  # Empty list of active extensions
+            }.get(key, default),
+        ),
+    ):
+        extension_loader.load_extensions()
+        assert len(extension_loader.extensions) == 0
+
+
+def test_load_extensions_with_extra_config(extension_loader):
+    """Test loading extensions with extra configuration"""
+    with (
+        patch("os.path.exists", side_effect=lambda p: True),
+        patch("os.walk", return_value=[("/test/extensions/test_extension", [], ["test_components.py"])]),
+        patch("importlib.import_module", return_value=MagicMock()),
+    ):
+        extension_loader.load_extensions()
+        extension_loader.config.load_extension_config.assert_called_once()
+
+
+def test_find_python_modules(extension_loader):
+    """Test finding Python modules in a directory"""
+    mock_walk_data = [
+        ("/test/extensions/test_extension", [], ["test_file.py", "_ignored.py", "not_python.txt"]),
+        ("/test/extensions/test_extension/subdir", [], ["sub_module.py"]),
+    ]
+
+    with (
+        patch("os.walk", return_value=mock_walk_data),
+        patch.object(extension_loader.config, "get", return_value="/test/extensions"),
+    ):
+        modules = extension_loader._find_python_modules("/test/extensions/test_extension")
+        assert "test_extension.test_file" in modules
+        assert "test_extension.subdir.sub_module" in modules
+        assert "_ignored" not in modules
+        assert "not_python" not in modules

@@ -16,6 +16,13 @@ class HandlerRegistry:
             cls._instance.initialize()
         return cls._instance
 
+    @classmethod
+    def get_instance(cls):
+        """Get the singleton instance"""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
     def initialize(self):
         self.logger = Logger("HandlerRegistry")
         self.event_bus = EventBus()

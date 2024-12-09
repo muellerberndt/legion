@@ -1,3 +1,9 @@
+# Example for implementing a custom agent.
+# This "agent" is very simple and doesn't actually use any commands.
+# All it does is summarize the Solidity code passed to it.
+# More complex agents
+
+
 from src.agents.base_agent import BaseAgent
 from src.util.logging import Logger
 from typing import Dict, Any, Tuple
