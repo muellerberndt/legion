@@ -168,13 +168,13 @@ You can find these in `src/actions/` for reference when building your own action
 
 ## 2. Agents
 
-Agents are AI-powered components that can process messages and perform complex tasks. They don't have a predefined interface - just inherit from `BaseAgent` and specify the actions the agent can use in the constructor.
+Agents are AI-powered components that can process messages and perform complex tasks. They inherit from `BaseAgent` and implement specific methods for autonomous task execution.
 
 ### Creating an Agent
 
 ```python
 # extensions/your-username/my_custom_agent.py
-from src.agents.base_agent import BaseAgent
+from src.agents.base_agent import BaseAgent, AgentResult
 from typing import Dict, Any, List
 from src.util.logging import Logger
 
@@ -199,26 +199,110 @@ class MyCustomAgent(BaseAgent):
         super().__init__(custom_prompt=custom_prompt, command_names=command_names)
         self.logger = Logger("MyCustomAgent")
     
-    async def process_message(self, message: str) -> str:
-        """Process a message from the user
+    async def execute_step(self) -> AgentResult:
+        """Execute a single step of the task
         
-        This is the main entry point for agent interaction.
+        This method should:
+        1. Plan the next step based on current state
+        2. Execute the planned action
+        3. Update the agent's state
+        4. Return an AgentResult
         """
         try:
-            # Your message processing logic here
-            response = await self.chat_completion([
-                {"role": "user", "content": message}
-            ])
-            return response
+            # Plan next step
+            plan = await self.plan_next_step(self.state)
+            
+            # Execute planned action
+            result = await self.execute_action(plan["action"], plan["input"])
+            
+            # Record the step
+            self.record_step(
+                action=plan["action"],
+                input_data=plan["input"],
+                output_data=result,
+                reasoning=plan["reasoning"],
+                next_action=plan["next_action"]
+            )
+            
+            # Update state
+            self.state["last_result"] = result
+            
+            return AgentResult(success=True, data=result)
+            
         except Exception as e:
-            self.logger.error(f"Error processing message: {str(e)}")
-            return "An error occurred"
-```
+            self.logger.error(f"Error in step execution: {str(e)}")
+            return AgentResult(success=False, error=str(e))
+    
+    async def plan_next_step(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Plan the next step based on current state
+        
+        This method should:
+        1. Analyze the current state
+        2. Decide what action to take next
+        3. Return a plan with action, input, reasoning, and next_action
+        """
+        # Example planning logic
+        task = current_state["task"]
+        last_result = current_state.get("last_result")
+        
+        # Use LLM to decide next step
+        plan = await self.chat_completion([
+            {"role": "system", "content": "Plan the next step based on the current state."},
+            {"role": "user", "content": f"Task: {task}\nLast result: {last_result}"}
+        ])
+        
+        return {
+            "action": plan["action"],
+            "input": plan["input"],
+            "reasoning": plan["reasoning"],
+            "next_action": plan["next_action"]
+        }
+    
+    def is_task_complete(self) -> bool:
+        """Check if the task is complete
+        
+        This method should analyze the current state and determine
+        if the task's goal has been achieved.
+        """
+        # Example completion check
+        return (
+            self.state.get("status") == "completed" or
+            self.state.get("goal_achieved") == True
+        )
+
+### Execution Logic
+
+The BaseAgent provides a structured framework for autonomous task execution:
+
+1. **Task Execution Flow**:
+   - Each task is broken down into steps
+   - Steps are executed sequentially with safety limits
+   - Maximum steps and timeout constraints are enforced
+   - State is tracked throughout execution
+
+2. **Step Execution**:
+   - `execute_step()`: Executes a single step of the task
+   - `plan_next_step()`: Plans what action to take next
+   - `is_task_complete()`: Checks if the task's goal is achieved
+   - `record_step()`: Records execution history
+
+3. **Safety and Monitoring**:
+   - Maximum 10 steps per task by default
+   - 5-minute timeout per task
+   - Full execution history is recorded
+   - State tracking for debugging
+
+4. **Results and State**:
+   - Each step returns an `AgentResult`
+   - Results can indicate success, failure, or need for user input
+   - Execution summary available with full step history
+   - State is maintained throughout task execution
 
 The agent will automatically have access to the specified commands from the action registry. The base agent handles:
 1. Filtering available commands based on command_names
 2. Building command documentation into the system prompt
 3. Validating and executing commands
+4. Managing execution state and history
 
 You don't need to implement `_get_available_commands` - just pass the command names you want to use to `super().__init__`.
 
@@ -333,16 +417,6 @@ The context passed to handlers contains relevant data for the event:
   - `new_revision`: New revision (for updates)
   - `old_path`: Path to old version (for file updates)
   - `new_path`: Path to new version (for file updates)
-
-### Built-in Handlers
-
-R4dar comes with several built-in handlers:
-
-- `ProjectEventHandler` - Tracks project changes and sends notifications
-- `AssetRevisionHandler` - Tracks asset revisions and computes diffs
-- `GitHubEventHandler` - Processes GitHub webhook events
-
-You can find these in `src/handlers/` for reference when building your own handlers.
 
 ### Custom Triggers
 
