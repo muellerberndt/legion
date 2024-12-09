@@ -69,9 +69,9 @@ class EventBus(DBSessionMixin):
             )
 
             # Save to database
-            with self.get_session() as session:
-                session.add(log)
-                session.commit()
+            async with self.get_session() as session:
+                await session.add(log)
+                await session.commit()
 
         except Exception as e:
             self.logger.error(f"Handler execution failed: {str(e)}")
@@ -82,6 +82,6 @@ class EventBus(DBSessionMixin):
                 trigger=trigger.name,
                 result={"success": False, "error": str(e)},
             )
-            with self.get_session() as session:
-                session.add(log)
-                session.commit()
+            async with self.get_session() as session:
+                await session.add(log)
+                await session.commit()

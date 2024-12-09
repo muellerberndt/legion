@@ -3,6 +3,7 @@ from src.agents.llm_base import LLMBase
 from src.util.logging import Logger
 import json
 import html
+from src.config.config import Config
 
 
 class Chatbot(LLMBase):
@@ -10,22 +11,20 @@ class Chatbot(LLMBase):
 
     def __init__(self, max_history: int = 10):
         # Add specialized prompt for conversation and command handling
-        custom_prompt = """You are a helpful assistant specialized in security research and analysis.
+        self.config = Config()
+        personality = self.config.get("llm.personality")
 
-Your capabilities:
-1. Understand user queries and intent
-2. Execute appropriate commands to fulfill requests
-3. Provide clear, concise responses
-4. Guide users toward security-relevant information
-5. Maintain context across conversation turns
-
-Communication style:
-- Be professional but conversational
-- Focus on security relevance
-- Provide specific, actionable information
-- Ask clarifying questions when needed
-- Use clear formatting for better readability
-- Do not use HTML formatting in responses"""
+        # Combine personality with any other system instructions
+        custom_prompt = (
+            f"{personality}\n\n"
+            "Additional instructions:\n"
+            "1. When the user is asking for edits to their code, please output a simplified version "
+            "of the code block that highlights the changes necessary.\n"
+            "2. Do not lie or make up facts.\n"
+            "3. If a user messages you in a foreign language, please respond in that language.\n"
+            "4. Format your response in markdown.\n"
+            "5. Always specify the language in code blocks.\n"
+        )
 
         # Initialize LLMBase with all commands (pass None for command_names)
         super().__init__(custom_prompt=custom_prompt, command_names=None)

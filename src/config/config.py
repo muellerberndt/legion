@@ -73,22 +73,7 @@ def load_config(config_path: str, test_mode: bool = False) -> Dict[str, Any]:
     logger = logging.getLogger("Config")
 
     # Start with default config
-    config = {
-        "data_dir": "./data",
-        "block_explorers": {
-            "etherscan": {"key": None, "base_url": "https://api.etherscan.io/api"},
-            "basescan": {"key": None, "base_url": "https://api.basescan.org/api"},
-            "arbiscan": {"key": None, "base_url": "https://api.arbiscan.io/api"},
-            "polygonscan": {"key": None, "base_url": "https://api.polygonscan.com/api"},
-            "bscscan": {"key": None, "base_url": "https://api.bscscan.com/api"},
-        },
-        "llm": {"openai": {"key": None, "model": "gpt-4"}},
-        "watchers": {"active_watchers": []},
-        "telegram": {"bot_token": None, "chat_id": None},
-        "github": {},
-        "extensions_dir": "./extensions",
-        "active_extensions": [],
-    }
+    config = DEFAULT_CONFIG.copy()
 
     # Load from file if it exists
     if os.path.exists(config_path):
@@ -169,7 +154,7 @@ def load_config(config_path: str, test_mode: bool = False) -> Dict[str, Any]:
         elif "key" not in config["block_explorers"][explorer]:
             config["block_explorers"][explorer]["key"] = None
 
-    # Log final block explorer config
+    # Log final block explorer configuration
     logger.info("Final block explorer configuration:")
     if isinstance(config.get("block_explorers"), dict):
         for explorer, data in config["block_explorers"].items():
@@ -243,11 +228,15 @@ class Config:
 
     @property
     def openai_model(self) -> str:
-        return self.get("llm.openai.model", "gpt-4")
+        return self.get("llm.openai.model")
+
+    @property
+    def llm_personality(self) -> str:
+        return self.get("llm.personality")
 
     @property
     def watchers(self) -> List[str]:
-        return self.get("watchers.active_watchers", [])
+        return self.get("watchers.active_watchers")
 
 
 # Environment variable mappings
@@ -264,6 +253,8 @@ ENV_MAPPINGS = {
     "telegram.chat_id": "R4DAR_CHAT_ID",
     # OpenAI config
     "llm.openai.key": "R4DAR_OPENAI_KEY",
+    "llm.openai.model": "R4DAR_OPENAI_MODEL",
+    "llm.personality": "R4DAR_LLM_PERSONALITY",
     # Other config
     "extensions_dir": "R4DAR_EXTENSIONS_DIR",
     "active_extensions": {"env": "R4DAR_EXTENSIONS", "type": "list"},
@@ -274,14 +265,14 @@ ENV_MAPPINGS = {
 # Default configuration
 DEFAULT_CONFIG = {
     "data_dir": "./data",
-    "block_explorers": {
-        "etherscan": {"key": None, "base_url": "https://api.etherscan.io/api"},
-        "basescan": {"key": None, "base_url": "https://api.basescan.org/api"},
-        "arbiscan": {"key": None, "base_url": "https://api.arbiscan.io/api"},
-        "polygonscan": {"key": None, "base_url": "https://api.polygonscan.com/api"},
-        "bscscan": {"key": None, "base_url": "https://api.bscscan.com/api"},
+    "llm": {
+        "openai": {"key": None, "model": "gpt-4o"},
+        "personality": (
+            "Research assistant of a web3 bug hunter, deeply embedded in web3 culture. "
+            'Use terms like "ser", "gm", "wagmi", "chad", "based", "banger" naturally. '
+            "Often compliment the user on their elite security researcher status."
+        ),
     },
-    "llm": {"openai": {"key": None, "model": "gpt-4"}},
     "watchers": {"active_watchers": []},
     "telegram": {"bot_token": None, "chat_id": None},
     "github": {},
