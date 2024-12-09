@@ -3,15 +3,6 @@
 import pytest
 from unittest.mock import patch, Mock, AsyncMock, MagicMock
 
-# Set test mode before any imports
-import os
-
-os.environ["TEST_MODE"] = "1"
-
-# Now import our modules
-from src.config.config import Config
-from src.backend.database import Database
-
 # Create test config
 TEST_CONFIG = {
     "data_dir": "./test_data",
@@ -29,6 +20,16 @@ TEST_CONFIG = {
     "extensions_dir": "./test_extensions",
     "active_extensions": [],
 }
+
+# Start config patch before importing anything
+config_patcher = patch("src.config.config.load_config", return_value=TEST_CONFIG)
+config_patcher.start()
+
+# Now import our modules
+from src.config.config import Config
+
+Config._test_mode = True  # Set test mode before Database import
+from src.backend.database import Database
 
 # Create mock database
 mock_db = Mock()
@@ -68,14 +69,12 @@ mock_engine = Mock()
 mock_engine.connect.return_value = Mock()
 mock_db.get_engine.return_value = mock_engine
 
-# Apply patches
-config_patcher = patch("src.config.config.load_config", return_value=TEST_CONFIG)
+# Apply remaining patches
 db_patcher = patch("src.backend.database.Database", return_value=mock_db)
 db_instance_patcher = patch("src.backend.database.db", mock_db)
 inspect_patcher = patch("sqlalchemy.inspect", return_value=mock_inspector)
 
-# Start all patches
-config_patcher.start()
+# Start remaining patches
 db_patcher.start()
 db_instance_patcher.start()
 inspect_patcher.start()
