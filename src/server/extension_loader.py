@@ -21,6 +21,7 @@ class ExtensionLoader:
         self.logger = Logger("ExtensionLoader")
         self.extensions = {}
         self.action_registry = ActionRegistry()
+        self.action_registry.initialize()
         self.handler_registry = HandlerRegistry.get_instance()
         self.watcher_manager = WatcherManager.get_instance()
         self.config = Config()

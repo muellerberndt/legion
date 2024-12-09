@@ -188,6 +188,24 @@ class Config:
         config_path = os.environ.get("R4DAR_CONFIG", "config.yml")
         Config._config = load_config(config_path, test_mode=Config._test_mode)
 
+    def load_extension_config(self, config_path: str) -> None:
+        """Load extension-specific configuration and merge it with the main config"""
+        if not os.path.exists(config_path):
+            return
+
+        with open(config_path, "r") as f:
+            try:
+                extension_config = yaml.safe_load(f)
+                if extension_config and isinstance(extension_config, dict):
+                    # Merge extension config with main config
+                    for key, value in extension_config.items():
+                        if isinstance(value, dict) and key in Config._config and isinstance(Config._config[key], dict):
+                            Config._config[key].update(value)
+                        else:
+                            Config._config[key] = value
+            except yaml.YAMLError as e:
+                logging.getLogger("Config").error(f"Failed to load extension config {config_path}: {e}")
+
     @classmethod
     def set_test_mode(cls, enabled: bool = True):
         """Enable/disable test mode"""
@@ -269,7 +287,7 @@ DEFAULT_CONFIG = {
         "openai": {"key": None, "model": "gpt-4o"},
         "personality": (
             "Research assistant of a web3 bug hunter, deeply embedded in web3 culture. "
-            'Use terms like "ser", "gm", "wagmi", "chad", "based", "banger" naturally. '
+            'Unironically use terms like "ser", "gm", "wagmi", "chad", "based", "banger". '
             "Often compliment the user on their elite security researcher status."
         ),
     },
