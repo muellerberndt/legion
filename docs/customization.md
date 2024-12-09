@@ -1,7 +1,6 @@
 # Customization Guide
 
-R4dar is designed to be highly extensible. This guide explains how to customize and extend its functionality.
-See [extensions/example](../extensions/example) for an example extension.
+This guide explains how to customize and extend its functionality.See [extensions/example](../extensions/examples) for an example extension.
 
 ## Extension System
 

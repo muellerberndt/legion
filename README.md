@@ -4,7 +4,7 @@
 
 R4dar is an AI agent-driven bot that does the dirty work for web3 bug hunters. Its goal is to optimize the use of the researchers' time by automatically correlating data from various sources. It keeps track of assets associated with ongoing bounty programs and contests, monitors on-chain and off-chain events related to those assets, and spawns agents that automate tasks on behalf of the user.
 
-The r4dar framework is designed to be easily extensible in order to allow users to keep their bug hunting alpha private.
+The r4dar framework is designed to be [highly extensible](docs/customization.md) in order to allow users to keep their bug hunting alpha private.
 
 ## Features
 
