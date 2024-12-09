@@ -228,7 +228,6 @@ class ImmunefiIndexer:
             # Prepare extra data with serialized dates
             extra_data = _serialize_event_data(
                 {
-                    "assets": bounty_data.get("assets", []),
                     "launchDate": bounty_data.get("launchDate"),
                     "updatedDate": bounty_data.get("updatedDate"),
                     "maxBounty": bounty_data.get("maxBounty"),

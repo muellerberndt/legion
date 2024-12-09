@@ -72,6 +72,12 @@ class ProjectEventHandler(Handler):
             return project.get(attr, default)
         return getattr(project, attr, default)
 
+    def _format_value(self, value: Any) -> str:
+        """Format a value for display, converting lists to comma-separated strings"""
+        if isinstance(value, list):
+            return ", ".join(str(item) for item in value)
+        return str(value)
+
     async def _handle_new_project(self, project: Union[Project, Dict[str, Any]]) -> dict:
         """Handle new project"""
         project_name = self._get_project_attr(project, "name")
@@ -91,8 +97,8 @@ class ProjectEventHandler(Handler):
         if extra_data:
             message.append("\nAdditional Info:")
             for key, value in extra_data.items():
-                if value:
-                    message.append(f"{key}: {value}")
+                if value is not None:  # Only show non-None values
+                    message.append(f"{key}: {self._format_value(value)}")
 
         await self.telegram.send_message("\n".join(message))
         return {"event": "new_project", "project_name": project_name, "project_type": project_type}

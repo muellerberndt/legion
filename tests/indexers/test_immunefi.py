@@ -255,7 +255,6 @@ async def test_process_bounty_no_changes(mock_session, mock_handler_registry, mo
         "maxBounty": "100000",
         "ecosystem": ["Ethereum"],
         "productType": ["DeFi"],
-        "assets": [],
         "launchDate": None,
         "updatedDate": None,
         "programType": None,
@@ -266,6 +265,7 @@ async def test_process_bounty_no_changes(mock_session, mock_handler_registry, mo
     mock_project.__dict__.update(
         {"description": "Test Description", "keywords": ["Ethereum", "DeFi"], "extra_data": mock_project.extra_data}
     )
+    mock_project.assets = []  # Ensure assets is an empty list
 
     # Create bounty data with exactly the same values
     bounty_data = {

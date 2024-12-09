@@ -73,13 +73,7 @@ class GitHubEventJob(Job, DBSessionMixin):
         summary_lines = [
             f"🔍 New PR with Security Impact in {repo_url}\n",
             f"Title: {pr.get('title')}",
-            f"Author: {pr.get('user', {}).get('login')}",
-            f"Description: {pr.get('body', 'No description')}",
             f"URL: {pr.get('html_url')}\n",
-            f"Changed files: {pr.get('changed_files', 0)}",
-            f"Additions: {pr.get('additions', 0)}",
-            f"Deletions: {pr.get('deletions', 0)}",
-            "\n🔒 Security Analysis:",
         ]
 
         # Add the analysis text
@@ -93,13 +87,10 @@ class GitHubEventJob(Job, DBSessionMixin):
                 asset, project = result
                 summary_lines.extend(
                     [
-                        "\n📁 Related Project Found:",
+                        "\n📁 Related Project:",
                         f"Project: {project.name}",
-                        f"Description: {project.description}",
                         f"Type: {project.project_type}",
-                        "\nAsset Info:",
-                        f"Type: {asset.asset_type}",
-                        f"URL: {asset.source_url}",
+                        f"\nAsset: {asset.source_url}",
                     ]
                 )
 
@@ -124,9 +115,7 @@ class GitHubEventJob(Job, DBSessionMixin):
         summary_lines = [
             f"📦 New commit with Security Impact in {repo_url}\n",
             f"Message: {commit.get('commit', {}).get('message', 'No message')}",
-            f"Author: {commit.get('commit', {}).get('author', {}).get('name', 'Unknown')}",
-            f"URL: {commit.get('html_url', '')}",
-            "\n🔒 Security Analysis:",
+            f"URL: {commit.get('html_url', '')}\n",
         ]
 
         # Add the analysis text
@@ -140,13 +129,10 @@ class GitHubEventJob(Job, DBSessionMixin):
                 asset, project = result
                 summary_lines.extend(
                     [
-                        "\n📁 Related Project Found:",
+                        "\n📁 Related Project:",
                         f"Project: {project.name}",
-                        f"Description: {project.description}",
                         f"Type: {project.project_type}",
-                        "\nAsset Info:",
-                        f"Type: {asset.asset_type}",
-                        f"URL: {asset.source_url}",
+                        f"\nAsset: {asset.source_url}",
                     ]
                 )
 
