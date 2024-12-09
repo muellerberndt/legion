@@ -1,9 +1,9 @@
-from src.actions.base import BaseAction, ActionSpec, ActionArgument
+from src.actions.base import BaseAction, ActionSpec
 from src.backend.query_builder import QueryBuilder
-from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
+from src.util.db_schema import get_db_query_hint
+from src.util.logging import Logger
 import json
-from datetime import datetime
 
 
 class DBQueryAction(BaseAction, DBSessionMixin):
@@ -11,27 +11,9 @@ class DBQueryAction(BaseAction, DBSessionMixin):
 
     spec = ActionSpec(
         name="db_query",
-        description="Execute a database query",
-        help_text="""Execute a database query using a JSON query specification.
-
-Usage:
-/db_query <query_spec>
-
-The query_spec should be a JSON object with the following structure:
-{
-    "from": "table_name",
-    "where": [
-        {"field": "column", "op": "=", "value": "value"}
-    ],
-    "order_by": "column",
-    "limit": 100
-}
-
-Examples:
-/db_query {"from": "assets", "where": [{"field": "asset_type", "op": "=", "value": "github_repo"}]}
-/db_query {"from": "projects", "order_by": "name"}""",
-        agent_hint="Use this command when you need to query the database for specific information. The query builder supports basic SQL operations.",
-        arguments=[ActionArgument(name="query", description="JSON query specification", required=True)],
+        description="Execute a database query using a JSON query specification",
+        help_text="Query the database using a structured JSON format that supports filtering, joining, and sorting.",
+        agent_hint=get_db_query_hint(),
     )
 
     def __init__(self):
@@ -42,21 +24,19 @@ Examples:
 
     def _serialize_value(self, value):
         """Helper to serialize values to JSON-compatible format"""
-        if isinstance(value, datetime):
-            return value.isoformat()
-        elif hasattr(value, "__table__"):
+        if hasattr(value, "__table__"):
             # Handle SQLAlchemy models
             model_dict = {}
             for column in value.__table__.columns:
-                model_dict[column.name] = self._serialize_value(getattr(value, column.name))
+                model_dict[column.name] = getattr(value, column.name)
             return model_dict
         return value
 
-    async def execute(self, query_spec: str) -> str:
-        """Execute a database query
+    async def execute(self, query: str) -> str:
+        """Execute a database query using the query builder format.
 
         Args:
-            query_spec: JSON string containing query specification
+            query: JSON string containing the query specification
 
         Returns:
             JSON string containing query results
@@ -64,47 +44,48 @@ Examples:
         try:
             # Parse query spec
             try:
-                spec = json.loads(query_spec)
+                spec = json.loads(query)
             except json.JSONDecodeError:
                 return json.dumps({"error": "Invalid JSON query specification"})
 
             # Build and execute query
             try:
+                # Build the query
                 query = self.query_builder.from_spec(spec).build()
-                results = []
 
+                # Execute with session
                 with self.get_session() as session:
                     rows = session.execute(query).all()
+
+                    # Convert results to list of dicts
+                    results = []
                     for row in rows:
-                        # Convert row to dict
-                        result = {}
                         if hasattr(row, "_mapping"):
                             # Handle SQLAlchemy Result rows
+                            result = {}
                             for key in row._mapping.keys():
-                                value = row._mapping.get(key)
-                                result[key] = self._serialize_value(value)
+                                result[key] = self._serialize_value(row._mapping.get(key))
+                            results.append(result)
                         else:
-                            # Handle SQLAlchemy model objects directly
-                            for column in row.__table__.columns:
-                                result[column.name] = self._serialize_value(getattr(row, column.name))
-                        results.append(result)
+                            # Handle SQLAlchemy model objects
+                            results.append(self._serialize_value(row))
 
-                # Limit results and add note if truncated
-                total_count = len(results)
-                if total_count > 100:
-                    results = results[:100]
-                    return json.dumps(
-                        {
-                            "count": total_count,
-                            "results": results,
-                            "note": f"Results truncated to 100 of {total_count} total matches",
-                        }
-                    )
+                    # Add count and truncate if needed
+                    total_count = len(results)
+                    if total_count > 100:
+                        results = results[:100]
+                        return json.dumps(
+                            {
+                                "count": total_count,
+                                "results": results,
+                                "note": f"Results truncated to 100 of {total_count} total matches",
+                            }
+                        )
 
-                return json.dumps({"count": total_count, "results": results})
+                    return json.dumps({"count": total_count, "results": results})
 
             except Exception as e:
-                return json.dumps({"error": f"Error building query: {str(e)}"})
+                return json.dumps({"error": f"Error executing query: {str(e)}"})
 
         except Exception as e:
             self.logger.error(f"Query execution failed: {str(e)}")

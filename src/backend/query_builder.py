@@ -3,6 +3,7 @@ from sqlalchemy import select, and_, text
 from sqlalchemy.sql import Select
 from src.models.base import Asset, Project, Base
 from src.util.logging import Logger
+from src.models.event_log import EventLog
 
 
 class QueryBuilder:
@@ -38,6 +39,9 @@ class QueryBuilder:
     }
     """
 
+    # Define allowed tables and their models
+    ALLOWED_TABLES = {"projects": Project, "assets": Asset, "event_logs": EventLog}
+
     def __init__(self):
         self.logger = Logger("QueryBuilder")
         self._table = None
@@ -59,6 +63,10 @@ class QueryBuilder:
             raise ValueError("Query specification must include 'from' field")
         table_name = spec["from"]
         builder.logger.debug(f"Using table: {table_name}")
+
+        # Verify table access
+        if table_name not in cls.ALLOWED_TABLES:
+            raise ValueError(f"Access to table '{table_name}' is not allowed. Allowed tables: {', '.join(cls.ALLOWED_TABLES)}")
 
         # Set table
         builder.from_table(table_name)
@@ -99,19 +107,16 @@ class QueryBuilder:
         # Add order by
         if "order_by" in spec:
             builder.logger.debug(f"Adding order by: {spec['order_by']}")
-            if isinstance(spec["order_by"], list):
-                for order in spec["order_by"]:
-                    if isinstance(order, dict):
-                        if "field" not in order:
-                            raise ValueError("Each order_by spec must include 'field'")
-                        field = order["field"]
-                        direction = order.get("direction", "asc")
-                        builder.order_by(field, direction)
-                    else:
-                        builder.order_by(str(order))
-            else:
-                # Handle string format for RANDOM()
-                builder.order_by(str(spec["order_by"]))
+            if not isinstance(spec["order_by"], list):
+                raise ValueError("'order_by' must be a list of sort specifications")
+            for order in spec["order_by"]:
+                if not isinstance(order, dict):
+                    raise ValueError(f"Invalid order by specification: {order}")
+                if "field" not in order:
+                    raise ValueError("Each order_by spec must include 'field'")
+                field = order["field"]
+                direction = order.get("direction", "asc")
+                builder.order_by(field, direction)
 
         # Add limit
         if "limit" in spec:
@@ -141,16 +146,26 @@ class QueryBuilder:
             "limit": 10,
         }
 
+    def _get_model_for_table(self, table_name: str) -> Type[Base]:
+        """Get the SQLAlchemy model for a table name"""
+        table_name = table_name.lower()
+        if table_name not in self.ALLOWED_TABLES and not table_name.startswith("information_schema."):
+            raise ValueError(
+                f"Access to table '{table_name}' is not allowed. Allowed tables: {', '.join(self.ALLOWED_TABLES)}"
+            )
+
+        if table_name.startswith("information_schema."):
+            return text(table_name)  # Return raw text for information_schema queries
+
+        return self.ALLOWED_TABLES[table_name]
+
     def from_table(self, table: Union[str, Type[Base]]) -> "QueryBuilder":
         """Set the base table for the query"""
         if isinstance(table, str):
-            if table.lower() == "assets":
-                self._table = Asset
-            elif table.lower() == "projects":
-                self._table = Project
-            else:
-                raise ValueError(f"Invalid table name: {table}")
+            self._table = self._get_model_for_table(table)
         else:
+            if table not in self.ALLOWED_TABLES.values():
+                raise ValueError(f"Invalid table model: {table}")
             self._table = table
         return self
 
@@ -164,30 +179,19 @@ class QueryBuilder:
         if not self._table:
             raise ValueError("No base table selected. Call from_table() first.")
 
-        # Determine the table to join with
-        if table_name.lower() == "assets":
-            join_table = Asset
-        elif table_name.lower() == "projects":
-            join_table = Project
-        else:
-            raise ValueError(f"Invalid table name: {table_name}")
+        # Get the join table model
+        join_table = self._get_model_for_table(table_name)
 
-        # Validate and build join conditions
+        # Build join condition
         join_conditions = []
         for left_field, right_field in on.items():
-            # Validate fields exist
-            if not hasattr(self._table, left_field):
-                raise ValueError(f"Field {left_field} does not exist in {self._table.__name__}")
-            if not hasattr(join_table, right_field):
-                raise ValueError(f"Field {right_field} does not exist in {join_table.__name__}")
+            left_col = getattr(self._table, left_field, None)
+            right_col = getattr(join_table, right_field, None)
+            if not left_col or not right_col:
+                raise ValueError(f"Invalid join fields: {left_field}, {right_field}")
+            join_conditions.append(left_col == right_col)
 
-            # Build join condition
-            left = getattr(self._table, left_field)
-            right = getattr(join_table, right_field)
-            join_conditions.append(left == right)
-
-        # Add join to list
-        self._joins.append((join_table, and_(*join_conditions)))
+        self._joins.append((join_table, join_conditions[0] if len(join_conditions) == 1 else and_(*join_conditions)))
         return self
 
     def select(self, *fields: str) -> "QueryBuilder":
@@ -377,3 +381,13 @@ class QueryBuilder:
             .build()
         )
         """
+
+    def where_raw(self, condition: str) -> "QueryBuilder":
+        """Add a raw SQL WHERE condition"""
+        self._conditions.append(text(condition))
+        return self
+
+    def order_by_raw(self, clause: str) -> "QueryBuilder":
+        """Add a raw SQL ORDER BY clause"""
+        self._order_by.append(text(clause))
+        return self

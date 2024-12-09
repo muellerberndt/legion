@@ -4,6 +4,7 @@ from src.util.logging import Logger
 from src.config.config import Config
 from openai import AsyncOpenAI
 from dataclasses import dataclass
+import json
 
 
 @dataclass
@@ -16,6 +17,11 @@ class AgentCommand:
     agent_hint: str
     required_params: List[str]
     optional_params: List[str]
+    positional_params: List[str]  # List of parameter names that should be passed positionally
+
+    def is_positional(self, param_name: str) -> bool:
+        """Check if a parameter should be passed positionally"""
+        return param_name in self.positional_params
 
 
 class LLMBase(ABC):
@@ -77,6 +83,16 @@ class LLMBase(ABC):
                     self.logger.warning(f"Action {name} has no spec, skipping")
                     continue
 
+                # Determine positional parameters from agent_hint
+                positional_params = []
+                if spec.agent_hint:
+                    # If agent_hint contains something like "First argument should be the query string"
+                    # or "First parameter must be the query"
+                    if any(hint in spec.agent_hint.lower() for hint in ["first argument", "first parameter"]):
+                        required_params = [arg.name for arg in spec.arguments or [] if arg.required]
+                        if required_params:
+                            positional_params.append(required_params[0])
+
                 commands[name] = AgentCommand(
                     name=name,
                     description=spec.description,
@@ -84,6 +100,7 @@ class LLMBase(ABC):
                     agent_hint=spec.agent_hint or "",
                     required_params=[arg.name for arg in spec.arguments or [] if arg.required],
                     optional_params=[arg.name for arg in spec.arguments or [] if not arg.required],
+                    positional_params=positional_params,
                 )
 
         self.logger.info("Initialized commands:", extra_data={"available_commands": list(commands.keys())})
@@ -120,18 +137,46 @@ class LLMBase(ABC):
 
         return base_prompt
 
-    async def execute_command(self, command: str, **kwargs) -> Any:
-        """Execute a registered command"""
+    async def execute_command(self, command: str, param_str: str) -> Any:
+        """Execute a registered command
+
+        Args:
+            command: The command to execute
+            param_str: The parameter string, either a positional value or key=value format
+
+        Returns:
+            The command result
+        """
         if command not in self.commands:
             raise ValueError(f"Unknown command: {command}")
 
-        # Get the command spec
-        cmd = self.commands[command]
+        # Special handling for db_query
+        if command == "db_query":
+            # Extract the JSON part after query= if present
+            if param_str.startswith("query="):
+                param_str = param_str[6:]  # Remove "query="
+            try:
+                query_json = json.loads(param_str)
+                # Always add a reasonable limit to database queries
+                if "limit" not in query_json:
+                    query_json["limit"] = 10
+                param_str = json.dumps(query_json)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid query format: {str(e)}")
 
-        # Validate required parameters
-        missing_params = [p for p in cmd.required_params if p not in kwargs]
-        if missing_params:
-            raise ValueError(f"Missing required parameters for {command}: {', '.join(missing_params)}")
+        # Parse parameters
+        kwargs = {}
+        if "=" in param_str:
+            # Handle as keyword argument
+            param_name, param_value = param_str.split("=", 1)
+            param_name = param_name.strip()
+            param_value = param_value.strip()
+            kwargs[param_name] = param_value
+        else:
+            # Handle as positional argument
+            param_str = param_str.strip()
+            # For db_query and other commands that expect a positional argument
+            args = [param_str] if param_str else []
 
         # Execute the command through action registry
         action = self.action_registry.get_action(command)
@@ -139,7 +184,10 @@ class LLMBase(ABC):
             raise ValueError(f"Action not found for command: {command}")
 
         handler, _ = action
-        return await handler(**kwargs)
+        if kwargs:
+            return await handler(**kwargs)
+        else:
+            return await handler(*args)
 
     async def chat_completion(self, messages: List[Dict[str, str]], model: str = None) -> str:
         """Get completion from LLM"""

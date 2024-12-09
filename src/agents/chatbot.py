@@ -129,32 +129,11 @@ Do not use HTML formatting in your responses.""",
                 return self._format_response(error_msg)
 
             command = parts[0]
-            params_str = parts[1]
-
-            # Extract parameter name and value
-            if "=" not in params_str:
-                error_msg = f"Invalid parameter format: {params_str}"
-                self.logger.error(error_msg)
-                return self._format_response(error_msg)
-
-            param_name, param_value = params_str.split("=", 1)
+            params_str = parts[1].strip()
 
             try:
-                # For db_query, ensure the query is valid JSON
-                if command == "db_query":
-                    try:
-                        query_json = json.loads(param_value)
-                        # Always add a reasonable limit to database queries
-                        if "limit" not in query_json:
-                            query_json["limit"] = 10
-                        result = await self.execute_command(command, query=json.dumps(query_json))
-                    except json.JSONDecodeError as e:
-                        error_msg = f"Invalid query format: {str(e)}"
-                        self.logger.error(error_msg)
-                        return self._format_response(error_msg)
-                else:
-                    # For other commands, pass the parameter as is
-                    result = await self.execute_command(command, **{param_name: param_value})
+                # Execute the command - parameter parsing is now handled in LLMBase
+                result = await self.execute_command(command, params_str)
 
                 # Truncate large results
                 result = self._truncate_result(str(result))
