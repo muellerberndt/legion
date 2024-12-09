@@ -1,8 +1,16 @@
 # isort: skip_file
 # flake8: noqa: E402
+import pytest
 from unittest.mock import patch, Mock, AsyncMock, MagicMock
-from src.backend.database import Database
+
+# Set test mode before any imports
+import os
+
+os.environ["TEST_MODE"] = "1"
+
+# Now import our modules
 from src.config.config import Config
+from src.backend.database import Database
 
 # Create test config
 TEST_CONFIG = {
@@ -60,27 +68,17 @@ mock_engine = Mock()
 mock_engine.connect.return_value = Mock()
 mock_db.get_engine.return_value = mock_engine
 
-# Start database patch before any imports
-db_patcher = patch("src.backend.database.Database", return_value=mock_db)
-db_patcher.start()
-db_instance_patcher = patch("src.backend.database.db", mock_db)
-db_instance_patcher.start()
-inspect_patcher = patch("sqlalchemy.inspect", return_value=mock_inspector)
-inspect_patcher.start()
-
-# Start config patch
+# Apply patches
 config_patcher = patch("src.config.config.load_config", return_value=TEST_CONFIG)
+db_patcher = patch("src.backend.database.Database", return_value=mock_db)
+db_instance_patcher = patch("src.backend.database.db", mock_db)
+inspect_patcher = patch("sqlalchemy.inspect", return_value=mock_inspector)
+
+# Start all patches
 config_patcher.start()
-
-# Now import pytest
-import pytest
-
-
-def pytest_configure():
-    """Configure test environment before any tests run"""
-    # Set test mode before any config is loaded
-    Config._test_mode = True
-    Config._instance = None
+db_patcher.start()
+db_instance_patcher.start()
+inspect_patcher.start()
 
 
 @pytest.fixture(autouse=True)
@@ -94,10 +92,6 @@ def setup_test_env(request):
     is_config_test = "tests/config/test_config.py" in str(request.node.fspath)
     if is_config_test:
         config_patcher.stop()
-
-    # Initialize config in test mode
-    Config._test_mode = True
-    config = Config()
 
     yield
 
