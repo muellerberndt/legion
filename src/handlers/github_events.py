@@ -62,11 +62,16 @@ class GitHubEventJob(Job, DBSessionMixin):
 
         # Get security analysis
         github_agent = GithubEventAgent()
-        security_analysis = await github_agent.analyze_pr(repo_url, pr)
+        analysis_result = await github_agent.analyze_pr(repo_url, pr)
+
+        # Check if there's a security impact
+        if not analysis_result.get("has_security_impact", False):
+            self.logger.info("No security impact detected, skipping notification")
+            return "No security impact detected"
 
         # Basic PR info
         summary_lines = [
-            f"🔍 New PR in {repo_url}\n",
+            f"🔍 New PR with Security Impact in {repo_url}\n",
             f"Title: {pr.get('title')}",
             f"Author: {pr.get('user', {}).get('login')}",
             f"Description: {pr.get('body', 'No description')}",
@@ -75,8 +80,11 @@ class GitHubEventJob(Job, DBSessionMixin):
             f"Additions: {pr.get('additions', 0)}",
             f"Deletions: {pr.get('deletions', 0)}",
             "\n🔒 Security Analysis:",
-            security_analysis,
         ]
+
+        # Add the analysis text
+        analysis_text = analysis_result.get("analysis", "No analysis available")
+        summary_lines.append(analysis_text)
 
         # Look for related assets
         if repo_url:
@@ -105,17 +113,25 @@ class GitHubEventJob(Job, DBSessionMixin):
         self.logger.debug(f"PROCESS PUSH: {repo_url} {commit}")
         # Get security analysis
         github_agent = GithubEventAgent()
-        security_analysis = await github_agent.analyze_commit(repo_url, commit)
+        analysis_result = await github_agent.analyze_commit(repo_url, commit)
+
+        # Check if there's a security impact
+        if not analysis_result.get("has_security_impact", False):
+            self.logger.info("No security impact detected, skipping notification")
+            return "No security impact detected"
 
         # Basic push info
         summary_lines = [
-            f"📦 New commit in {repo_url}\n",
+            f"📦 New commit with Security Impact in {repo_url}\n",
             f"Message: {commit.get('commit', {}).get('message', 'No message')}",
             f"Author: {commit.get('commit', {}).get('author', {}).get('name', 'Unknown')}",
             f"URL: {commit.get('html_url', '')}",
             "\n🔒 Security Analysis:",
-            security_analysis,
         ]
+
+        # Add the analysis text
+        analysis_text = analysis_result.get("analysis", "No analysis available")
+        summary_lines.append(analysis_text)
 
         # Look for related assets
         if repo_url:
@@ -149,9 +165,10 @@ class GitHubEventJob(Job, DBSessionMixin):
 
             self.result = JobResult(success=True, message=summary, data=self.payload)
 
-            # Send notification via Telegram
-            telegram = TelegramService.get_instance()
-            await telegram.send_message(summary)
+            # Only send notification if there's a security impact (summary will indicate this)
+            if "No security impact detected" not in summary:
+                telegram = TelegramService.get_instance()
+                await telegram.send_message(summary)
 
             self.status = JobStatus.COMPLETED
             self.completed_at = datetime.now(timezone.utc)

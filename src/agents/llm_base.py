@@ -205,7 +205,10 @@ class LLMBase(ABC):
             self.logger.info("Sending chat completion request", extra_data={"messages": messages})
             response = await client.chat.completions.create(model=model, messages=messages, temperature=0.7)
 
-            return response.choices[0].message.content
+            response_content = response.choices[0].message.content
+            self.logger.info(f"Response from LLM: {response_content}")
+
+            return response_content
 
         except Exception as e:
             self.logger.error(f"Error in chat completion: {str(e)}")
