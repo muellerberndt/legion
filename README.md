@@ -11,16 +11,17 @@ The r4dar framework is designed to be easily extensible in order to allow users 
 Built-in features:
 
 - LLM-powered Telegram chatbot interface
-- Search active bounties, contests and associated files
-- Automated monitoring of Github repos associated with bounties
+- Auto-sync data and files from bounty and contest plaform (atm Immunefi only)
+- Detect and react to scope changes in bounty programs
+- Search files and repos associated with bounties
+- Auto-review of PRs and commits from Github repos associated with bounties
 - Monitoring of bounty scopes on Immunefi
 
 Some possible extensions:
 
 - Auto-analysis when proxy implementation in scope is upgraded (see [example](examples/proxy_contract_handler.py))
-- Automated diff and analysis when an asset is updated
 - Prioritization targets based on daily events and EV
-- Scan the codebases of all bounties and assets for bugs
+- Scan the codebases of bounties and assets for bugs
 - Endless possibilities...
 
 ## Running R4dar
