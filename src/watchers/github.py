@@ -20,8 +20,7 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
         # Get poll interval from config or use default (5 minutes)
         config = Config()
         github_config = config.get("github", {})
-        interval = github_config.get("poll_interval", 300)  # 5 minutes default
-
+        interval = github_config.get("poll_interval", 3600)  # 1 hour default
         super().__init__("github", interval)
         DBSessionMixin.__init__(self)
         self.logger = Logger("GitHubWatcher")

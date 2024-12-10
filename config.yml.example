@@ -46,6 +46,7 @@ github:
   # Create at https://github.com/settings/tokens
   # Required scopes: repo, read:org
   api_token: "your-github-pat-token"
+  poll_interval: 3600  #  1 hour
 
 # Watcher configuration
 watchers:

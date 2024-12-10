@@ -140,7 +140,7 @@ class ProjectEventHandler(Handler):
             old_value = old_extra.get(key)
             new_value = new_extra.get(key)
             if old_value != new_value:
-                changes.append(f"{key}: {old_value} → {new_value}")
+                changes.append(f"{key}: {self._format_value(old_value)} → {self._format_value(new_value)}")
 
         # Check asset changes
         old_assets = {a.id: a for a in self._get_project_attr(old_project, "assets", [])}
