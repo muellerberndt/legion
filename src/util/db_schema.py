@@ -57,7 +57,6 @@ def get_db_query_hint() -> str:
     schema = get_table_schema()
 
     examples = """
-Example queries:
 - List projects: {{"from": "projects", "order_by": [{{"field": "id", "direction": "desc"}}], "limit": 10}}
 - Search assets: {{"from": "assets", "where": [{{"field": "asset_type", "op": "=", "value": "github_repo"}}]}}
 - Recent events: {{"from": "event_logs", "order_by": [{{"field": "created_at", "direction": "desc"}}], "limit": 10}}

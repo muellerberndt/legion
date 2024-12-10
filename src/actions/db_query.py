@@ -4,6 +4,7 @@ from src.backend.database import DBSessionMixin
 from src.util.db_schema import get_db_query_hint
 from src.util.logging import Logger
 import json
+from datetime import datetime
 
 
 class DBQueryAction(BaseAction, DBSessionMixin):
@@ -28,8 +29,11 @@ class DBQueryAction(BaseAction, DBSessionMixin):
             # Handle SQLAlchemy models
             model_dict = {}
             for column in value.__table__.columns:
-                model_dict[column.name] = getattr(value, column.name)
+                model_dict[column.name] = self._serialize_value(getattr(value, column.name))
             return model_dict
+        elif isinstance(value, datetime):
+            # Convert datetime to ISO format string
+            return value.isoformat()
         return value
 
     async def execute(self, query: str) -> str:

@@ -98,13 +98,17 @@ class Chatbot(LLMBase):
 For casual conversation or greetings, just respond naturally.
 Only suggest commands if the user is asking for specific information or actions.
 
+IMPORTANT: You can only execute ONE command at a time. If you need multiple queries, execute the most relevant one first and wait for the result.
+
 If a command is needed, respond with exactly:
 EXECUTE: command_name param=value
 
 Example responses:
 - For casual chat: Just respond normally
-- For command: EXECUTE: db_query query={"from": "projects", "limit": 5}
+- For command: EXECUTE: db_query query='{"from": "projects", "limit": 5}'
+- For random ordering: EXECUTE: db_query query='{"from": "projects", "order_by": [{"field": "random", "direction": "asc"}], "limit": 5}'
 
+Do not try to execute multiple commands or modify queries based on previous results. Execute one command and wait for the response.
 Do not use HTML formatting in your responses.""",
                     }
                 ]

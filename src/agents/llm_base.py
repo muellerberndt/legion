@@ -150,21 +150,35 @@ class LLMBase(ABC):
         if command not in self.commands:
             raise ValueError(f"Unknown command: {command}")
 
+        self.logger.info(f"Executing command: {command} with params: {param_str}")
+
         # Special handling for db_query
         if command == "db_query":
-            # Extract the JSON part after query= if present
+            # Extract the query part
+            param_str = param_str.strip()
             if param_str.startswith("query="):
-                param_str = param_str[6:]  # Remove "query="
+                param_str = param_str[6:].strip()  # Remove "query="
+            # Remove surrounding quotes if present
+            if (param_str.startswith("'") and param_str.endswith("'")) or (
+                param_str.startswith('"') and param_str.endswith('"')
+            ):
+                param_str = param_str[1:-1].strip()
             try:
+                # Parse and validate the query
                 query_json = json.loads(param_str)
                 # Always add a reasonable limit to database queries
                 if "limit" not in query_json:
                     query_json["limit"] = 10
-                param_str = json.dumps(query_json)
+                # Execute directly with the parsed JSON
+                action = self.action_registry.get_action(command)
+                if not action:
+                    raise ValueError(f"Action not found for command: {command}")
+                handler, _ = action
+                return await handler(json.dumps(query_json))
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid query format: {str(e)}")
 
-        # Parse parameters
+        # Parse parameters for other commands
         kwargs = {}
         if "=" in param_str:
             # Handle as keyword argument
@@ -175,7 +189,7 @@ class LLMBase(ABC):
         else:
             # Handle as positional argument
             param_str = param_str.strip()
-            # For db_query and other commands that expect a positional argument
+            # For commands that expect a positional argument
             args = [param_str] if param_str else []
 
         # Execute the command through action registry

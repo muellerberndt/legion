@@ -42,6 +42,13 @@ class QueryBuilder:
     # Define allowed tables and their models
     ALLOWED_TABLES = {"projects": Project, "assets": Asset, "event_logs": EventLog}
 
+    # Define allowed SQL functions
+    ALLOWED_FUNCTIONS = {
+        "random": "random()",  # PostgreSQL random() function
+        "count": "count(*)",  # Count function
+        "now": "now()",  # Current timestamp
+    }
+
     def __init__(self):
         self.logger = Logger("QueryBuilder")
         self._table = None
@@ -198,28 +205,29 @@ class QueryBuilder:
         """Add fields to select
 
         Args:
-            fields: Field names to select, e.g. "assets.id", "projects.name"
+            fields: Field names to select, e.g. "assets.id", "projects.name", or just "id" for base table fields
         """
         if not self._table:
             raise ValueError("No table selected. Call from_table() first.")
 
         for field in fields:
-            # Require table.field format
+            # If field doesn't contain a dot, assume it's from the base table
             if "." not in field:
-                raise ValueError(f"Invalid field format: {field}. Use format 'table.field'")
+                # Get base table name
+                base_table_name = self._table.__tablename__
+                qualified_field = f"{base_table_name}.{field}"
+                self.logger.debug(f"Qualifying field {field} as {qualified_field}")
+                field = qualified_field
 
             try:
                 table_name, field_name = field.split(".")
             except ValueError:
-                raise ValueError(f"Invalid field format: {field}. Use format 'table.field'")
+                raise ValueError(f"Invalid field format: {field}. Use format 'table.field' or just 'field' for base table")
 
-            if table_name.lower() == "assets":
-                table = Asset
-            elif table_name.lower() == "projects":
-                table = Project
-            else:
-                raise ValueError(f"Invalid table name: {table_name}")
+            # Get the table model
+            table = self._get_model_for_table(table_name)
 
+            # Verify field exists
             if not hasattr(table, field_name):
                 raise ValueError(f"Field {field_name} does not exist in {table.__name__}")
 
@@ -229,6 +237,30 @@ class QueryBuilder:
 
     def where(self, field: str, operator: str, value: Any) -> "QueryBuilder":
         """Add a WHERE condition"""
+        if not self._table:
+            raise ValueError("No table selected. Call from_table() first.")
+
+        # If field doesn't contain a dot, assume it's from the base table
+        if "." not in field:
+            base_table_name = self._table.__tablename__
+            qualified_field = f"{base_table_name}.{field}"
+            self.logger.debug(f"Qualifying field {field} as {qualified_field}")
+            field = qualified_field
+
+        try:
+            table_name, field_name = field.split(".")
+        except ValueError:
+            raise ValueError(f"Invalid field format: {field}. Use format 'table.field' or just 'field' for base table")
+
+        # Get the table model
+        table = self._get_model_for_table(table_name)
+
+        # Verify field exists
+        if not hasattr(table, field_name):
+            raise ValueError(f"Field {field_name} does not exist in {table.__name__}")
+
+        field_obj = getattr(table, field_name)
+
         allowed_operators = {
             "=": lambda f, v: f == v,
             "!=": lambda f, v: f != v,
@@ -251,67 +283,45 @@ class QueryBuilder:
         if operator not in allowed_operators:
             raise ValueError(f"Invalid operator: {operator}. Allowed operators: {', '.join(allowed_operators.keys())}")
 
-        # Handle table.field format
-        if "." in field:
-            table_name, field_name = field.split(".")
-            if table_name.lower() == "assets":
-                table = Asset
-            elif table_name.lower() == "projects":
-                table = Project
-            else:
-                raise ValueError(f"Invalid table name: {table_name}")
-        else:
-            if not self._table:
-                raise ValueError("No table selected. Call from_table() first.")
-            table = self._table
-            field_name = field
-
-        if not hasattr(table, field_name):
-            raise ValueError(f"Invalid field: {field_name}. Field does not exist in table {table.__name__}")
-
-        table_field = getattr(table, field_name)
-        self._conditions.append(allowed_operators[operator](table_field, value))
+        condition = allowed_operators[operator](field_obj, value)
+        self._conditions.append(condition)
 
         return self
 
     def order_by(self, field: str, direction: str = "asc") -> "QueryBuilder":
-        """Add an ORDER BY clause
+        """Add an ORDER BY clause"""
+        if not self._table:
+            raise ValueError("No table selected. Call from_table() first.")
 
-        Args:
-            field: Field name or SQL function (e.g. "created_at" or "RANDOM()")
-            direction: Sort direction ("asc" or "desc")
-        """
-        if direction.lower() not in ("asc", "desc"):
-            raise ValueError("Direction must be either 'asc' or 'desc'")
+        direction = direction.lower()
+        if direction not in ("asc", "desc"):
+            raise ValueError(f"Invalid sort direction: {direction}")
 
-        # Handle SQL functions
-        if field.upper().endswith("()"):
-            self._order_by.append(text(field))
+        # Check if field is a whitelisted function
+        if field.lower() in self.ALLOWED_FUNCTIONS:
+            # Use raw SQL for allowed functions
+            order_clause = text(f"{self.ALLOWED_FUNCTIONS[field.lower()]} {direction}")
+            self._order_by.append(order_clause)
             return self
 
-        # Handle table.field format
-        if "." in field:
+        # If field doesn't contain a dot, assume it's from the base table
+        if "." not in field:
+            base_table_name = self._table.__tablename__
+            qualified_field = f"{base_table_name}.{field}"
+            self.logger.debug(f"Qualifying field {field} as {qualified_field}")
+            field = qualified_field
+
+        try:
             table_name, field_name = field.split(".")
-            if table_name.lower() == "assets":
-                table = Asset
-            elif table_name.lower() == "projects":
-                table = Project
-            else:
-                raise ValueError(f"Invalid table name: {table_name}")
-        else:
-            if not self._table:
-                raise ValueError("No table selected. Call from_table() first.")
-            table = self._table
-            field_name = field
+        except ValueError:
+            raise ValueError(f"Invalid field format: {field}. Use format 'table.field' or just 'field' for base table")
 
+        table = self._get_model_for_table(table_name)
         if not hasattr(table, field_name):
-            raise ValueError(f"Invalid field: {field_name}. Field does not exist in table {table.__name__}")
+            raise ValueError(f"Field {field_name} does not exist in {table.__name__}")
 
-        table_field = getattr(table, field_name)
-        if direction.lower() == "asc":
-            self._order_by.append(table_field.asc())
-        else:
-            self._order_by.append(table_field.desc())
+        field_obj = getattr(table, field_name)
+        self._order_by.append(field_obj.asc() if direction == "asc" else field_obj.desc())
 
         return self
 
