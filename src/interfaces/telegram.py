@@ -94,12 +94,12 @@ class TelegramInterface(Interface):
             self.app = (
                 Application.builder()
                 .token(token)
-                .connect_timeout(30)
-                .read_timeout(30)
-                .write_timeout(30)
-                .get_updates_connect_timeout(30)
-                .get_updates_read_timeout(30)
-                .get_updates_write_timeout(30)
+                .connect_timeout(60)  # Increased timeouts
+                .read_timeout(60)
+                .write_timeout(60)
+                .get_updates_connect_timeout(60)
+                .get_updates_read_timeout(60)
+                .get_updates_write_timeout(60)
                 .build()
             )
 
@@ -122,12 +122,12 @@ class TelegramInterface(Interface):
             self._polling_task = asyncio.create_task(
                 self.app.updater.start_polling(
                     drop_pending_updates=True,  # Drop pending updates on startup
-                    poll_interval=1.0,  # Increased poll interval
-                    timeout=30,  # Increased timeout
-                    bootstrap_retries=5,  # Limited retries
-                    read_timeout=30,
-                    write_timeout=30,
-                    connect_timeout=30,
+                    poll_interval=2.0,  # Increased poll interval to reduce load
+                    timeout=60,  # Increased timeout
+                    bootstrap_retries=-1,  # Infinite retries with exponential backoff
+                    read_timeout=60,
+                    write_timeout=60,
+                    connect_timeout=60,
                     allowed_updates=Update.ALL_TYPES,
                     error_callback=self._handle_error,
                 )
@@ -196,10 +196,38 @@ class TelegramInterface(Interface):
             self.logger.error("Bot not initialized")
             return
 
-        try:
-            await self.app.bot.send_message(chat_id=session_id, text=content, parse_mode=telegram.constants.ParseMode.HTML)
-        except Exception as e:
-            self.logger.error(f"Failed to send message: {e}")
+        max_retries = 3
+        retry_delay = 1  # Initial delay in seconds
+
+        for attempt in range(max_retries):
+            try:
+                await self.app.bot.send_message(
+                    chat_id=session_id,
+                    text=content,
+                    parse_mode=telegram.constants.ParseMode.HTML,
+                    read_timeout=60,
+                    write_timeout=60,
+                    connect_timeout=60,
+                )
+                break  # Success, exit retry loop
+            except telegram.error.TimedOut:
+                if attempt < max_retries - 1:  # Don't sleep on last attempt
+                    self.logger.warning(
+                        f"Timeout sending message, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    self.logger.error("Failed to send message after all retries")
+                    raise
+            except telegram.error.RetryAfter as e:
+                # Rate limit error - respect Telegram's retry_after
+                retry_in = e.retry_after
+                self.logger.warning(f"Rate limited, retrying in {retry_in}s")
+                await asyncio.sleep(retry_in)
+            except Exception as e:
+                self.logger.error(f"Failed to send message: {e}")
+                raise
 
     async def stop(self) -> None:
         """Stop the interface"""
@@ -240,9 +268,31 @@ class TelegramInterface(Interface):
         """Handle errors during polling"""
         try:
             if isinstance(context.error, telegram.error.NetworkError):
-                self.logger.warning(f"Network error in Telegram polling: {context.error}")
+                self.logger.warning(
+                    "Network error in Telegram polling - will retry automatically",
+                    extra_data={"error": str(context.error), "update": str(update) if update else None},
+                )
+            elif isinstance(context.error, telegram.error.TimedOut):
+                self.logger.warning(
+                    "Timeout in Telegram polling - will retry automatically",
+                    extra_data={"error": str(context.error), "update": str(update) if update else None},
+                )
+            elif isinstance(context.error, telegram.error.RetryAfter):
+                # Rate limit error - log the retry delay
+                retry_in = context.error.retry_after if hasattr(context.error, "retry_after") else 30
+                self.logger.warning(
+                    f"Rate limited by Telegram - retrying in {retry_in} seconds",
+                    extra_data={"retry_after": retry_in, "update": str(update) if update else None},
+                )
             else:
-                self.logger.error(f"Error in Telegram polling: {context.error}")
+                self.logger.error(
+                    "Error in Telegram polling",
+                    extra_data={
+                        "error": str(context.error),
+                        "error_type": type(context.error).__name__,
+                        "update": str(update) if update else None,
+                    },
+                )
         except Exception as e:
             self.logger.error(f"Error in error handler: {e}")
 
