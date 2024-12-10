@@ -19,7 +19,7 @@ Built-in features:
 
 Some possible extensions:
 
-- Auto-analysis when proxy implementation in scope is upgraded (see [example](examples/proxy_contract_handler.py))
+- Auto-analysis when proxy implementation in scope is upgraded (see [example](extensions/examples/)
 - Prioritization targets based on daily events and EV
 - Scan the codebases of bounties and assets for bugs
 - Endless possibilities...
