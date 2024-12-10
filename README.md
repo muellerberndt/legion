@@ -11,7 +11,7 @@ The r4dar framework is designed to be [highly extensible](docs/customization.md)
 Built-in features:
 
 - LLM-powered Telegram chatbot interface
-- Auto-sync data and files from bounty and contest plaforms (atm Immunefi only)
+- Auto-sync data and files from bounty and contest platforms (atm Immunefi only)
 - Detect and react to scope changes in bounty programs
 - Search files and repos associated with bounties
 - Auto-review of PRs and commits from Github repos associated with bounties
