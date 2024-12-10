@@ -2,17 +2,15 @@
 
 ![Tests](https://github.com/muellerberndt/r4dar/actions/workflows/tests.yml/badge.svg)
 
-R4dar is an AI agent-driven bot that does the dirty work for web3 bug hunters. Its goal is to optimize the use of the researchers' time by automatically correlating data from various sources. It keeps track of assets associated with ongoing bounty programs and contests, monitors on-chain and off-chain events related to those assets, and spawns agents that automate tasks on behalf of the user.
+R4dar is an AI-driven framework that automates web3 bug hunting workflows. The idea is to spawn an army of autonomous agents that perform tasks on behalf of the user, such as monitoring the scopes of active bounty programs and contests, assessing the relevance of code changes and upgrades, and prioritizing targets based on EV. Bug detection tools can also be integrated easily. The goal is to optimize the use of the researchers' time and hopefully increasing the overall earnings.
 
-The r4dar framework is designed to be [highly extensible](docs/customization.md) in order to allow users to keep their bug hunting alpha private.
-
-## Features
+The r4dar framework is designed to be [extensible](docs/customization.md) in order to allow users to keep their bug hunting alpha private.
 
 Built-in features:
 
 - LLM-powered Telegram chatbot interface
 - Auto-sync data and files from bounty and contest platforms (atm Immunefi only)
-- Detect and react to scope changes in bounty programs
+- React to scope changes in bounty programs
 - Search files and repos associated with bounties
 - Auto-review of PRs and commits from Github repos associated with bounties
 - Monitoring of bounty scopes on Immunefi
@@ -20,7 +18,7 @@ Built-in features:
 Some possible extensions:
 
 - Auto-analysis when proxy implementation in scope is upgraded (see [example](extensions/examples/))
-- Prioritization targets based on daily events and EV
+- Prioritization of targets based on daily events and EV
 - Scan the codebases of bounties and assets for bugs
 - Endless possibilities...
 
@@ -53,3 +51,4 @@ This project is licensed under the Apache 2.0 License with additional commercial
 It is free to use for security research and bug hunting activities, including those generating commercial rewards (e.g., bug bounty programs or audit contests). Any extensions you build on top of r4dar belong to you and are not subject to the license.
 
 However, wrapping r4dar into a commercial product or service is prohibited without written permission from the author. See [LICENSE](LICENSE.txt) for details.
+ 
