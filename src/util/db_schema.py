@@ -56,6 +56,12 @@ def get_db_query_hint() -> str:
     """
     schema = get_table_schema()
 
+    field_descriptions = """
+project_type: "bounty" or "contest"
+project_source: E.g. "immunefi" or "code4rena"
+keywords: tags that describe the project e.g. "Solidity"
+"""
+
     examples = """
 - List projects: {{"from": "projects", "order_by": [{{"field": "id", "direction": "desc"}}], "limit": 10}}
 - Search assets: {{"from": "assets", "where": [{{"field": "asset_type", "op": "=", "value": "github_repo"}}]}}
@@ -70,6 +76,8 @@ def get_db_query_hint() -> str:
 
     return f"""Database Schema:
 {schema}
+
+{field_descriptions}
 
 {examples}
 

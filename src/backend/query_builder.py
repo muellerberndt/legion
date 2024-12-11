@@ -4,6 +4,7 @@ from sqlalchemy.sql import Select
 from src.models.base import Asset, Project, Base
 from src.util.logging import Logger
 from src.models.event_log import EventLog
+import json
 
 
 class QueryBuilder:
@@ -278,6 +279,7 @@ class QueryBuilder:
             "?*": lambda f, v: text(
                 f"EXISTS (SELECT 1 FROM json_array_elements_text({f.key}::json) as elem WHERE lower(elem) = lower(:value))"
             ).bindparams(value=v),
+            "@>": lambda f, v: text(f"CAST({f.key} AS jsonb) @> CAST(:value AS jsonb)").bindparams(value=json.dumps(v)),
         }
 
         if operator not in allowed_operators:

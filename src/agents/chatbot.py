@@ -1,3 +1,4 @@
+# flake8: noqa: E501
 from typing import Dict, List
 from src.agents.llm_base import LLMBase
 from src.util.logging import Logger
@@ -100,13 +101,26 @@ Only suggest commands if the user is asking for specific information or actions.
 
 IMPORTANT: You can only execute ONE command at a time. If you need multiple queries, execute the most relevant one first and wait for the result.
 
+Database schema:
+- projects table: Contains project information (id, name, project_type, etc.)
+  keywords field is a JSON array of strings
+- assets table: Contains assets (id, asset_type, source_url, etc.)
+- project_assets table: Association table linking projects and assets (project_id, asset_id)
+  project_assets.project_id references projects.id
+  project_assets.asset_id references assets.id
+
 If a command is needed, respond with exactly:
 EXECUTE: command_name param=value
 
 Example responses:
 - For casual chat: Just respond normally
-- For command: EXECUTE: db_query query='{"from": "projects", "limit": 5}'
-- For random ordering: EXECUTE: db_query query='{"from": "projects", "order_by": [{"field": "random", "direction": "asc"}], "limit": 5}'
+- For listing projects: EXECUTE: db_query query='{"from": "projects", "limit": 5}'
+- For finding project assets: EXECUTE: db_query query='{"from": "assets", "join": {"table": "project_assets", "on": {"id": "asset_id"}}, "join": {"table": "projects", "on": {"project_id": "id"}}, "where": [{"field": "projects.name", "op": "ilike", "value": "%ProjectName%"}], "limit": 10}'
+- For latest Solidity project: EXECUTE: db_query query='{"from": "projects", "where": [{"field": "keywords", "op": "@>", "value": ["Solidity"]}], "order_by": [{"field": "created_at", "direction": "desc"}], "limit": 1}'
+
+Note:
+- When joining tables through an association table, you need to join through project_assets first, then to projects.
+- To search in JSON arrays like keywords, use the "@>" operator with an array value: {"op": "@>", "value": ["Keyword"]}
 
 Do not try to execute multiple commands or modify queries based on previous results. Execute one command and wait for the response.
 Do not use HTML formatting in your responses.""",
