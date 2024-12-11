@@ -19,8 +19,8 @@ exclude =
     extensions/*,
     !extensions/examples/
 per-file-ignores =
-    __init__.py:F401,
-    tests/*:E402,F401,F811,
-    src/backend/query_builder.py:C901,
-    src/agents/*.py:C901,
+    __init__.py:F401
+    tests/*:E402,F401,F811
+    src/backend/query_builder.py:C901
+    src/agents/*.py:C901
     src/handlers/*.py:C901 
