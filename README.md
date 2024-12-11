@@ -2,24 +2,23 @@
 
 ![Tests](https://github.com/muellerberndt/r4dar/actions/workflows/tests.yml/badge.svg)
 
-R4dar is an AI-driven framework that automates web3 bug hunting workflows. The idea is to spawn an army of autonomous agents that perform tasks on behalf of the user, such as monitoring the scopes of active bounty programs and contests, assessing the relevance of code changes and upgrades, and prioritizing targets based on EV. Bug detection tools can also be integrated easily. The goal is to optimize the use of the researchers' time and hopefully increasing the overall earnings.
+R4dar is an AI-driven framework that automates web3 bug hunting workflows. The idea is to spawn an army of autonomous agents that perform tasks on behalf of the user, such as monitoring the scopes of active bounty programs and contests, assessing the relevance of code changes and upgrades, and prioritizing targets based on EV. Bug detection tools can also be integrated easily. The goal is to optimize the use of the researchers' time and hopefully increase the overall earnings.
 
 The r4dar framework is designed to be [extensible](docs/customization.md) in order to allow users to keep their bug hunting alpha private.
 
 Built-in features:
 
-- LLM-powered Telegram chatbot interface
-- Auto-sync data and files from bounty and contest platforms (atm Immunefi only)
-- React to scope changes in bounty programs
+- Telegram chatbot interface
 - Search files and repos associated with bounties
+- Auto-sync data from Immunefi
+- React to scope changes in bounty programs
 - Auto-review of PRs and commits from Github repos associated with bounties
-- Monitoring of bounty scopes on Immunefi
 
 Some possible extensions:
 
-- Auto-analysis when proxy implementation in scope is upgraded (see [example](extensions/examples/))
-- Prioritization of targets based on daily events and EV
-- Scan the codebases of bounties and assets for bugs
+- Auto-analyze upgraded proxy implementations in bounty scope (see [example](extensions/examples/))
+- Prioritize targets based on daily events and EV
+- Scan the codebases of all bounties for patterns distilled from bug reports
 - Endless possibilities...
 
 ## Running R4dar
