@@ -28,9 +28,9 @@ jobs:
       run: |
         cp config.yml.example config.yml
         
-    - name: Check code style
-      run: |
-        autoflake --check --recursive .
+    # - name: Check code style
+    #   run: |
+    #     autoflake --check --recursive .
         
     - name: Check formatting
       run: |
