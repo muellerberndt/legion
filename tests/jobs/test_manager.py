@@ -287,6 +287,32 @@ async def test_job_result_handling(job_manager, mock_job, mock_session, mock_not
 
 
 @pytest.mark.asyncio
+async def test_delete_job(job_manager, mock_job, mock_session, mock_notifier):
+    """Test deleting a job and its database record"""
+    # Create a mock record that will be returned by query
+    mock_record = Mock(spec=JobRecord)
+    mock_session.query.return_value.filter.return_value.first.return_value = mock_record
+
+    # Submit job
+    job_id = await job_manager.submit_job(mock_job)
+
+    # Delete the job
+    result = await job_manager.delete_job(job_id)
+
+    # Verify job was deleted
+    assert result is True
+    assert job_id not in job_manager._jobs
+    assert job_id not in job_manager._tasks
+    mock_session.delete.assert_called_once_with(mock_record)
+    mock_session.commit.assert_called()
+
+    # Test deleting non-existent job
+    mock_session.query.return_value.filter.return_value.first.return_value = None
+    result = await job_manager.delete_job("non-existent-job")
+    assert result is False
+
+
+@pytest.mark.asyncio
 async def test_notification_formatting(job_manager, mock_job, mock_session, mock_notifier):
     """Test job notification formatting"""
     job_id = await job_manager.submit_job(mock_job)

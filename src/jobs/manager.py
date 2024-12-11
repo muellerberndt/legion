@@ -1,7 +1,7 @@
 """Job manager for handling background jobs"""
 
 import asyncio
-from typing import Dict, List, Type
+from typing import Dict, List, Type, Optional
 from src.jobs.base import Job, JobStatus
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
@@ -147,9 +147,46 @@ class JobManager(DBSessionMixin):
                 del self._tasks[job_id]
             return False
 
-    def get_job(self, name: str) -> Job:
-        """Get a registered job by name"""
-        return self._jobs.get(name)
+    async def delete_job(self, job_id: str) -> bool:
+        """Delete a job and its database record
+
+        Args:
+            job_id: ID of the job to delete
+
+        Returns:
+            True if job was deleted, False if job not found
+        """
+        try:
+            # Stop the job first if it's running
+            if job_id in self._jobs:
+                await self.stop_job(job_id)
+
+            # Delete the database record
+            with self.get_session() as session:
+                job_record = session.query(JobRecord).filter(JobRecord.id == job_id).first()
+                if job_record:
+                    session.delete(job_record)
+                    session.commit()
+                    self.logger.info(f"Deleted job record for {job_id}")
+                    return True
+                else:
+                    self.logger.warning(f"No database record found for job {job_id}")
+                    return False
+
+        except Exception as e:
+            self.logger.error(f"Failed to delete job {job_id}: {e}")
+            return False
+
+    def get_job(self, job_id: str) -> Optional[Job]:
+        """Get a job by ID
+
+        Args:
+            job_id: ID of the job to get
+
+        Returns:
+            The job if found, None otherwise
+        """
+        return self._jobs.get(job_id)
 
     def list_jobs(self, job_type: Type[Job] = None) -> List[Dict]:
         """List all registered jobs
