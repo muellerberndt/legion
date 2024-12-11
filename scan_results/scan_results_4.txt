@@ -1,5 +1,0 @@
-Semgrep scan completed for project Gamma
-High severity (ERROR): 0
-Medium severity (WARNING): 0
-
-
