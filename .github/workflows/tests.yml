@@ -28,9 +28,9 @@ jobs:
       run: |
         cp config.yml.example config.yml
         
-    - name: Check unused imports
+    - name: Check code style
       run: |
-        autoflake --check --remove-all-unused-imports --recursive . || echo "::error::Autoflake check failed"
+        autoflake --check --recursive .
         
     - name: Check formatting
       run: |
