@@ -2,9 +2,9 @@
 
 ![Tests](https://github.com/muellerberndt/r4dar/actions/workflows/tests.yml/badge.svg)
 
-R4dar is an AI-driven framework that automates web3 bug hunting workflows. The idea is to spawn an army of autonomous agents that perform tasks on behalf of the user, such as monitoring the scopes of active bounty programs and contests, assessing the relevance of code changes and upgrades, and prioritizing targets based on EV. Bug detection tools can also be integrated easily. The goal is to optimize the use of the researchers' time and hopefully increase the overall earnings.
+R4dar is an AI-driven framework that automates web3 bug hunting workflows. It monitors the web3 security landscape including active bounty programs and contests and spawns autonomous agents that perform tasks on behalf of the user, such as assessing the relevance of code changes and upgrades, prioritizing targets based on EV, and quickly finding potential targets for newly discovered attack patterns. Bug detection tools can also be integrated easily. The goal is to optimize the use of the researchers' time and hopefully increase their overall earnings.
 
-The r4dar framework is designed to be [extensible](docs/customization.md) in order to allow users to keep their bug hunting alpha private.
+The r4dar framework is designed to be [extensible](docs/customization.md) so users can keep their bug hunting alpha private.
 
 Built-in features:
 
