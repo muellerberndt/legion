@@ -23,4 +23,7 @@ per-file-ignores =
     tests/*:E402,F401,F811
     src/backend/query_builder.py:C901
     src/agents/*.py:C901
-    src/handlers/*.py:C901 
+    src/handlers/*.py:C901
+output-file = flake8.log
+tee = True
+verbose = True 

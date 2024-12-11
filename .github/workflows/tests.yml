@@ -28,14 +28,21 @@ jobs:
       run: |
         cp config.yml.example config.yml
         
-    - name: Check code style
+    - name: Check unused imports
       run: |
-        # Check for unused imports
-        autoflake --check --remove-all-unused-imports --recursive .
-        # Check formatting
-        black --check .
-        # Run linter with verbose output
-        flake8 . --statistics --show-source --verbose
+        autoflake --check --remove-all-unused-imports --recursive . || echo "::error::Autoflake check failed"
+        
+    - name: Check formatting
+      run: |
+        black --check . || echo "::error::Black check failed"
+        
+    - name: Run linter
+      run: |
+        flake8 . --statistics --show-source --verbose || echo "::error::Flake8 check failed"
+        if [ -f flake8.log ]; then
+          echo "Flake8 log contents:"
+          cat flake8.log
+        fi
         
     - name: Run tests
       run: |
