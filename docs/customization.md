@@ -305,6 +305,212 @@ The agent will automatically have access to the specified commands from the acti
 
 You don't need to implement `_get_available_commands` - just pass the command names you want to use to `super().__init__`.
 
+## 2. Jobs
+
+Jobs handle long-running tasks and maintain state. Each job must inherit from the `Job` base class and implement the required abstract methods.
+
+### Creating a Job
+
+```python
+from src.jobs.base import Job, JobStatus, JobResult
+from src.util.logging import Logger
+
+class MyCustomJob(Job):
+    """Custom job implementation"""
+    
+    def __init__(self, job_id: str, config: dict = None):
+        super().__init__(job_id, config)
+        self.logger = Logger("MyCustomJob")
+    
+    async def start(self) -> None:
+        """Start the job.
+        
+        Required abstract method that must be implemented.
+        This method should:
+        1. Initialize any required resources
+        2. Start the main job processing
+        3. Update job status and store results
+        
+        The job should handle its own state management by calling:
+        - self.complete(JobResult(...)) for successful completion
+        - self.fail(error_message) for failures
+        """
+        try:
+            # Your job logic here
+            result = await self.process_job()
+            
+            # Store results on success
+            self.complete(JobResult(
+                success=True,
+                message="Job completed successfully",
+                data=result
+            ))
+            
+        except Exception as e:
+            self.logger.error(f"Error in job: {str(e)}")
+            self.fail(str(e))
+    
+    async def stop_handler(self) -> None:
+        """Handle cleanup when stopping the job.
+        
+        Required abstract method that must be implemented.
+        This method should handle any job-specific cleanup operations such as:
+        - Stopping external processes (e.g., kill child processes)
+        - Cleaning up temporary files
+        - Closing network connections
+        - Releasing resources
+        - Saving partial results if applicable
+        
+        The base Job class will handle marking the job as cancelled after this handler completes.
+        Raise an exception if cleanup fails.
+        """
+        try:
+            # Your cleanup logic here
+            await self.cleanup_resources()
+            
+        except Exception as e:
+            self.logger.error(f"Error during job cleanup: {str(e)}")
+            raise
+
+### Required Abstract Methods
+
+1. **start()** - Main entry point for job execution
+   - Must be implemented by all job subclasses
+   - Should handle the main job logic
+   - Responsible for state management (complete/fail)
+   - Should be async to support long-running tasks
+
+2. **stop_handler()** - Cleanup handler when job is stopped
+   - Must be implemented by all job subclasses
+   - Called automatically when job is stopped
+   - Should clean up all resources
+   - Must be async to support cleanup operations
+   - Base class handles cancellation state after cleanup
+
+### Job Lifecycle
+
+1. **Creation**: Jobs are created with a unique ID and optional configuration
+   ```python
+   job = MyCustomJob("unique_id", config={"key": "value"})
+   ```
+
+2. **Starting**: The job is submitted to the JobManager which calls `start()`
+   ```python
+   job_id = await job_manager.submit_job(job)
+   ```
+
+3. **Running**: Job performs its main task in `start()`
+   - Updates its status to `RUNNING`
+   - Processes data
+   - Can emit progress updates
+
+4. **Completion**: Job ends in one of three states:
+   - **Success**: Job calls `complete()` with results
+     ```python
+     self.complete(JobResult(success=True, message="Done", data=results))
+     ```
+   - **Failure**: Job calls `fail()` with error
+     ```python
+     self.fail("Operation failed: reason")
+     ```
+   - **Cancellation**: Job is stopped externally
+     1. `stop_handler()` is called for cleanup
+     2. Job is marked as `CANCELLED`
+
+5. **Cleanup**: Resources are released
+   - Automatic cleanup via `stop_handler()` when stopped
+   - Manual cleanup in `start()` after completion
+
+### Job Status
+
+Jobs can be in one of these states:
+- `PENDING`: Initial state after creation
+- `RUNNING`: Job is actively processing
+- `COMPLETED`: Job finished successfully
+- `FAILED`: Job encountered an error
+- `CANCELLED`: Job was stopped before completion
+
+### Job Results
+
+Jobs communicate results through the `JobResult` class:
+
+```python
+self.complete(JobResult(
+    success=True,           # Whether the job succeeded
+    message="Summary msg",  # Short summary message
+    data={"key": "value"}, # Structured result data
+    outputs=["out1", "out2"] # List of text outputs
+))
+```
+
+### Example: Process Management
+
+For jobs that spawn external processes:
+
+```python
+class ProcessJob(Job):
+    def __init__(self, job_id: str):
+        super().__init__(job_id)
+        self._processes = []  # Track child processes
+    
+    async def start(self) -> None:
+        try:
+            process = subprocess.Popen(
+                ["long-running-command"],
+                stdout=subprocess.PIPE
+            )
+            self._processes.append(process)
+            
+            # Wait for completion
+            stdout, _ = await process.communicate()
+            
+            self.complete(JobResult(
+                success=True,
+                message="Process completed",
+                data={"output": stdout}
+            ))
+            
+        except Exception as e:
+            self.fail(str(e))
+            
+    async def stop_handler(self) -> None:
+        """Clean up by killing child processes"""
+        for process in self._processes:
+            try:
+                process.kill()
+                await process.wait(timeout=5)
+            except Exception as e:
+                self.logger.error(f"Error killing process {process.pid}: {e}")
+        self._processes.clear()
+```
+
+### Best Practices
+
+1. **Resource Management**
+   - Track all resources (processes, files, connections)
+   - Clean up resources in `stop_handler`
+   - Use context managers where possible
+
+2. **State Management**
+   - Update job status appropriately
+   - Store results using `complete()`
+   - Handle errors with `fail()`
+
+3. **Error Handling**
+   - Catch and log all exceptions
+   - Clean up resources on failure
+   - Provide meaningful error messages
+
+4. **Progress Updates**
+   - Log important state changes
+   - Store intermediate results if useful
+   - Consider adding progress tracking
+
+5. **Configuration**
+   - Accept configuration via constructor
+   - Validate configuration early
+   - Use sensible defaults
+
 ## 3. Handlers
 
 Handlers process events triggered by watchers and other components. They allow you to react to changes in projects, assets, and other system events.

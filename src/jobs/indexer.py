@@ -47,7 +47,7 @@ class IndexerJob(Job, DBSessionMixin):
             self.result = JobResult(success=False, message=f"Failed to start indexer: {str(e)}")
             raise
 
-    async def stop(self) -> None:
+    async def stop_handler(self) -> None:
         """Stop the indexer"""
         self.logger.info("Stopping indexer job...")
         self._stop_event.set()

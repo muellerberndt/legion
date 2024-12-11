@@ -165,7 +165,7 @@ class GitHubEventJob(Job, DBSessionMixin):
             self.error = str(e)
             raise
 
-    async def stop(self) -> None:
+    async def stop_handler(self) -> None:
         """Stop the job"""
         if self.status == JobStatus.RUNNING:
             self.status = JobStatus.CANCELLED

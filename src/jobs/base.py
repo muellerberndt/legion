@@ -5,6 +5,7 @@ import uuid
 from src.util.logging import Logger
 from src.models.job import JobRecord
 from src.backend.database import DBSessionMixin
+from abc import ABC, abstractmethod
 
 
 class JobStatus(str, Enum):
@@ -50,7 +51,7 @@ class JobResult(DBSessionMixin):
         return "\n".join(self.outputs)
 
 
-class Job(DBSessionMixin):
+class Job(DBSessionMixin, ABC):
     """Base class for background jobs"""
 
     def __init__(self, job_type: JobType):
@@ -88,11 +89,31 @@ class Job(DBSessionMixin):
         except Exception as e:
             self.logger.error(f"Failed to store job in database: {e}")
 
-    def start(self) -> None:
-        """Mark job as started"""
-        self.started_at = datetime.utcnow()
-        self.status = JobStatus.RUNNING
-        self._store_in_db()
+    @abstractmethod
+    async def start(self) -> None:
+        """Start the job. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    async def stop_handler(self) -> None:
+        """Handle cleanup operations when stopping the job. Must be implemented by subclasses.
+
+        This method should handle any job-specific cleanup operations such as:
+        - Stopping external processes
+        - Cleaning up temporary files
+        - Closing network connections
+        - Releasing resources
+        """
+        pass
+
+    async def stop(self) -> None:
+        """Stop the job and perform cleanup.
+
+        This method first calls the job-specific stop_handler for cleanup,
+        then marks the job as cancelled.
+        """
+        await self.stop_handler()
+        await self.cancel()
 
     def complete(self, result: JobResult) -> None:
         """Mark job as completed with result"""
@@ -108,7 +129,7 @@ class Job(DBSessionMixin):
         self.error = error
         self._store_in_db()
 
-    def cancel(self) -> None:
+    async def cancel(self) -> None:
         """Mark job as cancelled"""
         self.completed_at = datetime.utcnow()
         self.status = JobStatus.CANCELLED

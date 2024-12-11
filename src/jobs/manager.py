@@ -284,11 +284,6 @@ class JobManager(DBSessionMixin):
                 if job_id in self._tasks:
                     del self._tasks[job_id]
 
-                # Clean up job only if it's completed or failed
-                job = self._jobs.get(job_id)
-                if job and job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
-                    del self._jobs[job_id]
-
             except Exception as e:
                 self.logger.error(f"Error in task completion callback for job {job_id}: {e}")
 

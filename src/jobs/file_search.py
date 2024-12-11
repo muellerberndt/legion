@@ -231,5 +231,5 @@ class FileSearchJob(Job, DBSessionMixin):
             self.error = str(e)
             raise
 
-    async def stop(self) -> None:
+    async def stop_handler(self) -> None:
         """Stop the job - nothing to do for search"""
