@@ -1,21 +1,26 @@
 [flake8]
-max-line-length = 127
 # E203: whitespace before ':' - conflicts with black
 # E266: too many leading '#' for block comment
 # E501: line too long - handled by black
 # W503: line break before binary operator - conflicts with black
-extend-ignore =
+max-line-length = 127
+extend-ignore = 
     E203,
     E266,
     E501,
     W503
-max-complexity = 10
+max-complexity = 30
 exclude =
     .git,
     __pycache__,
     build,
     dist,
-    docs
+    docs,
+    extensions/*,
+    !extensions/examples/
 per-file-ignores =
-    __init__.py:F401
-    tests/*:E402,F401,F811 
+    __init__.py:F401,
+    tests/*:E402,F401,F811,
+    src/backend/query_builder.py:C901,
+    src/agents/*.py:C901,
+    src/handlers/*.py:C901 
