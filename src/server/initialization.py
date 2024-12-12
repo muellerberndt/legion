@@ -26,22 +26,10 @@ class Initializer(DBSessionMixin):
             async with db.get_async_engine().begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
 
-            # Create array to vector conversion function
+            # Initialize vector support
             with self.get_session() as session:
-                session.execute(
-                    text(
-                        """
-                    CREATE OR REPLACE FUNCTION array_to_vector(IN array_input double precision[])
-                    RETURNS vector
-                    AS $$
-                    SELECT array_input::vector
-                    $$
-                    LANGUAGE SQL
-                    IMMUTABLE
-                    PARALLEL SAFE;
-                """
-                    )
-                )
+                # Create vector extension
+                session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
 
                 # Create vector similarity search index
                 session.execute(
@@ -49,7 +37,7 @@ class Initializer(DBSessionMixin):
                         """
                     CREATE INDEX IF NOT EXISTS asset_embedding_idx
                     ON assets
-                    USING ivfflat ((embedding::vector) vector_cosine_ops)
+                    USING ivfflat (embedding vector_l2_ops)
                     WITH (lists = 100);
                 """
                     )
@@ -81,3 +69,28 @@ class Initializer(DBSessionMixin):
             error_msg = f"Initial sync failed: {str(e)}"
             self.logger.error(error_msg)
             raise
+
+    def initialize_database():
+        """Initialize database with required extensions and functions"""
+
+        with db.get_session() as session:
+            # Create vector extension if not exists
+            session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+
+            # Create array to vector conversion function if not exists
+            session.execute(
+                text(
+                    """
+                CREATE OR REPLACE FUNCTION array_to_vector(arr float8[])
+                RETURNS vector
+                LANGUAGE SQL
+                IMMUTABLE
+                PARALLEL SAFE
+                AS $$
+                    SELECT arr::vector;
+                $$;
+            """
+                )
+            )
+
+            session.commit()

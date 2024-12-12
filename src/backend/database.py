@@ -7,8 +7,6 @@ from src.config.config import Config
 import os
 from urllib.parse import urlparse, parse_qs
 
-# from src.util.logging import Logger
-
 # Create base class for models
 Base = declarative_base()
 

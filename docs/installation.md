@@ -53,10 +53,30 @@ CREATE DATABASE r4dar_db OWNER r4dar;
 \c r4dar_db
 
 # Enable vector extension
-CREATE EXTENSION vector;
+CREATE EXTENSION IF NOT EXISTS vector;
+
+# Create vector index type
+CREATE ACCESS METHOD vector_l2_ops USING ivfflat;
 
 # Grant privileges
 GRANT ALL PRIVILEGES ON DATABASE r4dar_db TO r4dar;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO r4dar;
+\q
+```
+
+2. Verify vector support:
+
+```bash
+# Connect to the database
+psql r4dar_db
+
+# Check if vector extension is enabled
+\dx vector
+
+# Check if vector operators are available
+SELECT '[1,2,3]'::vector;
+
+# Exit if everything works
 \q
 ```
 

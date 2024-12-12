@@ -17,11 +17,14 @@ class JobStatus(str, Enum):
 
 
 class JobType(Enum):
-    """Types of jobs"""
+    """Types of jobs that can be run"""
 
     AGENT = "agent"
     INDEXER = "indexer"
-    SCAN = "scan"  # For security scanning jobs
+    WATCHER = "watcher"
+    FILE_SEARCH = "file_search"
+    SCAN = "scan"
+    EMBED = "embed"  # Add new job type for embedding generation
     # Add more job types as needed
 
 

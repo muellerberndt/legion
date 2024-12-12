@@ -1,44 +1,52 @@
-from src.actions.base import BaseAction, ActionSpec, ActionArgument
-from src.util.embeddings import generate_embedding
+"""Action to generate embeddings for assets"""
+
+from src.actions.base import BaseAction, ActionSpec
+from src.jobs.embed import EmbedJob
+from src.jobs.manager import JobManager
 from src.util.logging import Logger
-import json
 
 
 class EmbeddingsAction(BaseAction):
-    """Action to generate embeddings for text"""
+    """Action to generate embeddings for all assets"""
 
     spec = ActionSpec(
         name="embeddings",
-        description="Generate embeddings for text input",
+        description="Generate embeddings for all assets in the database",
         help_text="""Generate vector embeddings for semantic search
 
 Usage:
-/embeddings <text>
+/embeddings
 
-This command generates vector embeddings that can be used for:
-- Semantic search
-- Text similarity comparison
-- Natural language processing
+This command starts a job that:
+1. Iterates through all assets in the database
+2. For each asset:
+   - For single files: generates embedding from file content
+   - For directories (contracts/repos): combines embeddings of all files
+3. Stores the embeddings in the database for semantic search
 
 The embeddings are generated using OpenAI's text-embedding model.
-Returns a JSON object with the embedding vector.
+Returns a job ID that can be used to track progress.
 
 Example:
-/embeddings "Check for reentrancy vulnerabilities"
+/embeddings
 """,
-        agent_hint="Use this command when you need to generate vector embeddings for text to enable semantic search or similarity comparison",
-        arguments=[ActionArgument(name="text", description="Text to generate embeddings for", required=True)],
+        agent_hint="Use this command to generate embeddings for all assets in the database to enable semantic search",
+        arguments=[],
     )
 
     def __init__(self):
         self.logger = Logger("EmbeddingsAction")
 
-    async def execute(self, text: str) -> str:
-        """Generate embeddings for text"""
+    async def execute(self, *args, **kwargs) -> str:
+        """Start the embedding generation job"""
         try:
-            embedding = await generate_embedding(text)
-            return json.dumps({"text": text, "embedding": embedding})
+            # Create and submit the job
+            job = EmbedJob()
+            job_manager = JobManager()
+            job_id = await job_manager.submit_job(job)
+
+            return f"Started embedding generation job with ID: {job_id}\nUse /job {job_id} to check progress."
 
         except Exception as e:
-            self.logger.error(f"Failed to generate embeddings: {str(e)}")
-            return json.dumps({"error": f"Failed to generate embeddings: {str(e)}"})
+            self.logger.error(f"Failed to start embedding job: {str(e)}")
+            return f"Failed to start embedding job: {str(e)}"

@@ -1,10 +1,10 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Table, JSON, ARRAY, Float
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Table, JSON
 from sqlalchemy.orm import relationship
 from src.backend.database import Base
 import enum
 from datetime import datetime
 import os
-import logging
+import json
 
 
 class AssetType(str, enum.Enum):
@@ -76,9 +76,7 @@ class Asset(Base):
     extra_data = Column(JSON)  # Additional metadata including asset-specific URLs
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Vector embedding for semantic search
-    embedding = Column(ARRAY(Float), nullable=True)  # 1536-dimensional vector
+    embedding = Column(String)  # Store as string, let Postgres handle vector conversion
 
     # Relationships
     projects = relationship("Project", secondary=project_assets, back_populates="assets")
@@ -96,42 +94,39 @@ class Asset(Base):
         }
 
     def generate_embedding_text(self) -> str:
-        """Generate text for embedding from asset contents"""
-        if not self.local_path:
-            return ""  # Can't generate embedding without local content
+        """Generate text for embedding"""
+        text_parts = []
 
-        try:
-            if self.asset_type == AssetType.GITHUB_FILE:
-                # For single files, use the file content directly
+        # Add basic info
+        if self.source_url:
+            text_parts.append(f"Source: {self.source_url}")
+
+        # Add metadata if available
+        if self.extra_data:
+            try:
+                if isinstance(self.extra_data, str):
+                    metadata = json.loads(self.extra_data)
+                else:
+                    metadata = self.extra_data
+
+                # Add relevant metadata fields
+                if "description" in metadata:
+                    text_parts.append(metadata["description"])
+                if "name" in metadata:
+                    text_parts.append(metadata["name"])
+            except Exception:
+                pass
+
+        # Add file contents if available
+        if self.local_path and os.path.exists(self.local_path):
+            try:
                 with open(self.local_path, "r", encoding="utf-8") as f:
-                    return f.read()
+                    content = f.read()
+                    text_parts.append(content)
+            except Exception:
+                pass
 
-            elif self.asset_type == AssetType.GITHUB_REPO:
-                # For repositories, try to use README first
-                readme_paths = [
-                    os.path.join(self.local_path, "README.md"),
-                    os.path.join(self.local_path, "README"),
-                    os.path.join(self.local_path, "readme.md"),
-                ]
-                for path in readme_paths:
-                    if os.path.exists(path):
-                        with open(path, "r", encoding="utf-8") as f:
-                            return f.read()
-
-                # If no README, try to find and use main contract file
-                if os.path.isdir(self.local_path):
-                    for root, _, files in os.walk(self.local_path):
-                        for file in files:
-                            if file.endswith(".sol"):
-                                file_path = os.path.join(root, file)
-                                with open(file_path, "r", encoding="utf-8") as f:
-                                    return f.read()
-
-            return ""  # Return empty string if no content could be extracted
-
-        except Exception as e:
-            logging.getLogger("Asset").error(f"Failed to generate embedding text for {self.id}: {str(e)}")
-            return ""
+        return "\n".join(text_parts)
 
 
 class LogEntry(Base):
