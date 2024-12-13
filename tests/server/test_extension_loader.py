@@ -68,11 +68,12 @@ async def test_register_components(extension_loader, mock_webhook_server):
     mock_module.MockHandler = MockHandler
     mock_module.MockWebhookHandler = MockWebhookHandler
 
-    # Mock sys.modules
-    mock_modules = {"extensions.test": mock_module}
+    # Mock sys.modules while preserving existing modules
+    mock_modules = dict(sys.modules)
+    mock_modules["extensions.test"] = mock_module
 
     with (
-        patch("sys.modules", mock_modules),
+        patch.dict("sys.modules", mock_modules),
         patch("src.webhooks.server.WebhookServer.get_instance", return_value=mock_webhook_server),
     ):
 

@@ -56,8 +56,8 @@ async def test_handle_webhook(webhook_server):
     request = Mock()
     request.path = "/webhooks/test"
 
-    # Mock web.Response
-    mock_response = Mock(spec=web.Response)
+    # Create mock response without using spec
+    mock_response = Mock()
     mock_response.status = 200
     mock_response.text = AsyncMock(return_value="Mock handler response")
 
