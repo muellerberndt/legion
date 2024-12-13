@@ -51,3 +51,18 @@ github:
 webhooks:
   port: 8080  # Port for webhook server
   # Add any webhook-specific configuration here
+
+# Scheduled actions configuration
+scheduled_actions:
+  daily_immunefi_sync:
+    command: immunefi
+    interval_minutes: 1440  # 24 hours
+    enabled: true
+  github_sync_4_hours:
+    command: github_monitor
+    interval_minutes: 240  # 4 hours
+    enabled: true
+  weekly_embeddings:
+    command: embeddings
+    interval_minutes: 10080  # 7 days
+    enabled: false

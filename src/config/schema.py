@@ -96,6 +96,21 @@ CONFIG_SCHEMA = {
         "data_dir": {"type": "string", "default": "./data"},
         "extensions_dir": {"type": "string", "default": "./extensions"},
         "active_extensions": {"type": "array", "items": {"type": "string"}, "default": []},
+        "scheduled_actions": {
+            "type": "object",
+            "patternProperties": {
+                "^[a-zA-Z0-9_]+$": {  # Allow alphanumeric names with underscores
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string"},
+                        "interval_minutes": {"type": "integer", "minimum": 1},
+                        "enabled": {"type": "boolean", "default": True},
+                    },
+                    "required": ["command", "interval_minutes"],
+                }
+            },
+            "default": {},
+        },
     },
     "required": ["database", "data_dir"],
 }

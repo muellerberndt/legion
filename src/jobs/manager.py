@@ -13,12 +13,21 @@ class JobManager(DBSessionMixin):
     """Manages all running jobs"""
 
     _instance = None
+    _lock = asyncio.Lock()
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(JobManager, cls).__new__(cls)
             cls._instance.initialize()
         return cls._instance
+
+    @classmethod
+    async def get_instance(cls) -> "JobManager":
+        """Get or create the singleton instance"""
+        async with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            return cls._instance
 
     def initialize(self):
         """Initialize the job manager"""

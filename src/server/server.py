@@ -9,6 +9,9 @@ from src.actions.registry import ActionRegistry
 from src.jobs.manager import JobManager
 from src.server.extension_loader import ExtensionLoader
 from src.webhooks.server import WebhookServer
+from src.jobs.scheduler import Scheduler
+from src.jobs.github_monitor import GithubMonitorJob
+from src.jobs.indexer import IndexerJob
 
 
 class Server:
@@ -44,6 +47,16 @@ class Server:
             # Start job manager
             logger.info("Starting job manager...")
             await job_manager.start()
+
+            # Initialize and start scheduler
+            logger.info("Starting scheduler...")
+            scheduler = await Scheduler.get_instance()
+
+            # Register default scheduled jobs
+            scheduler.schedule_job("immunefi_sync", IndexerJob, interval_minutes=60, enabled=True)
+            scheduler.schedule_job("github_monitor", GithubMonitorJob, interval_minutes=30, enabled=True)
+
+            await scheduler.start()
 
             # Initialize interfaces
             for interface_name in interfaces:
@@ -84,6 +97,12 @@ class Server:
                     await interface.stop()
                 except Exception as e:
                     logger.error(f"Error stopping interface: {e}")
+
+            # Stop scheduler
+            try:
+                await scheduler.stop()
+            except Exception as e:
+                logger.error(f"Error stopping scheduler: {e}")
 
             # Stop job manager
             try:

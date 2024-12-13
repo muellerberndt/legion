@@ -1,66 +1,81 @@
 from src.actions.base import BaseAction, ActionSpec
-from src.backend.database import DBSessionMixin
-from src.models.base import Asset, Project
-from sqlalchemy import select, func
-from src.util.logging import Logger
-from src.config.config import Config
+from src.jobs.manager import JobManager
+from src.jobs.scheduler import Scheduler
 from src.webhooks.server import WebhookServer
+from src.util.logging import Logger
 
 
-class StatusAction(BaseAction, DBSessionMixin):
-    """Action to show system status information"""
+class StatusAction(BaseAction):
+    """Action to show system status"""
 
     spec = ActionSpec(
         name="status",
-        description="Show system status information",
-        help_text="""Show current system status information.
-
-Usage:
-/status
-
-Shows:
-- List of active webhook handlers
-- List of active extensions
-- Number of projects in database
-- Number of assets in database""",
-        agent_hint="Use this command to check the current status of the system, including webhook handlers, extensions, and database statistics.",
+        description="Show system status",
+        help_text="""Show the current status of the system, including:
+- Running jobs
+- Scheduled actions
+- Webhook server status""",
+        agent_hint="Use this command to check the system status",
         arguments=[],
     )
 
     def __init__(self):
-        DBSessionMixin.__init__(self)
         self.logger = Logger("StatusAction")
 
-    async def execute(self, *args, **kwargs) -> str:
+    async def execute(self, *args) -> str:
         """Execute the status action"""
         try:
-            # Get webhook server instance
-            webhook_server = await WebhookServer.get_instance()
-            active_handlers = list(webhook_server.handlers.keys())
+            lines = []
 
-            # Get active extensions
-            config = Config()
-            active_extensions = config.get("active_extensions", [])
+            try:
+                # Get job status
+                job_manager = await JobManager.get_instance()
+                jobs = job_manager.list_jobs()
 
-            # Get database stats
-            with self.get_session() as session:
-                project_count = session.scalar(select(func.count()).select_from(Project))
-                asset_count = session.scalar(select(func.count()).select_from(Asset))
+                lines.append("🏃 Running Jobs:")
+                if jobs:
+                    for job in jobs:
+                        lines.append(f"�� {job['id']} ({job['type']}, status: {job['status']})")
+                else:
+                    lines.append("• No jobs currently running")
+            except Exception as e:
+                lines.append(f"• Error getting jobs: {str(e)}")
 
-            # Format output
-            lines = [
-                "📊 System Status\n",
-                "Webhook Handlers:",
-                f"  • Active: {', '.join(active_handlers) if active_handlers else 'None'}",
-                "\nExtensions:",
-                f"  • Active: {', '.join(active_extensions) if active_extensions else 'None'}",
-                "\nDatabase:",
-                f"  • Projects: {project_count:,}",
-                f"  • Assets: {asset_count:,}",
-            ]
+            try:
+                # Get scheduled actions status
+                scheduler = await Scheduler.get_instance()
+                actions = scheduler.list_actions()
+
+                lines.append("\n📅 Scheduled Actions:")
+                if actions:
+                    for name, status in actions.items():
+                        enabled = "✅" if status["enabled"] else "❌"
+                        interval = f"{status['interval_minutes']} minutes"
+                        last_run = status["last_run"] or "Never"
+                        lines.append(f"{enabled} {name}")
+                        lines.append(f"  - Command: {status['command']}")
+                        lines.append(f"  - Interval: {interval}")
+                        lines.append(f"  - Last run: {last_run}")
+                        if status["next_run"]:
+                            lines.append(f"  - Next run: {status['next_run']}")
+                else:
+                    lines.append("• No scheduled actions configured")
+            except Exception as e:
+                lines.append(f"• Error getting scheduled actions: {str(e)}")
+
+            try:
+                # Get webhook status
+                webhook_server = await WebhookServer.get_instance()
+                lines.append("\n🌐 Webhook Server:")
+                if webhook_server and webhook_server.runner:
+                    lines.append(f"• Running on port {webhook_server.port}")
+                else:
+                    lines.append("• Not running")
+            except Exception as e:
+                lines.append(f"• Error getting webhook status: {str(e)}")
 
             return "\n".join(lines)
 
         except Exception as e:
-            self.logger.error(f"Failed to get system status: {str(e)}")
-            return f"Error getting system status: {str(e)}"
+            self.logger.error(f"Status action failed: {str(e)}")
+            return f"Error getting status: {str(e)}"
