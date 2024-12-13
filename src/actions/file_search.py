@@ -2,7 +2,6 @@ from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.file_search import FileSearchJob
 from src.jobs.manager import JobManager
 from src.util.logging import Logger
-from typing import List
 
 
 class FileSearchAction(BaseAction):
@@ -39,7 +38,7 @@ Examples:
     def __init__(self):
         self.logger = Logger("FileSearchAction")
 
-    async def execute(self, *args: List[str]) -> str:
+    async def execute(self, *args, **kwargs) -> str:
         """Execute the file search action"""
         try:
             # Join all arguments into a single regex pattern

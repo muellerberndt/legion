@@ -71,10 +71,12 @@ class TelegramInterface(Interface):
                     else:
                         content = str(result)
 
-                    await update.message.reply_text(text=content, parse_mode=None)  # Disable HTML parsing
+                    # Send message through service to handle long messages properly
+                    # Disable HTML parsing for command outputs
+                    await update.message.reply_text(text=content, parse_mode=None)
             except Exception as e:
                 self.logger.error(f"Error executing command {command_name}: {e}")
-                await update.message.reply_text(text=f"Error executing command: {str(e)}")
+                await update.message.reply_text(text=f"Error executing command: {str(e)}", parse_mode=None)
 
         return handler
 

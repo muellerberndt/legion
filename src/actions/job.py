@@ -3,6 +3,7 @@ from src.jobs.manager import JobManager
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 from src.models.job import JobRecord
+from src.actions.result import ActionResult
 
 
 class ListJobsAction(BaseAction):
@@ -78,13 +79,13 @@ Example:
         DBSessionMixin.__init__(self)
         self.logger = Logger("GetJobResultAction")
 
-    async def execute(self, job_id: str) -> str:
+    async def execute(self, job_id: str) -> ActionResult:
         """Get job results"""
         try:
             with self.get_session() as session:
                 job = session.query(JobRecord).filter_by(id=job_id).first()
                 if not job:
-                    return f"Job {job_id} not found"
+                    return ActionResult(content=f"Job {job_id} not found")
 
                 # Format job info
                 lines = [f"Job {job.id} ({job.type})", f"Status: {job.status}"]
@@ -97,19 +98,16 @@ Example:
                 if job.message:
                     lines.extend(["", "Result:", job.message])
 
-                if job.error:
-                    lines.extend(["", "Error:", job.error])
-
                 if job.outputs:
                     lines.extend(["", "Outputs:"])
                     for output in job.outputs:
                         lines.append(output)
 
-                return "\n".join(lines)
+                return ActionResult(content="\n".join(lines))
 
         except Exception as e:
             self.logger.error(f"Failed to get job results: {str(e)}")
-            return f"Error getting job results: {str(e)}"
+            return ActionResult(content=f"Error getting job results: {str(e)}")
 
 
 class StopJobAction(BaseAction):

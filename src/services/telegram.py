@@ -5,12 +5,15 @@ from src.config.config import Config
 from src.util.logging import Logger
 from src.services.notification_service import NotificationService
 import os
+import tempfile
+from datetime import datetime
 
 
 class TelegramService(NotificationService):
     """Service for interacting with Telegram"""
 
     _instance: Optional["TelegramService"] = None
+    MAX_MESSAGE_LENGTH = 4096
 
     def __init__(self):
         self.config = Config()
@@ -36,6 +39,24 @@ class TelegramService(NotificationService):
         self.app = app
         self.logger.info("Telegram application instance set")
 
+    def _create_temp_file(self, content: str, prefix: str = "message_") -> str:
+        """Create a temporary file with the message content"""
+        try:
+            # Create temp file with timestamp in name
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{prefix}{timestamp}.txt"
+            temp_dir = tempfile.gettempdir()
+            file_path = os.path.join(temp_dir, filename)
+
+            # Write content to file
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            return file_path
+        except Exception as e:
+            self.logger.error(f"Failed to create temp file: {e}")
+            raise
+
     async def send_message(self, message: str) -> None:
         """Send a message to the configured chat"""
         try:
@@ -50,20 +71,31 @@ class TelegramService(NotificationService):
                 raise RuntimeError("No chat_id configured")
 
             self.logger.debug(f"Prerequisites OK. Bot: {bool(self.bot)}, Chat ID: {self.chat_id}")
-            self.logger.debug(f"Message preview: {message[:100]}...")
+            self.logger.debug(f"Message length: {len(message)}")
 
-            # Telegram message limit is 4096 characters
-            MAX_LENGTH = 4096
-            if len(message) > MAX_LENGTH:
-                self.logger.debug(f"Message length {len(message)} exceeds limit, truncating...")
-                # Find the last complete line that fits
-                truncated = message[: MAX_LENGTH - 3]
-                last_newline = truncated.rfind("\n")
-                if last_newline > 0:
-                    truncated = truncated[:last_newline]
-                message = truncated + "..."
+            if len(message) > self.MAX_MESSAGE_LENGTH:
+                self.logger.debug("Message exceeds length limit, sending as file...")
 
-            await self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode="HTML")
+                # Create a preview of the message
+                preview_length = 1000  # Show first 1000 characters
+                preview = message[:preview_length] + "...\n\n(Full content in attached file)"
+
+                # Send preview message
+                await self.bot.send_message(chat_id=self.chat_id, text=preview, parse_mode="HTML")
+
+                # Create and send file with full content
+                file_path = self._create_temp_file(message)
+                try:
+                    await self.send_file(file_path, caption="Full message content")
+                finally:
+                    # Clean up temp file
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        self.logger.error(f"Failed to remove temp file {file_path}: {e}")
+            else:
+                # Send normal message
+                await self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode="HTML")
 
             self.logger.debug("Message sent successfully")
         except Exception as e:
