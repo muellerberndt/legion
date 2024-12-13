@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from src.jobs.watcher import WatcherJob
+from src.jobs.base import Job, JobType, JobResult, JobStatus
 from src.models.github import GitHubRepoState
 from src.handlers.base import HandlerTrigger
 from src.config.config import Config
@@ -13,36 +13,36 @@ import asyncio
 from urllib.parse import urlparse
 
 
-class GitHubWatcher(WatcherJob, DBSessionMixin):
-    """Watcher that polls GitHub API for repository updates"""
+class GithubMonitorJob(Job, DBSessionMixin):
+    """Job that polls GitHub API for repository updates"""
 
     def __init__(self):
-        # Get poll interval from config or use default (5 minutes)
+        # Get poll interval from config or use default (1 hour)
         config = Config()
         github_config = config.get("github", {})
-        interval = github_config.get("poll_interval", 3600)  # 1 hour default
-        super().__init__("github", interval)
+        self.interval = github_config.get("poll_interval", 3600)  # 1 hour default
+        Job.__init__(self, job_type=JobType.WATCHER)
         DBSessionMixin.__init__(self)
-        self.logger = Logger("GitHubWatcher")
+        self.logger = Logger("GithubMonitorJob")
 
         self.api_token = github_config.get("api_token")
-
         self.logger.info(f"Github API token configured: {bool(self.api_token)}")
         self.session = None
         self.handler_registry = HandlerRegistry()
+        self._stop_event = asyncio.Event()
 
         # Log configuration state
         self.logger.info(
-            "GitHub watcher initialized with config:",
+            "GitHub monitor initialized with config:",
             extra_data={
                 "has_token": bool(self.api_token),
-                "interval": interval,
+                "interval": self.interval,
                 "config": {k: "..." if k == "api_token" else v for k, v in github_config.items()},
             },
         )
 
     async def initialize(self) -> None:
-        """Initialize the watcher"""
+        """Initialize the API session"""
         # Set up API session with or without token
         headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "R4dar-Security-Bot"}
         if self.api_token:
@@ -57,35 +57,67 @@ class GitHubWatcher(WatcherJob, DBSessionMixin):
             extra_data={"headers": {k: "..." if k == "Authorization" else v for k, v in headers.items()}},
         )
 
-    async def cleanup(self) -> None:
-        """Clean up resources"""
+    async def start(self) -> None:
+        """Execute the GitHub monitoring job"""
+        try:
+            self.status = JobStatus.RUNNING
+            self.started_at = datetime.utcnow()
+
+            # Initialize API session
+            await self.initialize()
+
+            while not self._stop_event.is_set():
+                try:
+                    # Get all repos in scope
+                    repos = await self._get_repos_in_scope()
+                    if not repos:
+                        self.logger.info("No GitHub repositories found in scope")
+                        await self._wait_or_stop()
+                        continue
+
+                    self.logger.info(f"Found {len(repos)} repositories to check")
+
+                    # Check each repo for updates
+                    for repo in repos:
+                        try:
+                            await self._check_repo_updates(repo)
+                        except Exception as e:
+                            self.logger.error(f"Failed to check repo {repo['repo_url']}: {str(e)}")
+                            continue
+
+                    await self._wait_or_stop()
+
+                except Exception as e:
+                    self.logger.error(f"Error in monitoring cycle: {str(e)}")
+                    await self._wait_or_stop()
+
+            # Clean up
+            if self.session:
+                await self.session.close()
+
+            # Set final status
+            self.status = JobStatus.COMPLETED
+            self.completed_at = datetime.utcnow()
+            self.result = JobResult(success=True, message="GitHub monitoring completed")
+
+        except Exception as e:
+            self.logger.error(f"Failed to run GitHub monitor: {str(e)}")
+            self.status = JobStatus.FAILED
+            self.error = str(e)
+            raise
+
+    async def stop_handler(self) -> None:
+        """Stop the monitoring job"""
+        self._stop_event.set()
         if self.session:
             await self.session.close()
 
-    async def check(self) -> List[Dict[str, Any]]:
-        """Check for updates in GitHub repositories"""
+    async def _wait_or_stop(self) -> None:
+        """Wait for the next check interval or stop if requested"""
         try:
-            # Get all repos in scope
-            repos = await self._get_repos_in_scope()
-            if not repos:
-                self.logger.info("No GitHub repositories found in scope")
-                return []
-
-            self.logger.info(f"Found {len(repos)} repositories to check")
-
-            # Check each repo for updates
-            for repo in repos:
-                try:
-                    await self._check_repo_updates(repo)
-                except Exception as e:
-                    self.logger.error(f"Failed to check repo {repo['repo_url']}: {str(e)}")
-                    continue
-
-            return []
-
-        except Exception as e:
-            self.logger.error(f"Failed to check GitHub updates: {str(e)}")
-            return []
+            await asyncio.wait_for(self._stop_event.wait(), timeout=self.interval)
+        except asyncio.TimeoutError:
+            pass
 
     async def _get_repos_in_scope(self) -> List[Dict[str, Any]]:
         """Get all GitHub repositories from bounty projects"""

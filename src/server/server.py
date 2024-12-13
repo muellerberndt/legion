@@ -4,11 +4,11 @@ from src.interfaces.telegram import TelegramInterface
 from src.interfaces.base import Interface
 from src.util.logging import Logger
 from src.server.initialization import Initializer
-from src.watchers.manager import WatcherManager
 from src.services.telegram import TelegramService
 from src.actions.registry import ActionRegistry
 from src.jobs.manager import JobManager
 from src.server.extension_loader import ExtensionLoader
+from src.webhooks.server import WebhookServer
 
 
 class Server:
@@ -19,7 +19,6 @@ class Server:
         """Run the server with specified interfaces"""
         logger = Logger("Server")
         initializer = Initializer()
-        watcher_manager = WatcherManager.get_instance()
         action_registry = ActionRegistry()
         job_manager = JobManager()
         interface_instances: List[Interface] = []
@@ -31,18 +30,20 @@ class Server:
             # Initialize database
             await initializer.init_db()
 
-            # Load extensions
+            # Start webhook server first (needed for extension registration)
+            logger.info("Starting webhook server...")
+            webhook_server = await WebhookServer.get_instance()
+            await webhook_server.start()
+
+            # Load and register extensions
             logger.info("Loading extensions...")
             extension_loader = ExtensionLoader()
             extension_loader.load_extensions()
-            extension_loader.register_components()
+            await extension_loader.register_components()
 
-            # Start job manager first
+            # Start job manager
             logger.info("Starting job manager...")
             await job_manager.start()
-
-            # Start watchers
-            await watcher_manager.start()
 
             # Initialize interfaces
             for interface_name in interfaces:
@@ -90,11 +91,12 @@ class Server:
             except Exception as e:
                 logger.error(f"Error stopping job manager: {e}")
 
-            # Stop watchers
+            # Stop webhook server
             try:
-                await watcher_manager.stop()
+                webhook_server = await WebhookServer.get_instance()
+                await webhook_server.stop()
             except Exception as e:
-                logger.error(f"Error stopping watchers: {e}")
+                logger.error(f"Error stopping webhook server: {e}")
 
             # Cleanup Telegram service
             try:

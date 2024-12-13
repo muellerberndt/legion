@@ -1,20 +1,27 @@
+"""Webhook server that routes incoming webhooks to appropriate handlers"""
+
 from aiohttp import web
+from typing import Dict
 from src.util.logging import Logger
-from typing import Optional, Callable, Awaitable
+from src.webhooks.handlers import WebhookHandler, QuicknodeWebhookHandler
 import asyncio
 
 
 class WebhookServer:
-    """Shared webhook server that watchers can register endpoints with"""
+    """Server that handles incoming webhooks"""
 
-    _instance: Optional["WebhookServer"] = None
+    _instance = None
     _lock = asyncio.Lock()
 
     def __init__(self):
         self.logger = Logger("WebhookServer")
         self.app = web.Application()
-        self.runner: Optional[web.AppRunner] = None
+        self.runner = None
         self.port = 8080  # Default port
+        self.handlers: Dict[str, WebhookHandler] = {}
+
+        # Register built-in handlers
+        self.register_handler("/webhooks/quicknode", QuicknodeWebhookHandler())
 
     @classmethod
     async def get_instance(cls) -> "WebhookServer":
@@ -24,15 +31,25 @@ class WebhookServer:
                 cls._instance = WebhookServer()
             return cls._instance
 
-    def register_endpoint(self, path: str, handler: Callable[[web.Request], Awaitable[web.Response]]) -> None:
-        """Register a new webhook endpoint"""
+    def register_handler(self, path: str, handler: WebhookHandler) -> None:
+        """Register a webhook handler for a specific path"""
         if not path.startswith("/"):
             path = "/" + path
         if not path.startswith("/webhooks/"):
             path = "/webhooks" + path
 
-        self.logger.info(f"Registering webhook endpoint: {path}")
-        self.app.router.add_post(path, handler)
+        self.logger.info(f"Registering webhook handler for path: {path}")
+        self.handlers[path] = handler
+        self.app.router.add_post(path, self._handle_webhook)
+
+    async def _handle_webhook(self, request: web.Request) -> web.Response:
+        """Route webhook to appropriate handler"""
+        path = request.path
+        handler = self.handlers.get(path)
+        if not handler:
+            return web.Response(text=f"No handler registered for path: {path}", status=404)
+
+        return await handler.handle(request)
 
     async def start(self, port: int = 8080) -> None:
         """Start the webhook server"""

@@ -10,6 +10,7 @@ from src.actions.db_query import DBQueryAction
 from src.actions.job import ListJobsAction, GetJobResultAction, StopJobAction
 from src.actions.sync.immunefi import ImmunefiSyncAction
 from src.actions.status import StatusAction
+from src.actions.github_monitor import GithubMonitorAction
 
 
 def get_builtin_actions() -> List[Type[BaseAction]]:
@@ -25,4 +26,5 @@ def get_builtin_actions() -> List[Type[BaseAction]]:
         StopJobAction,
         ImmunefiSyncAction,
         StatusAction,
+        GithubMonitorAction,
     ]

@@ -41,19 +41,13 @@ telegram:
   # Get by sending /start to @userinfobot
   chat_id: "your-chat-id"
 
-# GitHub configuration (required for GitHub watcher)
+# GitHub configuration (required for GitHub monitoring)
 github:
   # Create at https://github.com/settings/tokens
   # Required scopes: repo, read:org
   api_token: "your-github-pat-token"
-  poll_interval: 3600  #  1 hour
 
-# Watcher configuration
-watchers:
-  enabled: true  # Enable watchers
-  webhook_port: 8080  # Port for webhook server
-  active_watchers: []  # List of watchers to enable
-  # Available watchers:
-  # - github     # Monitor GitHub repositories
-  # - quicknode  # Monitor blockchain events
-  # - immunefi   # Monitor bounty program updates
+# Webhook configuration
+webhooks:
+  port: 8080  # Port for webhook server
+  # Add any webhook-specific configuration here
