@@ -76,13 +76,7 @@ class EmbedJob(Job, DBSessionMixin):
 
         except Exception as e:
             self.logger.error(f"Embedding job failed: {str(e)}")
-            self.status = JobStatus.FAILED
-            self.result = JobResult(
-                success=False,
-                message=f"Embedding job failed: {str(e)}",
-                data={"processed": self.processed, "failed": self.failed, "commits": self._commit_count},
-            )
-            raise
+            self.fail(str(e))
 
     async def stop_handler(self) -> None:
         """Handle job stop request"""

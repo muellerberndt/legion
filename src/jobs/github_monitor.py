@@ -103,7 +103,7 @@ class GithubMonitorJob(Job, DBSessionMixin):
         except Exception as e:
             self.logger.error(f"Failed to run GitHub monitor: {str(e)}")
             self.status = JobStatus.FAILED
-            self.error = str(e)
+            self.fail(str(e))
             raise
 
     async def stop_handler(self) -> None:

@@ -228,8 +228,7 @@ class FileSearchJob(Job, DBSessionMixin):
         except Exception as e:
             self.logger.error(f"Error in file search: {str(e)}")
             self.status = JobStatus.FAILED
-            self.error = str(e)
-            raise
+            self.fail(str(e))
 
     async def stop_handler(self) -> None:
         """Stop the job - nothing to do for search"""

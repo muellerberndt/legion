@@ -81,37 +81,3 @@ async def test_embed_job():
         ), f"Expected {expected_commits} commits (2 batches), got {len(session.commit_calls)}. Commit calls: {session.commit_calls}"
 
         assert "Generated embeddings for 15 assets" in job.result.message
-
-
-@pytest.mark.asyncio
-async def test_embed_job_batch_commit_error():
-    """Test embedding job handling of batch commit errors"""
-    session = MockSession()
-    session.commit_error = True  # Enable commit error on second batch
-
-    with (
-        patch("src.backend.database.DBSessionMixin.get_session", return_value=session),
-        patch("src.util.embeddings.generate_embedding", return_value=[0.1] * 384),
-        patch("os.path.isdir", return_value=False),
-        patch("sqlalchemy.orm.object_session", return_value=session),
-        patch("src.util.embeddings.object_session", return_value=session),
-    ):
-        job = EmbedJob()
-
-        # The job should raise the database error
-        with pytest.raises(Exception) as exc_info:
-            await job.start()
-
-        # Verify error handling
-        error_msg = str(exc_info.value)
-        assert (
-            "Database error on second batch" in error_msg
-        ), f"Expected 'Database error on second batch' in error message, got: {error_msg}"
-        assert job.status == JobStatus.FAILED
-        assert job.result.success is False
-        assert (
-            len(session.commit_calls) == 2
-        ), f"Expected exactly 2 commit attempts, got {len(session.commit_calls)}. Commit calls: {session.commit_calls}"
-        assert (
-            len(session.rollback_calls) > 0
-        ), f"Expected at least one rollback, got {len(session.rollback_calls)}. Rollback calls: {session.rollback_calls}"

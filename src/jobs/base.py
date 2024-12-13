@@ -117,7 +117,7 @@ class Job(DBSessionMixin, ABC):
         """Mark job as failed with error"""
         self.completed_at = datetime.utcnow()
         self.status = JobStatus.FAILED
-        self.error = error
+        self.message = error
         self._store_in_db()
 
     async def cancel(self) -> None:
