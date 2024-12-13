@@ -1,6 +1,6 @@
 # Customization Guide
 
-This guide explains how to customize and extend its functionality.See [extensions/example](../extensions/examples) for an example extension.
+This guide explains how to customize and extend its functionality. See [extensions/example](../extensions/examples) for an example extension.
 
 ## Extension System
 
@@ -12,7 +12,6 @@ Extensions in r4dar are stored in the `/extensions` directory. Each extension is
         my_custom_action.py
         my_custom_agent.py
         my_custom_handler.py
-        my_custom_watcher.py
     /another-extension
         another_extension.py
 ```
@@ -30,8 +29,8 @@ active_extensions:
 1. **Actions** are the basic building blocks of R4dar's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents.
 2. **Jobs** handle long-running tasks and maintain state. They can be managed by users via the bot interface.
 3. **Agents** are AI-powered components that process messages and perform complex tasks.
-4. **Watchers** monitor external sources for events and trigger handlers when events occur.
-5. **Handlers** process events emitted by watchers.
+4. **Handlers** process events such as webhooks, scope updates, GitHub events, etc.
+5. **Scheduled Actions** are actions that run automatically at configured intervals.
 
 ## 1. Actions
 
@@ -104,6 +103,28 @@ class MyCustomAction(BaseAction):
 
 The action will be automatically discovered and registered when your extension is loaded. No additional registration code is needed.
 
+### Scheduling Actions
+
+Actions can be configured to run automatically at specified intervals using the scheduler system. Add scheduled actions to your `config.yml`:
+
+```yaml
+scheduled_actions:
+  daily_sync:
+    command: sync  # The action to run
+    interval_minutes: 1440  # Run daily (24 hours * 60 minutes)
+    enabled: true  # Whether this scheduled action is active
+  hourly_embeddings:
+    command: embeddings update
+    interval_minutes: 60  # Run hourly
+    enabled: true
+```
+
+You can manage scheduled actions using the `/scheduler` command:
+- `/scheduler list` - List all scheduled actions and their status
+- `/scheduler enable <action_name>` - Enable a scheduled action
+- `/scheduler disable <action_name>` - Disable a scheduled action
+- `/scheduler status <action_name>` - Get detailed status of a scheduled action
+
 ### Action Arguments
 
 Arguments define what parameters your action accepts. Each argument is defined using `ActionArgument`:
@@ -162,6 +183,8 @@ R4dar comes with several built-in actions:
 - `semantic` - Perform semantic search
 - `jobs`, `job`, `stop` - Job management commands
 - `sync` - Synchronize data from external sources
+- `scheduler` - Manage scheduled actions
+- `status` - Show system status
 
 You can find these in `src/actions/` for reference when building your own actions.
 
@@ -660,99 +683,6 @@ Built-in triggers include:
 - `HandlerTrigger.GITHUB_PUSH` - GitHub push event
 - `HandlerTrigger.GITHUB_PR` - GitHub pull request event
 - `HandlerTrigger.BLOCKCHAIN_EVENT` - Blockchain event
-
-## 4. Watchers
-
-Watchers monitor external sources for events. To activate a watcher:
-
-1. Enable watchers in `config.yml`:
-```yaml
-watchers:
-  enabled: true  # Master switch for all watchers
-  webhook_port: 8080  # Port for webhook server
-  active_watchers:  # List of watchers to enable
-    - github       # Monitor GitHub repositories
-    - quicknode    # Monitor blockchain events
-    - immunefi     # Monitor bounty program updates
-```
-
-2. Configure watcher-specific settings:
-```yaml
-github:
-  api_token: "your-github-token"  # For GitHub watcher
-  poll_interval: 300  # Check every 5 minutes
-
-quicknode:
-  endpoints:
-    - name: "mainnet"
-      url: "your-quicknode-endpoint"
-      chain_id: 1
-```
-
-3. Start the server with watchers enabled:
-```bash
-./r4dar.sh server start
-```
-
-The server will:
-- Load all enabled watchers
-- Start the webhook server if needed
-- Begin monitoring configured sources
-
-Available watchers:
-- `github`: Monitors repositories for changes
-- `quicknode`: Monitors blockchain events
-- `immunefi`: Monitors bounty program updates
-
-Each watcher can trigger handlers when events occur. See the Handlers section for details on processing these events.
-
-### Creating a Watcher
-
-```python
-# extensions/your-username/my_custom_watcher.py
-from src.watchers.base import BaseWatcher
-from src.handlers.event_bus import EventBus
-from src.util.logging import Logger
-import asyncio
-
-class MyCustomWatcher(BaseWatcher):
-    """Custom watcher implementation"""
-    
-    def __init__(self):
-        self.logger = Logger("MyCustomWatcher")
-        self.event_bus = EventBus()
-        self.running = False
-    
-    async def start(self):
-        """Start the watcher"""
-        self.running = True
-        while self.running:
-            try:
-                # Your monitoring logic here
-                changes = await self._check_for_changes()
-                if changes:
-                    await self._emit_event(changes)
-                await asyncio.sleep(60)  # Check every minute
-            except Exception as e:
-                self.logger.error(f"Error in watcher: {str(e)}")
-                await asyncio.sleep(60)
-    
-    async def stop(self):
-        """Stop the watcher"""
-        self.running = False
-    
-    async def _check_for_changes(self):
-        """Check for changes in data source"""
-        # Your change detection logic here
-        pass
-    
-    async def _emit_event(self, changes):
-        """Emit event when changes are detected"""
-        await self.event_bus.emit("custom_event", {
-            "source": "my_custom_watcher",
-            "changes": changes
-        })
-```
 
 ## Best Practices
 
