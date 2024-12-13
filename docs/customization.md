@@ -26,11 +26,10 @@ active_extensions:
 
 ## Core concepts
 
-1. **Actions** are the basic building blocks of R4dar's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents.
-2. **Jobs** handle long-running tasks and maintain state. They can be managed by users via the bot interface.
-3. **Agents** are AI-powered components that process messages and perform complex tasks.
+1. **Actions** are the basic building blocks of R4dar's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents. Actions can also be scheduled to run at configured intervals.
+2. **Jobs** implement long-running tasks. They can be managed by users via the bot interface.
+3. **Agents** are AI-powered components that execute actions autonomously.
 4. **Handlers** process events such as webhooks, scope updates, GitHub events, etc.
-5. **Scheduled Actions** are actions that run automatically at configured intervals.
 
 ## 1. Actions
 
@@ -103,28 +102,6 @@ class MyCustomAction(BaseAction):
 
 The action will be automatically discovered and registered when your extension is loaded. No additional registration code is needed.
 
-### Scheduling Actions
-
-Actions can be configured to run automatically at specified intervals using the scheduler system. Add scheduled actions to your `config.yml`:
-
-```yaml
-scheduled_actions:
-  daily_sync:
-    command: sync  # The action to run
-    interval_minutes: 1440  # Run daily (24 hours * 60 minutes)
-    enabled: true  # Whether this scheduled action is active
-  hourly_embeddings:
-    command: embeddings update
-    interval_minutes: 60  # Run hourly
-    enabled: true
-```
-
-You can manage scheduled actions using the `/scheduler` command:
-- `/scheduler list` - List all scheduled actions and their status
-- `/scheduler enable <action_name>` - Enable a scheduled action
-- `/scheduler disable <action_name>` - Disable a scheduled action
-- `/scheduler status <action_name>` - Get detailed status of a scheduled action
-
 ### Action Arguments
 
 Arguments define what parameters your action accepts. Each argument is defined using `ActionArgument`:
@@ -187,6 +164,28 @@ R4dar comes with several built-in actions:
 - `status` - Show system status
 
 You can find these in `src/actions/` for reference when building your own actions.
+
+### Scheduling Actions
+
+Actions can be configured to run automatically at specified intervals using the scheduler system. Add scheduled actions to your `config.yml`:
+
+```yaml
+scheduled_actions:
+  daily_sync:
+    command: sync  # The action to run
+    interval_minutes: 1440  # Run daily (24 hours * 60 minutes)
+    enabled: true  # Whether this scheduled action is active
+  hourly_embeddings:
+    command: embeddings update
+    interval_minutes: 60  # Run hourly
+    enabled: true
+```
+
+You can manage scheduled actions using the `/scheduler` command:
+- `/scheduler list` - List all scheduled actions and their status
+- `/scheduler enable <action_name>` - Enable a scheduled action
+- `/scheduler disable <action_name>` - Disable a scheduled action
+- `/scheduler status <action_name>` - Get detailed status of a scheduled action
 
 ## 2. Agents
 
@@ -291,6 +290,7 @@ class MyCustomAgent(BaseAgent):
             self.state.get("status") == "completed" or
             self.state.get("goal_achieved") == True
         )
+```
 
 ### Execution Logic
 
