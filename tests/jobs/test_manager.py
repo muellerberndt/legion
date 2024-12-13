@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from src.jobs.manager import JobManager
-from src.jobs.base import Job, JobType, JobStatus, JobResult
+from src.jobs.base import Job, JobStatus, JobResult
 from datetime import datetime
 import asyncio
 from src.models.job import JobRecord
@@ -22,7 +22,7 @@ def mock_job():
     job = Mock(spec=Job)
     # Basic attributes
     job.id = "test-job"
-    job.type = JobType.INDEXER
+    job.type = "indexer"
     job.status = JobStatus.PENDING
     job.error = None
 
@@ -46,7 +46,7 @@ def mock_job():
     # Add to_dict method
     job.to_dict.return_value = {
         "id": job.id,
-        "type": job.type.value,
+        "type": job.type,
         "status": job.status.value,
         "started_at": job.started_at,
         "completed_at": job.completed_at,
@@ -187,7 +187,7 @@ async def test_concurrent_jobs(job_manager, mock_session, mock_notifier):
     for i in range(3):
         job = AsyncMock(spec=Job)
         job.id = f"test-job-{i}"
-        job.type = JobType.INDEXER
+        job.type = "indexer"
         job.status = JobStatus.PENDING
         job.error = None
         job.started_at = None
@@ -212,7 +212,7 @@ async def test_concurrent_jobs(job_manager, mock_session, mock_notifier):
         # Add to_dict method
         job.to_dict.return_value = {
             "id": job.id,
-            "type": job.type.value,
+            "type": job.type,
             "status": job.status.value,
             "started_at": job.started_at,
             "completed_at": job.completed_at,
@@ -327,7 +327,7 @@ async def test_notification_formatting(job_manager, mock_job, mock_session, mock
 
     # Should include job ID
     assert call_args["job_id"] == job_id
-    assert call_args["job_type"] == mock_job.type.value
+    assert call_args["job_type"] == mock_job.type
     assert call_args["status"] == JobStatus.COMPLETED.value
     assert call_args["message"] == mock_job.result.message
 
@@ -340,7 +340,7 @@ async def test_list_jobs(job_manager, mock_job, mock_session):
 
     job2 = Mock(spec=Job)
     job2.id = "test-job-2"
-    job2.type = JobType.INDEXER
+    job2.type = "indexer"
     job2.status = JobStatus.RUNNING
     job2.error = None
     job2.started_at = None
@@ -362,7 +362,7 @@ async def test_list_jobs(job_manager, mock_job, mock_session):
     # Set up to_dict for job2
     job2.to_dict.return_value = {
         "id": job2.id,
-        "type": job2.type.value,
+        "type": job2.type,
         "status": job2.status.value,
         "started_at": job2.started_at,
         "completed_at": job2.completed_at,

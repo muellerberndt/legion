@@ -1,6 +1,6 @@
 """Job for generating embeddings for assets"""
 
-from src.jobs.base import Job, JobType, JobStatus, JobResult
+from src.jobs.base import Job, JobStatus, JobResult
 from src.backend.database import DBSessionMixin
 from src.models.base import Asset
 from src.util.embeddings import update_asset_embedding
@@ -14,7 +14,7 @@ class EmbedJob(Job, DBSessionMixin):
     BATCH_SIZE = 10  # Commit every 10 assets
 
     def __init__(self):
-        Job.__init__(self, JobType.EMBED)
+        Job.__init__(self, "embed")
         DBSessionMixin.__init__(self)
         self.logger = Logger("EmbedJob")
         self.processed = 0

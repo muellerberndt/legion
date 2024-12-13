@@ -1,5 +1,5 @@
 from src.handlers.base import Handler, HandlerTrigger
-from src.jobs.base import Job, JobType, JobStatus, JobResult
+from src.jobs.base import Job, JobStatus, JobResult
 from src.jobs.manager import JobManager
 from src.services.telegram import TelegramService
 from src.util.logging import Logger
@@ -15,7 +15,7 @@ class GitHubEventJob(Job, DBSessionMixin):
     """Job to process GitHub webhook payloads"""
 
     def __init__(self, event_type: str, payload: Dict[str, Any]):
-        Job.__init__(self, JobType.AGENT)
+        Job.__init__(self, "github_event")
         DBSessionMixin.__init__(self)
         self.event_type = event_type
         self.payload = payload

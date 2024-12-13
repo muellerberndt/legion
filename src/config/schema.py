@@ -19,9 +19,8 @@ ENV_MAPPINGS = {
     "telegram.chat_id": "R4DAR_CHAT_ID",
     "github.api_token": "R4DAR_GITHUB_TOKEN",
     "github.poll_interval": "R4DAR_GITHUB_POLL_INTERVAL",
-    "watchers.enabled": {"env": "R4DAR_WATCHERS_ENABLED", "type": "bool"},
-    "watchers.webhook_port": {"env": "R4DAR_WEBHOOK_PORT", "type": "int"},
-    "watchers.active_watchers": {"env": "R4DAR_WATCHERS", "type": "list"},
+    "webhook_server.enabled": {"env": "R4DAR_WEBHOOK_SERVER_ENABLED", "type": "bool"},
+    "webhook_server.port": {"env": "R4DAR_WEBHOOK_PORT", "type": "int"},
 }
 
 CONFIG_SCHEMA = {
@@ -84,13 +83,13 @@ CONFIG_SCHEMA = {
             "type": "object",
             "properties": {"api_token": {"type": "string"}, "poll_interval": {"type": "integer", "default": 300}},
         },
-        "watchers": {
+        "webhook_server": {
             "type": "object",
             "properties": {
-                "enabled": {"type": "boolean", "default": False},
-                "webhook_port": {"type": "integer", "default": 8080},
-                "active_watchers": {"type": "array", "items": {"type": "string"}, "default": []},
+                "enabled": {"type": "boolean", "default": True},
+                "port": {"type": "integer", "default": 8080},
             },
+            "default": {"enabled": True, "port": 8080},
         },
         "telegram": {"type": "object", "properties": {"bot_token": {"type": "string"}, "chat_id": {"type": "string"}}},
         "data_dir": {"type": "string", "default": "./data"},

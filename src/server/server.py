@@ -4,14 +4,12 @@ from src.interfaces.telegram import TelegramInterface
 from src.interfaces.base import Interface
 from src.util.logging import Logger
 from src.server.initialization import Initializer
-from src.services.telegram import TelegramService
 from src.actions.registry import ActionRegistry
 from src.jobs.manager import JobManager
 from src.server.extension_loader import ExtensionLoader
 from src.webhooks.server import WebhookServer
 from src.jobs.scheduler import Scheduler
-from src.jobs.github_monitor import GithubMonitorJob
-from src.jobs.indexer import IndexerJob
+from src.config.config import Config
 
 
 class Server:
@@ -25,6 +23,7 @@ class Server:
         action_registry = ActionRegistry()
         job_manager = JobManager()
         interface_instances: List[Interface] = []
+        config = Config()
 
         try:
             print("Starting server...")  # Direct console output
@@ -33,10 +32,14 @@ class Server:
             # Initialize database
             await initializer.init_db()
 
-            # Start webhook server first (needed for extension registration)
-            logger.info("Starting webhook server...")
-            webhook_server = await WebhookServer.get_instance()
-            await webhook_server.start()
+            # Start webhook server if enabled
+            webhook_enabled = config.get("webhook_server.enabled", True)
+            if webhook_enabled:
+                logger.info("Starting webhook server...")
+                webhook_server = await WebhookServer.get_instance()
+                await webhook_server.start()
+            else:
+                logger.info("Webhook server disabled in config")
 
             # Load and register extensions
             logger.info("Loading extensions...")
@@ -51,11 +54,6 @@ class Server:
             # Initialize and start scheduler
             logger.info("Starting scheduler...")
             scheduler = await Scheduler.get_instance()
-
-            # Register default scheduled jobs
-            scheduler.schedule_job("immunefi_sync", IndexerJob, interval_minutes=60, enabled=True)
-            scheduler.schedule_job("github_monitor", GithubMonitorJob, interval_minutes=30, enabled=True)
-
             await scheduler.start()
 
             # Initialize interfaces
@@ -110,19 +108,13 @@ class Server:
             except Exception as e:
                 logger.error(f"Error stopping job manager: {e}")
 
-            # Stop webhook server
-            try:
-                webhook_server = await WebhookServer.get_instance()
-                await webhook_server.stop()
-            except Exception as e:
-                logger.error(f"Error stopping webhook server: {e}")
-
-            # Cleanup Telegram service
-            try:
-                telegram_service = TelegramService.get_instance()
-                await telegram_service.cleanup()
-            except Exception as e:
-                logger.error(f"Error cleaning up Telegram service: {e}")
+            # Stop webhook server if it was started
+            if webhook_enabled:
+                try:
+                    webhook_server = await WebhookServer.get_instance()
+                    await webhook_server.stop()
+                except Exception as e:
+                    logger.error(f"Error stopping webhook server: {e}")
 
             logger.info("Server shutdown complete")
             print("Server shutdown complete")  # Direct console output

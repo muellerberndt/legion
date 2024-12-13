@@ -134,7 +134,7 @@ class JobManager(DBSessionMixin):
             notifier = JobNotifier()
             await notifier.notify_completion(
                 job_id=job.id,
-                job_type=job.type.value,
+                job_type=job.type,
                 status=JobStatus.CANCELLED.value,
                 message="Job cancelled by user",
                 started_at=job.started_at,
@@ -231,7 +231,7 @@ class JobManager(DBSessionMixin):
                 # Create and register job record
                 job_record = JobRecord(
                     id=job.id,
-                    type=job.type.value,
+                    type=job.type,
                     status=job.status.value,
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow(),
@@ -339,7 +339,7 @@ class JobManager(DBSessionMixin):
             notifier = JobNotifier()
             await notifier.notify_completion(
                 job_id=job.id,
-                job_type=job.type.value,
+                job_type=job.type,
                 status=job.status.value,
                 message=job.result.message if job.result else None,
                 outputs=job.result.outputs if job.result else None,
@@ -377,7 +377,7 @@ class JobManager(DBSessionMixin):
                 notifier = JobNotifier()
                 await notifier.notify_completion(
                     job_id=job.id,
-                    job_type=job.type.value,
+                    job_type=job.type,
                     status=JobStatus.FAILED.value,
                     message=error_msg,
                     started_at=job.started_at,
@@ -391,7 +391,7 @@ class JobManager(DBSessionMixin):
         try:
             await self.notifier.notify_completion(
                 job_id=job.id,
-                job_type=job.type.value,
+                job_type=job.type,
                 status=job.status.value,
                 message=job.result.message if job.result else None,
                 outputs=job.result.outputs if job.result else None,

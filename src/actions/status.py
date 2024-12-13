@@ -35,7 +35,7 @@ class StatusAction(BaseAction):
                 lines.append("🏃 Running Jobs:")
                 if jobs:
                     for job in jobs:
-                        lines.append(f"�� {job['id']} ({job['type']}, status: {job['status']})")
+                        lines.append(f"• {job['id']} ({job['type']}, status: {job['status']})")
                 else:
                     lines.append("• No jobs currently running")
             except Exception as e:
@@ -53,11 +53,11 @@ class StatusAction(BaseAction):
                         interval = f"{status['interval_minutes']} minutes"
                         last_run = status["last_run"] or "Never"
                         lines.append(f"{enabled} {name}")
-                        lines.append(f"  - Command: {status['command']}")
-                        lines.append(f"  - Interval: {interval}")
-                        lines.append(f"  - Last run: {last_run}")
+                        lines.append(f"   • Command: {status['command']}")
+                        lines.append(f"   • Interval: {interval}")
+                        lines.append(f"   • Last run: {last_run}")
                         if status["next_run"]:
-                            lines.append(f"  - Next run: {status['next_run']}")
+                            lines.append(f"   • Next run: {status['next_run']}")
                 else:
                     lines.append("• No scheduled actions configured")
             except Exception as e:

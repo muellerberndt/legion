@@ -1,4 +1,4 @@
-from src.jobs.base import Job, JobType, JobResult, JobStatus
+from src.jobs.base import Job, JobResult, JobStatus
 from src.config.config import Config
 from src.util.logging import Logger
 from openai import AsyncOpenAI
@@ -10,7 +10,7 @@ class AgentJob(Job):
     """Job that runs an AI agent"""
 
     def __init__(self, prompt: str):
-        super().__init__(JobType.AGENT)
+        super().__init__("agent")
         self.prompt = prompt
         self.logger = Logger("AgentJob")
         self.config = Config()

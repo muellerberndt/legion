@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from src.jobs.base import Job, JobType, JobResult, JobStatus
+from src.jobs.base import Job, JobResult, JobStatus
 from src.models.github import GitHubRepoState
 from src.handlers.base import HandlerTrigger
 from src.config.config import Config
@@ -21,7 +21,7 @@ class GithubMonitorJob(Job, DBSessionMixin):
         config = Config()
         github_config = config.get("github", {})
         self.interval = github_config.get("poll_interval", 3600)  # 1 hour default
-        Job.__init__(self, job_type=JobType.WATCHER)
+        Job.__init__(self, job_type="github_monitor")
         DBSessionMixin.__init__(self)
         self.logger = Logger("GithubMonitorJob")
 

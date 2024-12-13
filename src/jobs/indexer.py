@@ -1,5 +1,5 @@
 import asyncio
-from src.jobs.base import Job, JobType, JobResult, JobStatus
+from src.jobs.base import Job, JobResult, JobStatus
 from src.indexers.immunefi import ImmunefiIndexer
 from src.backend.database import DBSessionMixin
 import threading
@@ -9,7 +9,7 @@ class IndexerJob(Job, DBSessionMixin):
     """Job to run an indexer"""
 
     def __init__(self, platform: str, initialize_mode: bool = False):
-        Job.__init__(self, JobType.INDEXER)
+        Job.__init__(self, "indexer")
         DBSessionMixin.__init__(self)
         self.platform = platform
         self.initialize_mode = initialize_mode

@@ -16,7 +16,6 @@ TEST_CONFIG = {
     },
     "llm": {"openai": {"key": "test-key", "model": "gpt-4"}},
     "telegram": {"bot_token": "test-token", "chat_id": "test-chat"},
-    "watchers": {"active_watchers": []},
     "extensions_dir": "./test_extensions",
     "active_extensions": [],
 }

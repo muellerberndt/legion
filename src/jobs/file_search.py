@@ -1,4 +1,4 @@
-from src.jobs.base import Job, JobType, JobResult, JobStatus
+from src.jobs.base import Job, JobResult, JobStatus
 from src.backend.database import DBSessionMixin
 from src.util.logging import Logger
 import os
@@ -59,7 +59,7 @@ class FileSearchJob(Job, DBSessionMixin):
     }
 
     def __init__(self, regex_pattern: str):
-        Job.__init__(self, job_type=JobType.INDEXER)
+        Job.__init__(self, job_type="file_search")
         DBSessionMixin.__init__(self)
         self.logger = Logger("FileSearchJob")
         self.regex_pattern = regex_pattern

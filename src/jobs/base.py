@@ -16,18 +16,6 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class JobType(Enum):
-    """Types of jobs that can be run"""
-
-    AGENT = "agent"
-    INDEXER = "indexer"
-    WATCHER = "watcher"
-    FILE_SEARCH = "file_search"
-    SCAN = "scan"
-    EMBED = "embed"  # Add new job type for embedding generation
-    # Add more job types as needed
-
-
 class JobResult(DBSessionMixin):
     """Result of a job execution"""
 
@@ -57,7 +45,7 @@ class JobResult(DBSessionMixin):
 class Job(DBSessionMixin, ABC):
     """Base class for background jobs"""
 
-    def __init__(self, job_type: JobType):
+    def __init__(self, job_type: str):
         DBSessionMixin.__init__(self)
         self.id = str(uuid.uuid4())
         self.type = job_type
@@ -78,7 +66,7 @@ class Job(DBSessionMixin, ABC):
                     job_record.id = self.id
                     session.add(job_record)
 
-                job_record.type = self.type.value
+                job_record.type = self.type
                 job_record.status = self.status.value
                 job_record.started_at = self.started_at
                 job_record.completed_at = self.completed_at
@@ -142,7 +130,7 @@ class Job(DBSessionMixin, ABC):
         """Convert job to dictionary"""
         return {
             "id": self.id,
-            "type": self.type.value,
+            "type": self.type,
             "status": self.status.value,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
@@ -157,23 +145,18 @@ class Job(DBSessionMixin, ABC):
     def from_record(cls, record: JobRecord) -> "Job":
         """Create Job instance from database record"""
         # Import here to avoid circular imports
-        from src.jobs.agent import AgentJob
-        from src.jobs.indexer import IndexerJob
+        from src.jobs.manager import JobManager
 
-        # Map job types to classes
-        job_classes = {JobType.AGENT: AgentJob, JobType.INDEXER: IndexerJob}
-
-        # Get the appropriate job class
-        job_type = JobType(record.type)
-        job_class = job_classes.get(job_type)
+        # Get job class from manager
+        job_class = JobManager.get_job_class(record.type)
         if not job_class:
             raise ValueError(f"Unknown job type: {record.type}")
 
-        # Create job instance
-        if job_type == JobType.AGENT:
-            job = job_class(prompt=record.data.get("prompt", ""))
+        # Create job instance with appropriate constructor arguments
+        if record.data:
+            job = job_class(**record.data)
         else:
-            job = job_class(platform=record.data.get("platform", ""))
+            job = job_class()
 
         # Restore job state
         job.id = record.id
