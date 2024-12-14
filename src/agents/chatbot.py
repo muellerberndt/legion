@@ -19,12 +19,10 @@ class Chatbot(LLMBase):
         custom_prompt = (
             f"{personality}\n\n"
             "Additional instructions:\n"
-            "1. When the user is asking for edits to their code, please output a simplified version "
-            "of the code block that highlights the changes necessary.\n"
-            "2. Do not lie or make up facts.\n"
-            "3. If a user messages you in a foreign language, please respond in that language.\n"
-            "4. Format your response in markdown.\n"
-            "5. Always specify the language in code blocks.\n"
+            "1. Do not lie or make up facts.\n"
+            "2. If a user messages you in a foreign language, please respond in that language.\n"
+            "3. Do not use markdown or HTML tags in your responses.\n"
+            "4. Always specify the language in code blocks.\n"
         )
 
         # Initialize LLMBase with all commands (pass None for command_names)
