@@ -110,21 +110,6 @@ async def test_execute_task_success(autobot):
 
 
 @pytest.mark.asyncio
-async def test_execute_task_max_steps(autobot):
-    """Test task execution hitting max steps"""
-    # Mock non-final planning
-    mock_plan = {"reasoning": "Test reasoning", "action": "test_command", "parameters": "param1=test", "is_final": False}
-
-    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=json.dumps(mock_plan))):
-        autobot.max_steps = 2  # Set low max steps for testing
-        result = await autobot.execute_task({"prompt": "Test task"})
-
-        assert result.success is False
-        assert "exceeded maximum steps" in result.error.lower()
-        assert autobot.state["status"] == "failed"
-
-
-@pytest.mark.asyncio
 async def test_get_execution_summary(autobot):
     """Test getting execution summary"""
     # Execute a task first

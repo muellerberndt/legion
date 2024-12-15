@@ -2,8 +2,10 @@
 
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.manager import JobManager
+from src.actions.decorators import no_autobot
 
 
+@no_autobot
 class AutobotAction(BaseAction):
     """Action to launch an agent with a custom prompt"""
 

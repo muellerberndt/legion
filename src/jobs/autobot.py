@@ -31,7 +31,9 @@ class AutobotJob(Job):
             # Create job result
             job_result = JobResult(
                 success=result.success,
-                message="Autobot completed task",
+                message=(
+                    str(result.data.get("result")) if result.data and "result" in result.data else "Autobot completed task"
+                ),
                 data={
                     "prompt": self.prompt,
                     "response": result.data.get("result") if result.data else None,

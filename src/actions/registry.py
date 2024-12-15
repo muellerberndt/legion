@@ -79,8 +79,21 @@ class ActionRegistry:
 
         # If command_names is None, include ALL commands (for Chatbot)
         if command_names is None:
-            command_names = list(actions.keys())
-            self.logger.info("Including all commands (Chatbot mode)")
+            # Filter out actions marked with @no_autobot
+            command_names = []
+            for name, (handler, spec) in actions.items():
+                # Get the original action class from the registry
+                action_class = None
+                for cls in BaseAction.__subclasses__():
+                    if cls.spec.name == name:
+                        action_class = cls
+                        break
+
+                # Skip if action is marked with @no_autobot
+                if action_class and not hasattr(action_class, "_no_autobot"):
+                    command_names.append(name)
+
+            self.logger.info("Including available commands (filtered for Autobot)")
         elif not command_names:
             self.logger.info("No commands specified")
             return commands
