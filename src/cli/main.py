@@ -7,7 +7,6 @@ from functools import wraps
 import atexit
 import concurrent.futures
 import threading
-from src.server.initialization import Initializer
 
 
 def cleanup_thread_pools():
@@ -108,30 +107,6 @@ async def server_start(ctx, interface):
 
     except Exception as e:
         logger.error(f"Failed to start server: {e}")
-        raise
-
-
-@cli.command()
-@click.option(
-    "--log-level",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
-    default="INFO",
-    help="Set logging level",
-)
-@click.pass_context
-@async_command
-async def initial_sync(ctx, log_level):
-    """Perform initial data sync"""
-    logger = ctx.obj["logger"]
-
-    try:
-        # Set logging level
-        LogConfig.set_log_level(log_level)
-        initializer = Initializer()
-        result = await initializer.initial_sync()
-        logger.info(result)
-    except Exception as e:
-        logger.error(f"Failed to perform initial sync: {e}")
         raise
 
 
