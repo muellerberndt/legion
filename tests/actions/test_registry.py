@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import patch
 from src.actions.registry import ActionRegistry
 from src.actions.base import BaseAction, ActionSpec
-from src.actions.result import ActionResult
 
 
 # Mock action for testing
@@ -24,7 +23,7 @@ class MockActionWithResult(BaseAction):
     )
 
     async def execute(self, *args, **kwargs):
-        return ActionResult(content="Mock result")
+        return "Mock result"
 
 
 @pytest.fixture

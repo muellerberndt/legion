@@ -3,7 +3,6 @@ from src.jobs.manager import JobManager
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 from src.models.job import JobRecord
-from src.actions.result import ActionResult
 
 
 class ListJobsAction(BaseAction):
@@ -79,16 +78,16 @@ Example:
         DBSessionMixin.__init__(self)
         self.logger = Logger("GetJobResultAction")
 
-    async def execute(self, job_id: str) -> ActionResult:
+    async def execute(self, job_id: str) -> str:
         """Get job results"""
         try:
             with self.get_session() as session:
                 job = session.query(JobRecord).filter_by(id=job_id).first()
                 if not job:
-                    return ActionResult(content=f"Job {job_id} not found")
+                    return f"❌ Job {job_id} not found"
 
                 # Format job info
-                lines = [f"Job {job.id} ({job.type})", f"Status: {job.status}"]
+                lines = [f"🔍 Job {job.id}", f"Type: {job.type}", f"Status: {job.status}"]
 
                 if job.started_at:
                     lines.append(f"Started: {job.started_at}")
@@ -96,18 +95,19 @@ Example:
                     lines.append(f"Completed: {job.completed_at}")
 
                 if job.message:
-                    lines.extend(["", "Result:", job.message])
+                    lines.extend(["", "📝 Result:", job.message])
 
                 if job.outputs:
-                    lines.extend(["", "Outputs:"])
+                    lines.extend(["", "📄 Outputs:"])
                     for output in job.outputs:
-                        lines.append(output)
+                        # Indent outputs for better readability
+                        lines.extend("  " + line for line in output.split("\n"))
 
-                return ActionResult(content="\n".join(lines))
+                return "\n".join(lines)
 
         except Exception as e:
             self.logger.error(f"Failed to get job results: {str(e)}")
-            return ActionResult(content=f"Error getting job results: {str(e)}")
+            return f"❌ Error getting job results: {str(e)}"
 
 
 class StopJobAction(BaseAction):

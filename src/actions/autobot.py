@@ -1,6 +1,5 @@
 """Action to launch an agent with a custom prompt"""
 
-from typing import Dict, Any
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.manager import JobManager
 
@@ -16,14 +15,23 @@ class AutobotAction(BaseAction):
         arguments=[ActionArgument(name="prompt", description="The prompt to give to the agent", required=True)],
     )
 
-    async def execute(self, prompt: str, **kwargs) -> Dict[str, Any]:
+    async def execute(self, prompt: str, **kwargs) -> str:
         """Execute the autobot action"""
 
         from src.jobs.autobot import AutobotJob
 
-        # Create and schedule the job
-        job = AutobotJob(prompt=prompt)
-        job_manager = await JobManager.get_instance()
-        job_id = await job_manager.submit_job(job)
+        try:
+            # Create and schedule the job
+            job = AutobotJob(prompt=prompt)
+            job_manager = await JobManager.get_instance()
+            job_id = await job_manager.submit_job(job)
 
-        return {"success": True, "message": f"Started autobot with prompt: {prompt}", "job_id": job_id}
+            return (
+                f"🤖 Started AI agent with prompt:\n"
+                f"  {prompt}\n\n"
+                f"📋 Job ID: {job_id}\n"
+                f"Use `/job {job_id}` to check results"
+            )
+
+        except Exception as e:
+            return f"❌ Failed to start AI agent: {str(e)}"

@@ -1,7 +1,6 @@
 from typing import Dict, Type, Optional, Tuple, Callable, List
 from src.actions.base import BaseAction, ActionSpec
 from src.util.logging import Logger
-from src.actions.result import ActionResult
 from src.actions.builtin import get_builtin_actions
 from src.models.agent import AgentCommand
 
@@ -46,20 +45,11 @@ class ActionRegistry:
         async def handler(*args, **kwargs) -> str:
             try:
                 action = action_class()
-
-                # For semantic search, prepend "search" to the query
-                if action_class.__name__ == "SemanticSearchAction" and args:
-                    query = f"search {' '.join(args)}"
-                    result = await action.execute(query)
+                # Pass args or kwargs directly to execute
+                if args:
+                    result = await action.execute(*args)
                 else:
-                    # For other actions, pass args as is
-                    if args:
-                        result = await action.execute(*args)
-                    else:
-                        result = await action.execute(**kwargs)
-
-                if isinstance(result, ActionResult):
-                    return result.content
+                    result = await action.execute(**kwargs)
                 return str(result)
             except Exception as e:
                 self.logger.error(f"Action failed: {str(e)}")
