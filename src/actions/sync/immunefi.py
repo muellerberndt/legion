@@ -1,7 +1,9 @@
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.indexer import IndexerJob
+from src.actions.decorators import no_autobot
 
 
+@no_autobot
 class ImmunefiSyncAction(BaseAction):
     """Action to sync data from Immunefi"""
 
