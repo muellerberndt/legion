@@ -8,8 +8,101 @@ from src.models.base import Asset, Project
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 from sqlalchemy import or_
-from src.agents.github_event_agent import GithubEventAgent
+from src.ai.llm import chat_completion
 
+# Security analysis prompt template
+SECURITY_ANALYSIS_PROMPT = """You are a security researcher analyzing GitHub events. For each analysis:
+
+1. Provide a single paragraph summarizing the change and its potential security relevance
+2. On a new line, add "Security Impact: Yes" or "Security Impact: No"
+
+Focus on smart contract security, access control, state modifications, and potential vulnerabilities.
+Be concise and direct in your analysis."""
+
+async def analyze_pr(repo_url: str, pr_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyze a pull request for security implications"""
+    pr_content = f"""
+Repository: {repo_url}
+Title: {pr_data.get('title')}
+Description: {pr_data.get('body', 'No description')}
+Changed Files: {pr_data.get('changed_files', 0)}
+Additions: {pr_data.get('additions', 0)}
+Deletions: {pr_data.get('deletions', 0)}
+"""
+    prompt = (
+        "Analyze this pull request and provide a single sentence summary of the "
+        "change and potential security impact, if any. Always end with "
+        "'Security Impact: Yes' or 'Security Impact: No':"
+    )
+    
+    response = await chat_completion([
+        {"role": "system", "content": SECURITY_ANALYSIS_PROMPT},
+        {"role": "user", "content": f"{prompt}\n{pr_content}"}
+    ])
+    
+    return process_analysis(response)
+
+async def analyze_commit(repo_url: str, commit_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyze a commit for security implications"""
+    commit_content = f"""
+Repository: {repo_url}
+Message: {commit_data.get('commit', {}).get('message', 'No message')}
+Author: {commit_data.get('commit', {}).get('author', {}).get('name', 'Unknown')}
+URL: {commit_data.get('html_url', '')}
+"""
+    prompt = (
+        "Analyze this commit and provide a single sentence summary of the "
+        "change and potential security impact, if any. Always end with "
+        "'Security Impact: Yes' or 'Security Impact: No':"
+    )
+    
+    response = await chat_completion([
+        {"role": "system", "content": SECURITY_ANALYSIS_PROMPT},
+        {"role": "user", "content": f"{prompt}\n{commit_content}"}
+    ])
+    
+    return process_analysis(response)
+
+def process_analysis(response: str) -> Dict[str, Any]:
+    """Process the LLM response and extract analysis and security impact"""
+    try:
+        # Split on newline to separate analysis from security impact
+        parts = response.strip().split("\n")
+
+        # If we have at least one line
+        if len(parts) > 0:
+            # If we have multiple lines, join all but the last
+            if len(parts) > 1:
+                analysis = "\n".join(parts[:-1]).strip()
+                has_security_impact = "Security Impact: Yes" in parts[-1]
+            else:
+                # Single line response - need to remove the "Security Impact" part
+                text = parts[0]
+                has_security_impact = "Security Impact: Yes" in text
+
+                # Remove the security impact text
+                if "Security Impact: Yes" in text:
+                    analysis = text.replace("Security Impact: Yes", "").strip()
+                elif "Security Impact: No" in text:
+                    analysis = text.replace("Security Impact: No", "").strip()
+                else:
+                    # If no security impact marker is found, this is an error
+                    return {
+                        "has_security_impact": False,
+                        "analysis": "Error processing analysis: Missing security impact marker",
+                    }
+
+            # If we ended up with empty analysis after removing security impact
+            if not analysis:
+                analysis = "No analysis provided"
+
+            return {"has_security_impact": has_security_impact, "analysis": analysis}
+
+        # Empty response
+        return {"has_security_impact": False, "analysis": "Error processing analysis: Empty response"}
+
+    except Exception as e:
+        return {"has_security_impact": False, "analysis": f"Error processing analysis: {str(e)}"}
 
 class GitHubEventJob(Job, DBSessionMixin):
     """Job to process GitHub webhook payloads"""
@@ -61,8 +154,7 @@ class GitHubEventJob(Job, DBSessionMixin):
         self.logger.debug(f"PROCESS PR: {repo_url} {pr}")
 
         # Get security analysis
-        github_agent = GithubEventAgent()
-        analysis_result = await github_agent.analyze_pr(repo_url, pr)
+        analysis_result = await analyze_pr(repo_url, pr)
 
         # Check if there's a security impact
         if not analysis_result.get("has_security_impact", False):
@@ -103,8 +195,7 @@ class GitHubEventJob(Job, DBSessionMixin):
 
         self.logger.debug(f"PROCESS PUSH: {repo_url} {commit}")
         # Get security analysis
-        github_agent = GithubEventAgent()
-        analysis_result = await github_agent.analyze_commit(repo_url, commit)
+        analysis_result = await analyze_commit(repo_url, commit)
 
         # Check if there's a security impact
         if not analysis_result.get("has_security_impact", False):
