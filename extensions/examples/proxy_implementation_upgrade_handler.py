@@ -6,9 +6,6 @@ from src.util.etherscan import EVMExplorer
 from sqlalchemy import text
 from typing import Dict, Any, Optional
 import traceback
-from extensions.examples.proxy_implementation_upgrade_agent import ProxyImplementationUpgradeAgent
-
-__all__ = ["ProxyImplementationUpgradeHandler"]
 
 
 class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
@@ -50,7 +47,7 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
                 self.logger.info(f"Processing log with {len(topics)} topics", extra_data={"topics": topics})
 
                 # We should extract the contract address from the log here
-                # But for the sake of testing this handler, we'll use a known address from an Immunefi bounty
+                # But for the sake of testing this example, we'll use a known address from an Immunefi bounty
 
                 contract_address = "0x60a91E2B7A1568f0848f3D43353C453730082E46"
                 implementation_address = "0x41912d95d040ecc7d715e5115173d37e4e7cb24e"
