@@ -12,6 +12,7 @@ from src.actions.sync.immunefi import ImmunefiSyncAction
 from src.actions.status import StatusAction
 from src.actions.github_monitor import GithubMonitorAction
 from src.actions.scheduler import SchedulerAction
+from src.actions.autobot import AutobotAction
 
 
 def get_builtin_actions() -> List[Type[BaseAction]]:
@@ -29,4 +30,5 @@ def get_builtin_actions() -> List[Type[BaseAction]]:
         StatusAction,
         GithubMonitorAction,
         SchedulerAction,
+        AutobotAction,
     ]
