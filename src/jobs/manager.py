@@ -1,12 +1,13 @@
 """Job manager for handling background jobs"""
 
 import asyncio
-from typing import Dict, List, Type, Optional
+from typing import Dict, List, Type, Optional, Any
 from src.jobs.base import Job, JobStatus
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 from src.models.job import JobRecord
 from datetime import datetime
+import time
 
 
 class JobManager(DBSessionMixin):
@@ -401,3 +402,59 @@ class JobManager(DBSessionMixin):
             )
         except Exception as e:
             self.logger.error(f"Failed to send job completion notification: {e}")
+
+    async def wait_for_job_result(self, job_id: str, timeout: int = 300) -> Dict[str, Any]:
+        """Wait for a job to complete and return its result.
+
+        Args:
+            job_id: The ID of the job to wait for
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            The job result data
+        """
+        start_time = time.time()
+        last_status = None
+
+        while time.time() - start_time < timeout:
+            # Get job from database
+            with self.get_session() as session:
+                job_record = session.query(JobRecord).filter_by(id=job_id).first()
+                if not job_record:
+                    raise ValueError(f"Job {job_id} not found")
+
+                # Log status changes
+                if job_record.status != last_status:
+                    self.logger.info(f"Job {job_id} status: {job_record.status}")
+                    last_status = job_record.status
+
+                if job_record.status == JobStatus.FAILED.value:
+                    return {
+                        "success": False,
+                        "error": job_record.message or "Job failed",
+                        "data": job_record.data,
+                        "outputs": job_record.outputs,
+                    }
+                elif job_record.status == JobStatus.CANCELLED.value:
+                    return {
+                        "success": False,
+                        "error": "Job was cancelled",
+                        "data": job_record.data,
+                        "outputs": job_record.outputs,
+                    }
+                elif job_record.status == JobStatus.COMPLETED.value:
+                    return {
+                        "success": job_record.success,
+                        "message": job_record.message,
+                        "data": job_record.data,
+                        "outputs": job_record.outputs,
+                    }
+
+                # For running jobs, include any available outputs
+                elif job_record.outputs:
+                    self.logger.info(f"Job {job_id} has {len(job_record.outputs)} outputs while running")
+
+            # Wait before checking again
+            await asyncio.sleep(2)  # Increased wait time to reduce DB load
+
+        raise TimeoutError(f"Timeout waiting for job {job_id}")

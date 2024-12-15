@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
 from src.ai.llm import chat_completion
+import re
+from src.jobs.manager import JobManager
 
 
 @dataclass
@@ -106,6 +108,38 @@ class Autobot:
 
         return base_prompt
 
+    async def _wait_for_job(self, job_id: str, timeout: int = 300) -> Dict[str, Any]:
+        """Wait for a job to complete and return its result."""
+        job_manager = await JobManager.get_instance()
+        return await job_manager.wait_for_job_result(job_id, timeout)
+
+    def _extract_job_id(self, result: str) -> Optional[str]:
+        """Extract job ID from a command result if present.
+
+        Looks for patterns like:
+        - "Started job with ID: abc-123"
+        - "Job ID: abc-123"
+        - "job abc-123"
+
+        Args:
+            result: The command result string
+
+        Returns:
+            The job ID if found, None otherwise
+        """
+        # Common patterns for job IDs
+        patterns = [
+            r"[Jj]ob (?:ID: )?([a-f0-9-]+)",
+            r"[Jj]ob_id: ([a-f0-9-]+)",
+            r"[Ss]tarted.*[Jj]ob.*?([a-f0-9-]+)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, result)
+            if match:
+                return match.group(1)
+        return None
+
     async def execute_command(self, command: str, param_str: str) -> Any:
         """Execute a registered command"""
         # Handle empty command case for conclusion
@@ -124,6 +158,34 @@ class Autobot:
             raise ValueError(f"Action not found for command: {command}")
         handler, _ = action
 
+        try:
+            # Execute the command
+            result = await self._execute_command_with_params(command, handler, cmd_spec, param_str)
+
+            # Check if the result contains a job ID
+            if isinstance(result, str):
+                job_id = self._extract_job_id(result)
+                if job_id:
+                    self.logger.info(f"Detected job ID {job_id}, waiting for completion...")
+                    try:
+                        job_result = await self._wait_for_job(job_id)
+                        if not job_result["success"]:
+                            if "error" in job_result:
+                                raise ValueError(job_result["error"])
+                            raise ValueError("Job failed without specific error message")
+                        return job_result
+                    except (TimeoutError, ValueError) as e:
+                        self.logger.error(f"Error waiting for job: {str(e)}")
+                        raise  # Re-raise to handle in execute_step
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error executing command: {str(e)}")
+            raise
+
+    async def _execute_command_with_params(self, command: str, handler: Any, cmd_spec: Any, param_str: str) -> Any:
+        """Execute a command with the given parameters"""
         # Special handling for db_query
         if command == "db_query":
             param_str = param_str.strip()
@@ -151,9 +213,9 @@ class Autobot:
             param_str = param_str[1:-1].strip()
 
         # Parse parameters
-        kwargs = {}
         if "=" in param_str:
             # Handle key=value parameters
+            kwargs = {}
             param_pairs = param_str.split()
             for pair in param_pairs:
                 if "=" not in pair:
