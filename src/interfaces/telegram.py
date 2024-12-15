@@ -6,7 +6,7 @@ from src.actions.registry import ActionRegistry
 from src.util.logging import Logger
 from src.config.config import Config
 from src.services.telegram import TelegramService
-from src.agents.chatbot import Chatbot
+from src.ai.chatbot import Chatbot
 import shlex
 import telegram
 

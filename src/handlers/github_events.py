@@ -19,6 +19,7 @@ SECURITY_ANALYSIS_PROMPT = """You are a security researcher analyzing GitHub eve
 Focus on smart contract security, access control, state modifications, and potential vulnerabilities.
 Be concise and direct in your analysis."""
 
+
 async def analyze_pr(repo_url: str, pr_data: Dict[str, Any]) -> Dict[str, Any]:
     """Analyze a pull request for security implications"""
     pr_content = f"""
@@ -34,13 +35,13 @@ Deletions: {pr_data.get('deletions', 0)}
         "change and potential security impact, if any. Always end with "
         "'Security Impact: Yes' or 'Security Impact: No':"
     )
-    
-    response = await chat_completion([
-        {"role": "system", "content": SECURITY_ANALYSIS_PROMPT},
-        {"role": "user", "content": f"{prompt}\n{pr_content}"}
-    ])
-    
+
+    response = await chat_completion(
+        [{"role": "system", "content": SECURITY_ANALYSIS_PROMPT}, {"role": "user", "content": f"{prompt}\n{pr_content}"}]
+    )
+
     return process_analysis(response)
+
 
 async def analyze_commit(repo_url: str, commit_data: Dict[str, Any]) -> Dict[str, Any]:
     """Analyze a commit for security implications"""
@@ -55,13 +56,13 @@ URL: {commit_data.get('html_url', '')}
         "change and potential security impact, if any. Always end with "
         "'Security Impact: Yes' or 'Security Impact: No':"
     )
-    
-    response = await chat_completion([
-        {"role": "system", "content": SECURITY_ANALYSIS_PROMPT},
-        {"role": "user", "content": f"{prompt}\n{commit_content}"}
-    ])
-    
+
+    response = await chat_completion(
+        [{"role": "system", "content": SECURITY_ANALYSIS_PROMPT}, {"role": "user", "content": f"{prompt}\n{commit_content}"}]
+    )
+
     return process_analysis(response)
+
 
 def process_analysis(response: str) -> Dict[str, Any]:
     """Process the LLM response and extract analysis and security impact"""
@@ -103,6 +104,7 @@ def process_analysis(response: str) -> Dict[str, Any]:
 
     except Exception as e:
         return {"has_security_impact": False, "analysis": f"Error processing analysis: {str(e)}"}
+
 
 class GitHubEventJob(Job, DBSessionMixin):
     """Job to process GitHub webhook payloads"""

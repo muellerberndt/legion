@@ -1,10 +1,9 @@
-from typing import Dict, Type, Optional, Tuple, Callable
+from typing import Dict, Type, Optional, Tuple, Callable, List
 from src.actions.base import BaseAction, ActionSpec
 from src.util.logging import Logger
 from src.actions.result import ActionResult
 from src.actions.builtin import get_builtin_actions
-from src.ai.agent import AgentCommand
-from typing import List
+from src.models.agent import AgentCommand
 
 
 class ActionRegistry:
@@ -79,7 +78,7 @@ class ActionRegistry:
         if not self._initialized:
             self.initialize()
         return self.actions
-    
+
     def _get_agent_command_instructions(self, command_names: Optional[List[str]] = None) -> Dict[str, AgentCommand]:
         """Get the commands available to this component"""
         commands = {}
