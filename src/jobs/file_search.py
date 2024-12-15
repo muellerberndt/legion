@@ -209,7 +209,7 @@ class FileSearchJob(Job, DBSessionMixin):
                     )
 
             # Create result with outputs
-            self.result = JobResult(success=True, message=f"Found matches in {len(results)} assets", data={"results": results})
+            result = JobResult(success=True, message=f"Found matches in {len(results)} assets", data={"results": results})
 
             # Add formatted outputs
             for match in formatted_results:
@@ -220,15 +220,14 @@ class FileSearchJob(Job, DBSessionMixin):
                     f"Match: {match['match']}\n"
                     f"Context: {match['context']}\n"
                 )
-                self.result.add_output(output)
+                result.add_output(output)
 
-            # Set final status
-            self.status = JobStatus.COMPLETED
+            # Complete the job with results
+            await self.complete(result)
 
         except Exception as e:
             self.logger.error(f"Error in file search: {str(e)}")
-            self.status = JobStatus.FAILED
-            self.fail(str(e))
+            await self.fail(str(e))
 
     async def stop_handler(self) -> None:
         """Stop the job - nothing to do for search"""

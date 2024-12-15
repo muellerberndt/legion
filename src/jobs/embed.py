@@ -1,11 +1,12 @@
 """Job for generating embeddings for assets"""
 
-from src.jobs.base import Job, JobStatus, JobResult
+from src.jobs.base import Job, JobResult
 from src.backend.database import DBSessionMixin
 from src.models.base import Asset
 from src.util.embeddings import update_asset_embedding
 from src.util.logging import Logger
 from sqlalchemy import select
+from datetime import datetime
 
 
 class EmbedJob(Job, DBSessionMixin):
@@ -24,7 +25,7 @@ class EmbedJob(Job, DBSessionMixin):
     async def start(self) -> None:
         """Start the embedding job"""
         try:
-            self.status = JobStatus.RUNNING
+            self.started_at = datetime.utcnow()
             self.logger.info("Starting embedding generation for all assets")
 
             with self.get_session() as session:
@@ -66,18 +67,26 @@ class EmbedJob(Job, DBSessionMixin):
                         # For non-database errors, continue with next asset
                         session.rollback()  # Rollback any changes from the failed asset
 
-            # Set completion status
-            self.status = JobStatus.COMPLETED
-            self.result = JobResult(
-                success=True,
+            # Create result with success/failure stats
+            result = JobResult(
+                success=self.failed == 0,  # Only successful if no failures
                 message=f"Generated embeddings for {self.processed} assets ({self.failed} failed)",
                 data={"processed": self.processed, "failed": self.failed, "commits": self._commit_count},
             )
 
+            # Add detailed output
+            if self.failed > 0:
+                result.add_output(f"⚠️ {self.failed} assets failed to process")
+            result.add_output(f"✅ Successfully processed {self.processed} assets")
+            result.add_output(f"💾 Completed {self._commit_count} database commits")
+
+            await self.complete(result)
+
         except Exception as e:
             self.logger.error(f"Embedding job failed: {str(e)}")
-            self.fail(str(e))
+            await self.fail(str(e))
 
     async def stop_handler(self) -> None:
         """Handle job stop request"""
         self.logger.info("Stopping embedding job")
+        # No special cleanup needed for embedding job

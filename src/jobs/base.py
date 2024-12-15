@@ -6,6 +6,7 @@ from src.util.logging import Logger
 from src.models.job import JobRecord
 from src.backend.database import DBSessionMixin
 from abc import ABC, abstractmethod
+from src.services.telegram import TelegramService
 
 
 class JobStatus(str, Enum):
@@ -55,6 +56,7 @@ class Job(DBSessionMixin, ABC):
         self.result: Optional[JobResult] = None
         self.error: Optional[str] = None
         self.logger = Logger(self.__class__.__name__)
+        self.telegram = TelegramService()
 
     def _store_in_db(self) -> None:
         """Store job details in database"""
@@ -79,6 +81,13 @@ class Job(DBSessionMixin, ABC):
 
         except Exception as e:
             self.logger.error(f"Failed to store job in database: {e}")
+
+    async def _notify_status(self, message: str) -> None:
+        """Send a notification about job status"""
+        try:
+            await self.telegram.send_message(f"Job {self.id} ({self.type}): {message}")
+        except Exception as e:
+            self.logger.error(f"Failed to send job notification: {e}")
 
     @abstractmethod
     async def start(self) -> None:
@@ -106,25 +115,29 @@ class Job(DBSessionMixin, ABC):
         await self.stop_handler()
         await self.cancel()
 
-    def complete(self, result: JobResult) -> None:
+    async def complete(self, result: JobResult) -> None:
         """Mark job as completed with result"""
         self.completed_at = datetime.utcnow()
         self.status = JobStatus.COMPLETED
         self.result = result
         self._store_in_db()
+        await self._notify_status(f"Completed - {result.message}")
 
-    def fail(self, error: str) -> None:
+    async def fail(self, error: str) -> None:
         """Mark job as failed with error"""
         self.completed_at = datetime.utcnow()
         self.status = JobStatus.FAILED
-        self.message = error
+        self.error = error
+        self.result = JobResult(success=False, message=error)
         self._store_in_db()
+        await self._notify_status(f"Failed - {error}")
 
     async def cancel(self) -> None:
         """Mark job as cancelled"""
         self.completed_at = datetime.utcnow()
         self.status = JobStatus.CANCELLED
         self._store_in_db()
+        await self._notify_status("Cancelled")
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert job to dictionary"""

@@ -95,15 +95,12 @@ class GithubMonitorJob(Job, DBSessionMixin):
             if self.session:
                 await self.session.close()
 
-            # Set final status
-            self.status = JobStatus.COMPLETED
-            self.completed_at = datetime.utcnow()
-            self.result = JobResult(success=True, message="GitHub monitoring completed")
+            # Complete the job
+            await self.complete(JobResult(success=True, message="GitHub monitoring completed"))
 
         except Exception as e:
             self.logger.error(f"Failed to run GitHub monitor: {str(e)}")
-            self.status = JobStatus.FAILED
-            self.fail(str(e))
+            await self.fail(str(e))
             raise
 
     async def stop_handler(self) -> None:

@@ -30,22 +30,35 @@ class AutobotJob(Job):
 
             # Create job result
             job_result = JobResult(
-                success=True,
+                success=result.success,
                 message="Autobot completed task",
                 data={
                     "prompt": self.prompt,
-                    "response": result.get("response"),
+                    "response": result.data.get("result") if result.data else None,
                     "execution_time": (datetime.utcnow() - self.started_at).total_seconds(),
                 },
             )
 
             # Add agent's response to outputs
-            job_result.add_output(result.get("response", "No response"))
+            if result.data and "result" in result.data:
+                result_data = result.data["result"]
+                if isinstance(result_data, dict) and "execution_summary" in result_data:
+                    # Handle enhanced result format with summary
+                    job_result.add_output(str(result_data["final_result"]))
+                    job_result.add_output("\n\nExecution Summary:")
+                    job_result.add_output(str(result_data["execution_summary"]))
+                    if "note" in result_data:
+                        job_result.add_output(f"\nNote: {result_data['note']}")
+                else:
+                    # Handle simple result format
+                    job_result.add_output(str(result_data))
+            elif result.error:
+                job_result.add_output(f"Error: {result.error}")
 
-            self.complete(job_result)
+            await self.complete(job_result)
 
         except Exception as e:
-            self.fail(str(e))
+            await self.fail(str(e))
 
     async def stop_handler(self) -> None:
         """Handle cleanup when stopping the job"""

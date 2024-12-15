@@ -84,6 +84,14 @@ class Autobot:
         base_prompt += "2. You can plan and execute each step using available commands\n"
         base_prompt += "3. You can adapt your plan based on the results of each step\n"
         base_prompt += "4. You maintain state and can track progress across multiple steps\n\n"
+        base_prompt += (
+            "IMPORTANT: When a command returns a result, you should analyze it and decide if the task is complete.\n"
+        )
+        base_prompt += "Set is_final=true when:\n"
+        base_prompt += "1. You have the information needed to answer the user's question\n"
+        base_prompt += "2. The command result indicates success or completion\n"
+        base_prompt += "3. The command result shows an error or failure\n"
+        base_prompt += "4. You've gathered enough information to provide a meaningful response\n\n"
 
         if self.commands:
             base_prompt += "Available commands:\n\n"
@@ -100,6 +108,10 @@ class Autobot:
 
     async def execute_command(self, command: str, param_str: str) -> Any:
         """Execute a registered command"""
+        # Handle empty command case for conclusion
+        if not command:
+            return self.get_execution_summary()
+
         if command not in self.commands:
             raise ValueError(f"Unknown command: {command}")
 
@@ -194,7 +206,15 @@ Do not enter loops and aim to complete the task in the least number of steps."""
             self.logger.info(f"Agent response: {response}")
 
             try:
-                plan = json.loads(response)
+                # Strip markdown code block syntax if present
+                json_str = response
+                if "```json" in json_str:
+                    json_str = json_str.split("```json", 1)[1]
+                if "```" in json_str:
+                    json_str = json_str.split("```", 1)[0]
+                json_str = json_str.strip()
+
+                plan = json.loads(json_str)
                 required_fields = ["reasoning", "action", "parameters", "is_final"]
                 if not all(field in plan for field in required_fields):
                     raise ValueError(f"Missing required fields in plan. Got: {list(plan.keys())}")
@@ -233,6 +253,13 @@ Do not enter loops and aim to complete the task in the least number of steps."""
             parameters = plan["parameters"]
 
             try:
+                # If concluding with empty action, return summary
+                if not command and plan["is_final"]:
+                    summary = self.get_execution_summary()
+                    self.state["result"] = summary
+                    self.state["status"] = "completed"
+                    return AutobotResult(success=True, data={"result": summary})
+
                 result = await self.execute_command(command, parameters)
 
                 # Record the step
@@ -248,8 +275,20 @@ Do not enter loops and aim to complete the task in the least number of steps."""
                 self.state["last_result"] = result
                 self.state["is_final"] = plan["is_final"]
                 if plan["is_final"]:
-                    self.state["result"] = result
+                    # For final steps, include both the result and a summary
+                    summary = self.get_execution_summary()
+                    self.state["result"] = {"final_result": result, "execution_summary": summary}
                     self.state["status"] = "completed"
+                elif self.step_count >= 3:  # Add a step limit for simple queries
+                    summary = self.get_execution_summary()
+                    self.state["result"] = {
+                        "final_result": result,
+                        "execution_summary": summary,
+                        "note": "Task completed after maximum steps",
+                    }
+                    self.state["status"] = "completed"
+                    self.state["is_final"] = True
+                    return AutobotResult(success=True, data={"result": self.state["result"]})
 
                 return AutobotResult(success=True, data={"result": result})
 

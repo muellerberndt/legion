@@ -90,9 +90,23 @@ async def test_execute_task_success(autobot):
         assert result.success is True
         assert result.data is not None
         assert "result" in result.data
-        assert result.data["result"] == "Command result"
-        assert len(autobot.execution_steps) == 1
-        assert isinstance(autobot.execution_steps[0], ExecutionStep)
+
+        # Check the enhanced result format
+        result_data = result.data["result"]
+        assert isinstance(result_data, dict)
+        assert "final_result" in result_data
+        assert "execution_summary" in result_data
+        assert result_data["final_result"] == "Command result"
+
+        # Verify execution summary structure
+        summary = result_data["execution_summary"]
+        assert isinstance(summary, dict)
+        assert "execution_id" in summary
+        assert "status" in summary
+        assert "steps" in summary
+        assert len(summary["steps"]) == 1
+        assert summary["steps"][0]["action"] == "test_command"
+        assert summary["steps"][0]["reasoning"] == "Test reasoning"
 
 
 @pytest.mark.asyncio

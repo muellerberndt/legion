@@ -6,7 +6,6 @@ from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 from src.models.base import Asset, Project
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timezone
 from sqlalchemy import or_
 from src.ai.llm import chat_completion
 
@@ -234,6 +233,8 @@ class GitHubEventJob(Job, DBSessionMixin):
     async def start(self) -> None:
         """Process the GitHub event"""
         try:
+            self.status = JobStatus.RUNNING
+
             # Process based on event type
             if self.event_type == "pull_request":
                 summary = await self.process_pr()
@@ -242,26 +243,25 @@ class GitHubEventJob(Job, DBSessionMixin):
             else:
                 raise ValueError(f"Unsupported event type: {self.event_type}")
 
-            self.result = JobResult(success=True, message=summary, data=self.payload)
+            # Create result
+            result = JobResult(success=True, message=summary, data=self.payload)
 
             # Only send notification if there's a security impact (summary will indicate this)
             if "No security impact detected" not in summary:
                 telegram = TelegramService.get_instance()
                 await telegram.send_message(summary)
 
-            self.status = JobStatus.COMPLETED
-            self.completed_at = datetime.now(timezone.utc)
+            # Complete the job
+            await self.complete(result)
 
         except Exception as e:
             self.logger.error(f"Failed to process GitHub event: {str(e)}")
-            self.status = JobStatus.FAILED
-            self.error = str(e)
+            await self.fail(str(e))
             raise
 
     async def stop_handler(self) -> None:
-        """Stop the job"""
-        if self.status == JobStatus.RUNNING:
-            self.status = JobStatus.CANCELLED
+        """Nothing to clean up for this job"""
+        pass
 
 
 class GitHubEventHandler(Handler):

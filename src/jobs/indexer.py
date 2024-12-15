@@ -30,21 +30,18 @@ class IndexerJob(Job, DBSessionMixin):
                     indexer._stop_event = self._stop_event
                     await indexer.index()
 
-                    self.status = JobStatus.COMPLETED
-                    self.result = JobResult(success=True, message=f"Successfully indexed {self.platform}")
+                    await self.complete(JobResult(success=True, message=f"Successfully indexed {self.platform}"))
                 else:
                     raise ValueError(f"Unknown platform: {self.platform}")
 
         except asyncio.CancelledError:
             self.logger.info("Indexer job cancelled")
-            self.status = JobStatus.CANCELLED
-            self.result = JobResult(success=False, message=f"Indexing of {self.platform} was cancelled")
+            await self.cancel()
             raise
 
         except Exception as e:
             self.logger.error(f"Failed to start indexer: {str(e)}")
-            self.status = JobStatus.FAILED
-            self.result = JobResult(success=False, message=f"Failed to start indexer: {str(e)}")
+            await self.fail(str(e))
             raise
 
     async def stop_handler(self) -> None:
