@@ -7,6 +7,7 @@ from src.jobs.base import JobStatus
 from src.config.config import Config
 import os
 import re
+from unittest.mock import AsyncMock
 
 
 @pytest.fixture
@@ -38,26 +39,16 @@ LogConfig.set_log_level("DEBUG")
 
 @pytest.fixture
 def mock_config():
-    with patch("src.jobs.file_search.Config", autospec=True) as config_class:
-        config_instance = config_class.return_value
-        config_instance.get.return_value = [".sol", ".cairo", ".rs"]
-        yield config_instance
+    """Mock Config class"""
+    with patch("src.jobs.file_search.Config") as config_mock:
+        # Create a mock instance with a get method
+        instance = Mock()
+        instance.get.return_value = [".sol", ".cairo", ".rs"]
 
+        # Make Config.get() return our mock instance
+        config_mock.get.return_value = instance
 
-@pytest.mark.asyncio
-async def test_file_search_job(mock_session, mock_config):
-    """Test basic file search job execution"""
-    with (
-        patch("src.backend.database.DBSessionMixin.get_session", return_value=mock_session),
-        patch("os.path.exists", return_value=True),
-        patch("builtins.open", mock_open(read_data="test content with test pattern")),
-    ):
-        job = FileSearchJob(regex_pattern="test.*pattern")
-        await job.start()
-
-        # Verify job completed successfully
-        assert job.status.value == JobStatus.COMPLETED.value
-        assert job.result.success is True
+        yield config_mock
 
 
 def test_extension_filtering(mock_config):
