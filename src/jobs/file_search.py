@@ -63,8 +63,8 @@ class FileSearchJob(Job, DBSessionMixin):
         Job.__init__(self, job_type="file_search")
         DBSessionMixin.__init__(self)
         self.logger = Logger("FileSearchJob")
-        # Compile regex pattern - add word boundaries to match whole words
-        self.pattern = re.compile(re.escape(regex_pattern), re.IGNORECASE)
+        # Compile regex pattern to match parts of words
+        self.pattern = re.compile(regex_pattern, re.IGNORECASE | re.MULTILINE)
 
         # Get allowed extensions from config
         config = Config()
@@ -84,22 +84,30 @@ class FileSearchJob(Job, DBSessionMixin):
         try:
             # Skip binary and known binary extensions
             if self._should_skip_file(file_path) or is_binary_file(file_path):
+                self.logger.debug(f"Skipping file {file_path} due to extension or binary content")
                 return []
 
             # Read file content
             with open(file_path, "r") as f:
                 content = f.read()
 
+            self.logger.debug(f"Searching file {file_path}")
+            self.logger.debug(f"Pattern: {pattern.pattern}")
+            self.logger.debug(f"Content: {content}")
+
             # Use finditer to get non-overlapping matches with positions
             matches = list(pattern.finditer(content))
+            self.logger.debug(f"Found {len(matches)} matches")
             file_matches = []
 
             for match in matches:
+                self.logger.debug(f"Match: {match.group(0)}")
                 # Get some context around the match
                 start = max(0, match.start() - 50)
                 end = min(len(content), match.end() + 50)
                 context = content[start:end]
 
+                # Get the match info - we want to match any occurrence of the pattern
                 match_info = {"match": match.group(0), "context": context, "start": match.start(), "end": match.end()}
                 file_matches.append(match_info)
 
@@ -113,10 +121,13 @@ class FileSearchJob(Job, DBSessionMixin):
         """Recursively search a directory for regex matches"""
         matches = []
         try:
+            self.logger.debug(f"Searching directory {directory}")
+            self.logger.debug(f"Pattern: {pattern.pattern}")
             for root, _, files in os.walk(directory):
                 for file in files:
                     file_path = os.path.join(root, file)
                     try:
+                        self.logger.debug(f"Processing file {file_path}")
                         file_matches = self._search_file(file_path, pattern)
                         if file_matches:
                             matches.append({"file_path": file_path, "matches": file_matches})
