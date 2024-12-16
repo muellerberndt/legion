@@ -41,12 +41,12 @@ LogConfig.set_log_level("DEBUG")
 def mock_config():
     """Mock Config class"""
     with patch("src.jobs.file_search.Config") as config_mock:
-        # Create a mock instance with a get method
+        # Create a mock instance
         instance = Mock()
         instance.get.return_value = [".sol", ".cairo", ".rs"]
 
-        # Make Config.get() return our mock instance
-        config_mock.get.return_value = instance
+        # Make the Config constructor return our mock instance
+        config_mock.return_value = instance
 
         yield config_mock
 

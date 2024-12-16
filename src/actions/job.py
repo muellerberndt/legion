@@ -56,11 +56,14 @@ class GetJobResultAction(BaseAction, DBSessionMixin):
 
     spec = ActionSpec(
         name="job",
-        description="Get results of a job by ID",
+        description="Get results of a job by ID or the most recent finished job",
         help_text="""Get the results or status of a background job.
 
 Usage:
-/job <job_id>
+/job [job_id]
+
+If job_id is provided, shows results for that specific job.
+If no job_id is provided, shows results of the most recently finished job.
 
 This command will show:
 - Job status (running, completed, failed)
@@ -68,23 +71,31 @@ This command will show:
 - Start and completion times
 - Additional outputs if available
 
-Example:
-/job abc123  # Get results for job abc123""",
+Examples:
+/job abc123  # Get results for job abc123
+/job         # Get results of most recent finished job""",
         agent_hint="Use this command to check the status and results of background jobs like scans, searches, or analysis tasks.",
-        arguments=[ActionArgument(name="job_id", description="ID of the job to check", required=True)],
+        arguments=[ActionArgument(name="job_id", description="ID of the job to check", required=False)],
     )
 
     def __init__(self):
         DBSessionMixin.__init__(self)
         self.logger = Logger("GetJobResultAction")
 
-    async def execute(self, job_id: str) -> str:
+    async def execute(self, job_id: str = None) -> str:
         """Get job results"""
         try:
             with self.get_session() as session:
-                job = session.query(JobRecord).filter_by(id=job_id).first()
-                if not job:
-                    return f"❌ Job {job_id} not found"
+                job = None
+                if job_id:
+                    job = session.query(JobRecord).filter_by(id=job_id).first()
+                    if not job:
+                        return f"❌ Job {job_id} not found"
+                else:
+                    job_manager = JobManager()
+                    job = job_manager.get_most_recent_finished_job()
+                    if not job:
+                        return "❌ No finished jobs found"
 
                 # Format job info
                 lines = [f"🔍 Job {job.id}", f"Type: {job.type}", f"Status: {job.status}"]

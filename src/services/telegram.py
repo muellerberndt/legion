@@ -81,7 +81,7 @@ class TelegramService(NotificationService):
                 preview = message[:preview_length] + "...\n\n(Full content in attached file)"
 
                 # Send preview message
-                await self.bot.send_message(chat_id=self.chat_id, text=preview, parse_mode="HTML")
+                await self.bot.send_message(chat_id=self.chat_id, text=preview)
 
                 # Create and send file with full content
                 file_path = self._create_temp_file(message)
@@ -95,7 +95,7 @@ class TelegramService(NotificationService):
                         self.logger.error(f"Failed to remove temp file {file_path}: {e}")
             else:
                 # Send normal message
-                await self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode="HTML")
+                await self.bot.send_message(chat_id=self.chat_id, text=message)
 
             self.logger.debug("Message sent successfully")
         except Exception as e:

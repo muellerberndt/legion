@@ -198,6 +198,28 @@ class JobManager(DBSessionMixin):
         """
         return self._jobs.get(job_id)
 
+    def get_most_recent_finished_job(self) -> Optional[JobRecord]:
+        """Get the most recently finished job from the database.
+
+        Returns:
+            The most recent finished job record if found, None otherwise
+        """
+        try:
+            with self.get_session() as session:
+                # Query for the most recent completed, failed, or cancelled job
+                job = (
+                    session.query(JobRecord)
+                    .filter(
+                        JobRecord.status.in_([JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value])
+                    )
+                    .order_by(JobRecord.completed_at.desc(), JobRecord.started_at.desc())
+                    .first()
+                )
+                return job
+        except Exception as e:
+            self.logger.error(f"Failed to get most recent job: {e}")
+            return None
+
     def list_jobs(self, job_type: Type[Job] = None) -> List[Dict]:
         """List all registered jobs
 

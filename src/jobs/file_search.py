@@ -70,7 +70,7 @@ class FileSearchJob(Job, DBSessionMixin):
         self.pattern = re.compile(regex_pattern, re.IGNORECASE | re.MULTILINE)
 
         # Get allowed extensions from config
-        config = Config.get()
+        config = Config()
         self.allowed_extensions = set(
             config.get("file_search.allowed_extensions", [".sol", ".cairo", ".rs", ".vy", ".fe", ".move", ".yul"])
         )
