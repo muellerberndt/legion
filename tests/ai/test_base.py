@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from src.ai.base import BaseAgent
 from src.actions.registry import ActionRegistry
-from src.models.agent import AgentCommand
+from src.actions.base import ActionSpec, ActionArgument
 import json
 
 
@@ -15,50 +15,51 @@ def mock_action_registry():
 
     # Mock commands with different parameter configurations
     commands = {
-        "no_params": AgentCommand(
+        "no_params": ActionSpec(
             name="no_params",
             description="Command with no parameters",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=[],
-            optional_params=[],
-            positional_params=[],
+            arguments=[],
         ),
-        "required_params": AgentCommand(
+        "required_params": ActionSpec(
             name="required_params",
             description="Command with required parameters",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=["param1", "param2"],
-            optional_params=[],
-            positional_params=["param1", "param2"],
+            arguments=[
+                ActionArgument(name="param1", description="First parameter", required=True),
+                ActionArgument(name="param2", description="Second parameter", required=True),
+            ],
         ),
-        "optional_params": AgentCommand(
+        "optional_params": ActionSpec(
             name="optional_params",
             description="Command with optional parameters",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=[],
-            optional_params=["opt1", "opt2"],
-            positional_params=[],
+            arguments=[
+                ActionArgument(name="opt1", description="First optional parameter", required=False),
+                ActionArgument(name="opt2", description="Second optional parameter", required=False),
+            ],
         ),
-        "mixed_params": AgentCommand(
+        "mixed_params": ActionSpec(
             name="mixed_params",
             description="Command with mixed parameters",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=["required"],
-            optional_params=["optional"],
-            positional_params=["required"],
+            arguments=[
+                ActionArgument(name="required", description="Required parameter", required=True),
+                ActionArgument(name="optional", description="Optional parameter", required=False),
+            ],
         ),
-        "db_query": AgentCommand(
+        "db_query": ActionSpec(
             name="db_query",
             description="Database query",
             help_text="Query the database",
             agent_hint="Use for database queries",
-            required_params=["query"],
-            optional_params=[],
-            positional_params=["query"],
+            arguments=[
+                ActionArgument(name="query", description="Query to execute", required=True),
+            ],
         ),
     }
 
@@ -66,11 +67,11 @@ def mock_action_registry():
 
     # Mock action handlers
     handlers = {
-        "no_params": (AsyncMock(return_value="No params result"), None),
-        "required_params": (AsyncMock(return_value="Required params result"), None),
-        "optional_params": (AsyncMock(return_value="Optional params result"), None),
-        "mixed_params": (AsyncMock(return_value="Mixed params result"), None),
-        "db_query": (AsyncMock(return_value={"results": [{"id": 1}]}), None),
+        "no_params": (AsyncMock(return_value="No params result"), commands["no_params"]),
+        "required_params": (AsyncMock(return_value="Required params result"), commands["required_params"]),
+        "optional_params": (AsyncMock(return_value="Optional params result"), commands["optional_params"]),
+        "mixed_params": (AsyncMock(return_value="Mixed params result"), commands["mixed_params"]),
+        "db_query": (AsyncMock(return_value={"results": [{"id": 1}]}), commands["db_query"]),
     }
 
     registry.get_action.side_effect = lambda name: handlers.get(name)
@@ -191,20 +192,20 @@ class TestBaseAgent:
         job_manager.get_job_result = AsyncMock(return_value={"success": True, "data": "Job result"})
 
         # Add job command to registry
-        job_command = AgentCommand(
+        job_command = ActionSpec(
             name="job_command",
             description="Command that returns a job",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=["param1"],
-            optional_params=[],
-            positional_params=["param1"],
+            arguments=[
+                ActionArgument(name="param1", description="First parameter", required=True),
+            ],
         )
         agent.commands["job_command"] = job_command
 
         # Mock handler that returns a job ID
         handler = AsyncMock(return_value="Job started with ID: job_123")
-        agent.action_registry.get_action.side_effect = lambda name: (handler, None) if name == "job_command" else None
+        agent.action_registry.get_action.side_effect = lambda name: (handler, job_command) if name == "job_command" else None
 
         with patch("src.jobs.manager.JobManager.get_instance", return_value=job_manager):
             # Test successful job

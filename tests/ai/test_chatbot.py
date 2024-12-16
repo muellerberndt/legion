@@ -3,7 +3,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import json
 from src.ai.chatbot import Chatbot
 from src.actions.registry import ActionRegistry
-from src.models.agent import AgentCommand
+from src.actions.base import ActionSpec, ActionArgument
 
 
 @pytest.fixture
@@ -13,23 +13,23 @@ def mock_action_registry():
 
     # Mock commands
     commands = {
-        "test_command": AgentCommand(
+        "test_command": ActionSpec(
             name="test_command",
             description="Test command",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=["param1"],
-            optional_params=[],
-            positional_params=["param1"],
+            arguments=[
+                ActionArgument(name="param1", description="First parameter", required=True),
+            ],
         ),
-        "db_query": AgentCommand(
+        "db_query": ActionSpec(
             name="db_query",
             description="Database query",
             help_text="Query the database",
             agent_hint="Use for database queries",
-            required_params=["query"],
-            optional_params=[],
-            positional_params=["query"],
+            arguments=[
+                ActionArgument(name="query", description="Query to execute", required=True),
+            ],
         ),
     }
 
@@ -39,9 +39,10 @@ def mock_action_registry():
     test_handler = AsyncMock(return_value="Command result")
     db_handler = AsyncMock(return_value={"results": [{"id": 1, "name": "test"}]})
 
-    registry.get_action.side_effect = lambda name: {"test_command": (test_handler, None), "db_query": (db_handler, None)}.get(
-        name
-    )
+    registry.get_action.side_effect = lambda name: {
+        "test_command": (test_handler, commands["test_command"]),
+        "db_query": (db_handler, commands["db_query"]),
+    }.get(name)
 
     return registry
 

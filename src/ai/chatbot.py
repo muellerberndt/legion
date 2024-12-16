@@ -7,6 +7,7 @@ from src.config.config import Config
 from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
 from src.ai.llm import chat_completion
+from src.util.command_parser import CommandParser
 
 
 class Chatbot:
@@ -17,6 +18,7 @@ class Chatbot:
         self.config = Config()
         self.action_registry = ActionRegistry()
         self.action_registry.initialize()
+        self.command_parser = CommandParser()
 
         # Get all available commands
         self.commands = self.action_registry._get_agent_command_instructions()
@@ -35,23 +37,23 @@ class Chatbot:
 
         # Add command descriptions
         command_descriptions = []
-        for name, cmd in self.commands.items():
+        for name, spec in self.commands.items():
             # Build parameter string
             params = []
-            if cmd.required_params:
-                params.extend([f"<{p}>" for p in cmd.required_params])
-            if cmd.optional_params:
-                params.extend([f"[{p}]" for p in cmd.optional_params])
+            if spec.arguments:
+                for arg in spec.arguments:
+                    param = f"<{arg.name}>" if arg.required else f"[{arg.name}]"
+                    params.append(param)
 
             param_str = " ".join(params)
 
             # Build command description with help text and agent hint
-            command_desc = [f"/{name} {param_str}", cmd.description]
+            command_desc = [f"/{name} {param_str}", spec.description]
 
-            if cmd.help_text:
-                command_desc.append(f"Help: {cmd.help_text}")
-            if cmd.agent_hint:
-                command_desc.append(f"Usage hint: {cmd.agent_hint}")
+            if spec.help_text:
+                command_desc.append(f"Help: {spec.help_text}")
+            if spec.agent_hint:
+                command_desc.append(f"Usage hint: {spec.agent_hint}")
 
             command_descriptions.append("\n".join(command_desc))
 
@@ -112,61 +114,37 @@ class Chatbot:
 
     async def execute_command(self, command: str, param_str: str) -> str:
         """Execute a registered command"""
+        # Handle empty command case for conclusion
+        if not command:
+            return self.get_execution_summary()
+
         if command not in self.commands:
             raise ValueError(f"Unknown command: {command}")
 
         self.logger.info(f"Executing command: {command} with params: {param_str}")
 
-        # Special handling for db_query
-        if command == "db_query":
-            # Extract the query part
-            param_str = param_str.strip()
-            if param_str.startswith("query="):
-                param_str = param_str[6:].strip()  # Remove "query="
-            # Remove surrounding quotes if present
-            if (param_str.startswith("'") and param_str.endswith("'")) or (
-                param_str.startswith('"') and param_str.endswith('"')
-            ):
-                param_str = param_str[1:-1].strip()
-            try:
-                # Parse and validate the query
-                query_json = json.loads(param_str)
-                # Always add a reasonable limit to database queries
-                if "limit" not in query_json:
-                    query_json["limit"] = 10
-                # Execute directly with the parsed JSON
-                action = self.action_registry.get_action(command)
-                if not action:
-                    raise ValueError(f"Action not found for command: {command}")
-                handler, _ = action
-                return await handler(json.dumps(query_json))
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid query format: {str(e)}")
-
-        # Parse parameters for other commands
-        kwargs = {}
-        if "=" in param_str:
-            # Handle as keyword argument
-            param_name, param_value = param_str.split("=", 1)
-            param_name = param_name.strip()
-            param_value = param_value.strip()
-            kwargs[param_name] = param_value
-        else:
-            # Handle as positional argument
-            param_str = param_str.strip()
-            # For commands that expect a positional argument
-            args = [param_str] if param_str else []
-
-        # Execute the command through action registry
+        # Get command spec and handler
         action = self.action_registry.get_action(command)
         if not action:
             raise ValueError(f"Action not found for command: {command}")
+        handler, spec = action
 
-        handler, _ = action
-        if kwargs:
-            return await handler(**kwargs)
-        else:
-            return await handler(*args)
+        try:
+            # Parse and validate arguments
+            args = self.command_parser.parse_arguments(param_str, spec)
+            self.command_parser.validate_arguments(args, spec)
+
+            # Execute the command
+            if isinstance(args, dict):
+                result = await handler(**args)
+            else:
+                result = await handler(*args)
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error executing command: {str(e)}")
+            raise
 
     async def process_message(self, message: str) -> str:
         """Process a user message and return a response"""

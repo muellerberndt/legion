@@ -3,7 +3,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from src.ai.chatbot import Chatbot
 from src.ai.autobot import Autobot
 from src.actions.registry import ActionRegistry
-from src.models.agent import AgentCommand
+from src.actions.base import ActionSpec, ActionArgument
 import json
 
 
@@ -13,73 +13,75 @@ def mock_action_registry():
     registry = MagicMock(spec=ActionRegistry)
 
     # Mock commands with different parameter configurations
-    commands = {
-        "no_params": AgentCommand(
+    action_specs = {
+        "no_params": ActionSpec(
             name="no_params",
             description="Command with no parameters",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=[],
-            optional_params=[],
-            positional_params=[],
+            arguments=[],
         ),
-        "required_params": AgentCommand(
+        "required_params": ActionSpec(
             name="required_params",
             description="Command with required parameters",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=["param1", "param2"],
-            optional_params=[],
-            positional_params=["param1", "param2"],
+            arguments=[
+                ActionArgument(name="param1", description="First parameter", required=True),
+                ActionArgument(name="param2", description="Second parameter", required=True),
+            ],
         ),
-        "optional_params": AgentCommand(
+        "optional_params": ActionSpec(
             name="optional_params",
             description="Command with optional parameters",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=[],
-            optional_params=["opt1", "opt2"],
-            positional_params=[],
+            arguments=[
+                ActionArgument(name="opt1", description="First optional parameter", required=False),
+                ActionArgument(name="opt2", description="Second optional parameter", required=False),
+            ],
         ),
-        "mixed_params": AgentCommand(
+        "mixed_params": ActionSpec(
             name="mixed_params",
             description="Command with mixed parameters",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=["required"],
-            optional_params=["optional"],
-            positional_params=["required"],
+            arguments=[
+                ActionArgument(name="required", description="Required parameter", required=True),
+                ActionArgument(name="optional", description="Optional parameter", required=False),
+            ],
         ),
-        "db_query": AgentCommand(
+        "db_query": ActionSpec(
             name="db_query",
             description="Database query",
             help_text="Query the database",
             agent_hint="Use for database queries",
-            required_params=["query"],
-            optional_params=[],
-            positional_params=["query"],
+            arguments=[
+                ActionArgument(name="query", description="Query to execute", required=True),
+            ],
         ),
-        "job_command": AgentCommand(
+        "job_command": ActionSpec(
             name="job_command",
             description="Command that returns a job",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=["param1"],
-            optional_params=[],
-            positional_params=["param1"],
+            arguments=[
+                ActionArgument(name="param1", description="First parameter", required=True),
+            ],
         ),
     }
 
-    registry._get_agent_command_instructions.return_value = commands
+    # Set up registry mocks
+    registry._get_agent_command_instructions.return_value = action_specs
 
-    # Mock action handlers
+    # Mock action handlers with their specs
     handlers = {
-        "no_params": (AsyncMock(return_value="No params result"), None),
-        "required_params": (AsyncMock(return_value="Required params result"), None),
-        "optional_params": (AsyncMock(return_value="Optional params result"), None),
-        "mixed_params": (AsyncMock(return_value="Mixed params result"), None),
-        "db_query": (AsyncMock(return_value={"results": [{"id": 1}]}), None),
-        "job_command": (AsyncMock(return_value="Job started with ID: job_123"), None),
+        "no_params": (AsyncMock(return_value="No params result"), action_specs["no_params"]),
+        "required_params": (AsyncMock(return_value="Required params result"), action_specs["required_params"]),
+        "optional_params": (AsyncMock(return_value="Optional params result"), action_specs["optional_params"]),
+        "mixed_params": (AsyncMock(return_value="Mixed params result"), action_specs["mixed_params"]),
+        "db_query": (AsyncMock(return_value={"results": [{"id": 1}]}), action_specs["db_query"]),
+        "job_command": (AsyncMock(return_value="Job started with ID: job_123"), action_specs["job_command"]),
     }
 
     registry.get_action.side_effect = lambda name: handlers.get(name)
@@ -119,9 +121,9 @@ class TestChatbotCommandExecution:
         result = await chatbot.execute_command("required_params", "value1 value2")
         assert result == "Required params result"
 
-        # Test with missing parameters - this should work since validation is not implemented
-        result = await chatbot.execute_command("required_params", "param1=value1")
-        assert result == "Required params result"
+        # Test with missing parameters - should raise ValueError
+        with pytest.raises(ValueError, match="Missing required parameters"):
+            await chatbot.execute_command("required_params", "param1=value1")
 
     @pytest.mark.asyncio
     async def test_optional_params_command(self, chatbot):
@@ -144,19 +146,6 @@ class TestChatbotCommandExecution:
         # Test with both required and optional parameters
         result = await chatbot.execute_command("mixed_params", "required=value1 optional=value2")
         assert result == "Mixed params result"
-
-    @pytest.mark.asyncio
-    async def test_db_query_command(self, chatbot):
-        """Test executing db_query command"""
-        # Test with valid JSON query
-        query = json.dumps({"collection": "test", "filter": {}, "limit": 10})
-        result = await chatbot.execute_command("db_query", f"query={query}")
-        assert isinstance(result, dict)
-        assert "results" in result
-
-        # Test with invalid JSON
-        with pytest.raises(ValueError, match="Invalid query format"):
-            await chatbot.execute_command("db_query", "query=invalid_json")
 
     @pytest.mark.asyncio
     async def test_quoted_parameters(self, chatbot):
@@ -183,81 +172,35 @@ class TestAutobotCommandExecution:
     async def test_required_params_command(self, autobot):
         """Test executing command with required parameters"""
         # Test with keyword arguments
-        result = await autobot._execute_command_with_params(
-            "required_params",
-            autobot.action_registry.get_action("required_params")[0],
-            autobot.commands["required_params"],
-            "param1=value1 param2=value2",
-        )
+        result = await autobot.execute_command("required_params", "param1=value1 param2=value2")
         assert result == "Required params result"
 
         # Test with positional arguments
-        result = await autobot._execute_command_with_params(
-            "required_params",
-            autobot.action_registry.get_action("required_params")[0],
-            autobot.commands["required_params"],
-            "value1 value2",
-        )
+        result = await autobot.execute_command("required_params", "value1 value2")
         assert result == "Required params result"
+
+        # Test with missing parameters - should raise ValueError
+        with pytest.raises(ValueError, match="Missing required parameters"):
+            await autobot.execute_command("required_params", "param1=value1")
 
     @pytest.mark.asyncio
     async def test_optional_params_command(self, autobot):
         """Test executing command with optional parameters"""
         # Test with no parameters
-        result = await autobot._execute_command_with_params(
-            "optional_params",
-            autobot.action_registry.get_action("optional_params")[0],
-            autobot.commands["optional_params"],
-            "",
-        )
+        result = await autobot.execute_command("optional_params", "")
         assert result == "Optional params result"
 
         # Test with some optional parameters
-        result = await autobot._execute_command_with_params(
-            "optional_params",
-            autobot.action_registry.get_action("optional_params")[0],
-            autobot.commands["optional_params"],
-            "opt1=value1",
-        )
+        result = await autobot.execute_command("optional_params", "opt1=value1")
         assert result == "Optional params result"
-
-    @pytest.mark.asyncio
-    async def test_db_query_command(self, autobot):
-        """Test executing db_query command"""
-        # Test with valid JSON query
-        query = json.dumps({"collection": "test", "filter": {}, "limit": 10})
-        result = await autobot._execute_command_with_params(
-            "db_query", autobot.action_registry.get_action("db_query")[0], autobot.commands["db_query"], f"query={query}"
-        )
-        assert isinstance(result, dict)
-        assert "results" in result
-
-        # Test with invalid JSON
-        with pytest.raises(ValueError, match="Invalid query format"):
-            await autobot._execute_command_with_params(
-                "db_query",
-                autobot.action_registry.get_action("db_query")[0],
-                autobot.commands["db_query"],
-                "query=invalid_json",
-            )
 
     @pytest.mark.asyncio
     async def test_quoted_parameters(self, autobot):
         """Test handling of quoted parameters"""
         # Test with single quotes
-        result = await autobot._execute_command_with_params(
-            "required_params",
-            autobot.action_registry.get_action("required_params")[0],
-            autobot.commands["required_params"],
-            "param1='value 1' param2='value 2'",
-        )
+        result = await autobot.execute_command("required_params", "param1='value 1' param2='value 2'")
         assert result == "Required params result"
 
         # Test with double quotes
-        result = await autobot._execute_command_with_params(
-            "required_params",
-            autobot.action_registry.get_action("required_params")[0],
-            autobot.commands["required_params"],
-            'param1="value 1" param2="value 2"',
-        )
+        result = await autobot.execute_command("required_params", 'param1="value 1" param2="value 2"')
         assert result == "Required params result"

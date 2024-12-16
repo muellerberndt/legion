@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
-from src.ai.autobot import Autobot, AutobotResult, ExecutionStep
+from src.ai.autobot import Autobot
 from src.actions.registry import ActionRegistry
-from src.models.agent import AgentCommand
+from src.actions.base import ActionSpec, ActionArgument
 import json
 
 
@@ -13,19 +13,19 @@ def mock_action_registry():
 
     # Mock commands
     commands = {
-        "test_command": AgentCommand(
+        "test_command": ActionSpec(
             name="test_command",
             description="Test command",
             help_text="Test help",
             agent_hint="Test hint",
-            required_params=["param1"],
-            optional_params=[],
-            positional_params=["param1"],
+            arguments=[
+                ActionArgument(name="param1", description="First parameter", required=True),
+            ],
         )
     }
 
     registry._get_agent_command_instructions.return_value = commands
-    registry.get_action.return_value = (AsyncMock(return_value="Command result"), None)
+    registry.get_action.return_value = (AsyncMock(return_value="Command result"), commands["test_command"])
     return registry
 
 
@@ -70,12 +70,21 @@ async def test_plan_next_step(autobot):
     }
     """
 
-    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)):
+    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)) as mock_chat:
         plan = await autobot.plan_next_step({"status": "started"})
+
+        # Verify the plan
         assert plan["reasoning"] == "Test reasoning"
         assert plan["action"] == "test_command"
         assert plan["parameters"] == "param1=test"
         assert plan["is_final"] is True
+
+        # Verify the system prompt includes the correct parameter format
+        calls = mock_chat.call_args_list
+        assert len(calls) == 1
+        messages = calls[0][0][0]  # Get the messages argument
+        system_prompt = next(msg["content"] for msg in messages if msg["role"] == "system" and "Parameters:" in msg["content"])
+        assert "Parameters: param1*" in system_prompt  # param1 is required so has *
 
 
 @pytest.mark.asyncio
@@ -124,3 +133,17 @@ async def test_get_execution_summary(autobot):
         assert len(summary["steps"]) == 1
         assert summary["steps"][0]["action"] == "test_command"
         assert summary["steps"][0]["reasoning"] == "Test reasoning"
+
+
+@pytest.mark.asyncio
+async def test_execute_task_max_steps(autobot):
+    """Test task execution with max steps limit"""
+    # Mock plan that doesn't set is_final to true
+    mock_plan = {"reasoning": "Test reasoning", "action": "test_command", "parameters": "param1=test", "is_final": False}
+
+    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=json.dumps(mock_plan))):
+        result = await autobot.execute_task({"prompt": "Test task"})
+
+        assert result.success is False
+        assert "exceeded maximum steps" in result.error
+        assert autobot.step_count == autobot.max_steps

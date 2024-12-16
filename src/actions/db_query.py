@@ -1,4 +1,4 @@
-from src.actions.base import BaseAction, ActionSpec
+from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.backend.query_builder import QueryBuilder
 from src.backend.database import DBSessionMixin
 from src.util.db_schema import get_db_query_hint
@@ -15,6 +15,7 @@ class DBQueryAction(BaseAction, DBSessionMixin):
         description="Execute a database query using a JSON query specification",
         help_text="Query the database using a structured JSON format that supports filtering, joining, and sorting.",
         agent_hint=get_db_query_hint(),
+        arguments=[ActionArgument(name="query", description="JSON string containing the query specification", required=True)],
     )
 
     def __init__(self):

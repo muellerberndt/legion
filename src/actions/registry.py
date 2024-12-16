@@ -2,7 +2,6 @@ from typing import Dict, Type, Optional, Tuple, Callable, List
 from src.actions.base import BaseAction, ActionSpec
 from src.util.logging import Logger
 from src.actions.builtin import get_builtin_actions
-from src.models.agent import AgentCommand
 
 
 class ActionRegistry:
@@ -69,7 +68,7 @@ class ActionRegistry:
             self.initialize()
         return self.actions
 
-    def _get_agent_command_instructions(self, command_names: Optional[List[str]] = None) -> Dict[str, AgentCommand]:
+    def _get_agent_command_instructions(self, command_names: Optional[List[str]] = None) -> Dict[str, ActionSpec]:
         """Get the commands available to this component"""
         commands = {}
 
@@ -100,32 +99,13 @@ class ActionRegistry:
 
         self.logger.info("Filtering actions by command names:", extra_data={"requested_commands": command_names})
 
-        # Convert actions to commands
+        # Get action specs
         for name, (_, spec) in actions.items():
             if name in command_names:
                 if not spec:
                     self.logger.warning(f"Action {name} has no spec, skipping")
                     continue
-
-                # Determine positional parameters from agent_hint
-                positional_params = []
-                if spec.agent_hint:
-                    # If agent_hint contains something like "First argument should be the query string"
-                    # or "First parameter must be the query"
-                    if any(hint in spec.agent_hint.lower() for hint in ["first argument", "first parameter"]):
-                        required_params = [arg.name for arg in spec.arguments or [] if arg.required]
-                        if required_params:
-                            positional_params.append(required_params[0])
-
-                commands[name] = AgentCommand(
-                    name=name,
-                    description=spec.description,
-                    help_text=spec.help_text or "",
-                    agent_hint=spec.agent_hint or "",
-                    required_params=[arg.name for arg in spec.arguments or [] if arg.required],
-                    optional_params=[arg.name for arg in spec.arguments or [] if not arg.required],
-                    positional_params=positional_params,
-                )
+                commands[name] = spec
 
         self.logger.info("Initialized commands:", extra_data={"available_commands": list(commands.keys())})
         return commands

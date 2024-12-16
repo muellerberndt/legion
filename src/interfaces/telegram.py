@@ -7,8 +7,8 @@ from src.util.logging import Logger
 from src.config.config import Config
 from src.services.telegram import TelegramService
 from src.ai.chatbot import Chatbot
-import shlex
 import telegram
+from src.util.command_parser import CommandParser
 
 
 class TelegramInterface(Interface):
@@ -23,46 +23,31 @@ class TelegramInterface(Interface):
         self._agents = {}  # Session ID -> Chat
         self._polling_task = None
         self._initialized = False
-
-    def _parse_command_args(self, message: str) -> list:
-        """Parse command arguments, preserving quoted strings"""
-        try:
-            # Split into command and args
-            parts = message.split(None, 1)
-            if len(parts) < 2:
-                return []  # No arguments
-
-            args_str = parts[1]
-            # For single argument that looks like JSON, return as is without stripping quotes
-            if args_str.startswith("{") and args_str.endswith("}"):
-                return [args_str]
-
-            # For quoted strings, strip quotes and return as single arg
-            if (args_str.startswith("'") and args_str.endswith("'")) or (args_str.startswith('"') and args_str.endswith('"')):
-                return [args_str[1:-1]]
-
-            # Otherwise use shlex to parse
-            return shlex.split(args_str)
-        except ValueError as e:
-            self.logger.error(f"Error parsing arguments: {str(e)}")
-            # Return raw split as fallback
-            return args_str.split()
-        except IndexError:
-            return []  # No arguments provided
+        self.command_parser = CommandParser()
 
     def _create_command_handler(self, command_name: str, action_handler):
         """Create a command handler function for a specific command"""
 
         async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
-                # Parse arguments from the full message text
-                args = self._parse_command_args(update.message.text)
+                # Get command spec
+                action = self.action_registry.get_action(command_name)
+                if not action:
+                    raise ValueError(f"Action not found for command: {command_name}")
+                _, spec = action
+
+                # Parse command and arguments
+                _, args_str = self.command_parser.parse_command(update.message.text)
+                args = self.command_parser.parse_arguments(args_str, spec)
+
+                # Validate arguments
+                self.command_parser.validate_arguments(args, spec)
 
                 # Execute the action with the arguments
-                if args:
-                    result = await action_handler(*args)
+                if isinstance(args, dict):
+                    result = await action_handler(**args)
                 else:
-                    result = await action_handler()
+                    result = await action_handler(*args)
 
                 if result:
                     # Convert result to string

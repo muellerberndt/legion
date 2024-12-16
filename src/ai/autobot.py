@@ -10,6 +10,7 @@ from src.actions.registry import ActionRegistry
 from src.ai.llm import chat_completion
 import re
 from src.jobs.manager import JobManager
+from src.util.command_parser import CommandParser
 
 
 @dataclass
@@ -57,6 +58,9 @@ class Autobot:
         if command_names:
             # Filter commands if specific ones are requested
             self.commands = {name: cmd for name, cmd in self.commands.items() if name in command_names}
+
+        # Initialize command parser
+        self.command_parser = CommandParser()
 
         # Build system prompt
         self.system_prompt = self._build_system_prompt(custom_prompt)
@@ -151,19 +155,24 @@ class Autobot:
 
         self.logger.info(f"Executing command: {command} with params: {param_str}")
 
-        # Get command spec
-        cmd_spec = self.commands[command]
+        # Get command spec and handler
         action = self.action_registry.get_action(command)
         if not action:
             raise ValueError(f"Action not found for command: {command}")
-        handler, _ = action
+        handler, spec = action
 
         try:
-            # Execute the command
-            result = await self._execute_command_with_params(command, handler, cmd_spec, param_str)
+            # Parse and validate arguments
+            args = self.command_parser.parse_arguments(param_str, spec)
+            self.command_parser.validate_arguments(args, spec)
 
-            self.logger.info(f"Command result: {result}")
-            # Check if the result contains a job ID
+            # Execute the command
+            if isinstance(args, dict):
+                result = await handler(**args)
+            else:
+                result = await handler(*args)
+
+            # Check for job ID in result
             if isinstance(result, str):
                 job_id = self._extract_job_id(result)
                 if job_id:
@@ -177,70 +186,13 @@ class Autobot:
                         return job_result
                     except (TimeoutError, ValueError) as e:
                         self.logger.error(f"Error waiting for job: {str(e)}")
-                        raise  # Re-raise to handle in execute_step
+                        raise
 
             return result
 
         except Exception as e:
             self.logger.error(f"Error executing command: {str(e)}")
             raise
-
-    async def _execute_command_with_params(self, command: str, handler: Any, cmd_spec: Any, param_str: str) -> Any:
-        """Execute a command with the given parameters"""
-        # Special handling for db_query
-        if command == "db_query":
-            param_str = param_str.strip()
-            if param_str.startswith("query="):
-                param_str = param_str[6:].strip()
-            if (param_str.startswith("'") and param_str.endswith("'")) or (
-                param_str.startswith('"') and param_str.endswith('"')
-            ):
-                param_str = param_str[1:-1].strip()
-            try:
-                query_json = json.loads(param_str)
-                if "limit" not in query_json:
-                    query_json["limit"] = 10
-                return await handler(json.dumps(query_json))
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid query format: {str(e)}")
-
-        # If command takes no parameters, ignore any provided
-        if not cmd_spec.required_params and not cmd_spec.optional_params:
-            return await handler()
-
-        # Clean up parameter string
-        param_str = param_str.strip()
-        if (param_str.startswith("'") and param_str.endswith("'")) or (param_str.startswith('"') and param_str.endswith('"')):
-            param_str = param_str[1:-1].strip()
-
-        # Parse parameters
-        if "=" in param_str:
-            # Handle key=value parameters
-            kwargs = {}
-            param_pairs = param_str.split()
-            for pair in param_pairs:
-                if "=" not in pair:
-                    continue
-                param_name, param_value = pair.split("=", 1)
-                param_name = param_name.strip()
-                param_value = param_value.strip()
-                if (param_value.startswith("'") and param_value.endswith("'")) or (
-                    param_value.startswith('"') and param_value.endswith('"')
-                ):
-                    param_value = param_value[1:-1]
-                kwargs[param_name] = param_value
-            return await handler(**kwargs)
-        else:
-            # Handle positional parameters
-            if not param_str:
-                args = []
-            elif cmd_spec.positional_params:
-                # If command defines positional parameters, use them
-                args = [param_str]
-            else:
-                # Split on whitespace for multiple positional parameters
-                args = param_str.split()
-            return await handler(*args)
 
     def _truncate_state_for_llm(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Truncate state to prevent context length issues"""
@@ -319,7 +271,7 @@ Example of correct response:
 Available commands and their parameters:"""
                     + "\n"
                     + "\n".join(
-                        f"- {name}: {cmd.description}\n  Parameters: {', '.join(cmd.required_params + cmd.optional_params)}"
+                        f"- {name}: {cmd.description}\n  Parameters: {', '.join(arg.name + ('*' if arg.required else '') for arg in cmd.arguments)}"
                         for name, cmd in self.commands.items()
                     )
                     + "\n",

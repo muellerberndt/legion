@@ -122,7 +122,7 @@ class BaseAgent:
             raise ValueError(f"Unknown command: {command}")
 
         # If command takes no parameters, return empty args and kwargs
-        if not cmd_spec.required_params and not cmd_spec.optional_params:
+        if not cmd_spec.arguments:
             return [], {}
 
         # Parse parameters
@@ -146,7 +146,17 @@ class BaseAgent:
             # Handle positional parameters
             if not param_str:
                 return [], {}
-            elif cmd_spec.positional_params:
+
+            # Get first required parameter as positional if agent_hint suggests it
+            positional_param = None
+            if cmd_spec.agent_hint and any(
+                hint in cmd_spec.agent_hint.lower() for hint in ["first argument", "first parameter"]
+            ):
+                required_params = [arg.name for arg in cmd_spec.arguments if arg.required]
+                if required_params:
+                    positional_param = required_params[0]
+
+            if positional_param:
                 # If command defines positional parameters, use them
                 return [param_str], {}
             else:
