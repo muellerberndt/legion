@@ -45,6 +45,7 @@ class BaseAgent:
 
         # Handle dictionaries
         if isinstance(result, dict):
+            # First truncate any results array if present
             if "results" in result and isinstance(result["results"], list):
                 original_count = len(result["results"])
                 if original_count > 10:
@@ -52,7 +53,17 @@ class BaseAgent:
                     truncated["results"] = result["results"][:10]
                     truncated["note"] = f"Results truncated to 10 of {original_count} total matches"
                     return truncated
-            return result
+
+            # For other dictionaries, recursively truncate all string values
+            truncated = {}
+            for key, value in result.items():
+                if isinstance(value, (dict, list)):
+                    truncated[key] = self._truncate_result(value, max_length)
+                elif isinstance(value, str):
+                    truncated[key] = self._truncate_result(value, max_length)
+                else:
+                    truncated[key] = value
+            return truncated
 
         # Handle other types
         return str(result)
@@ -77,6 +88,10 @@ class BaseAgent:
 
             if not job_result.get("success", False):
                 raise ValueError(job_result.get("error", "Job failed"))
+
+            # Truncate the job result data if needed
+            if "data" in job_result:
+                job_result["data"] = self._truncate_result(job_result["data"])
             return job_result
 
         # Truncate result if needed

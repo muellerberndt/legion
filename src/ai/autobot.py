@@ -242,20 +242,47 @@ class Autobot:
                 args = param_str.split()
             return await handler(*args)
 
+    def _truncate_state_for_llm(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Truncate state to prevent context length issues"""
+        MAX_ITEMS = 10
+        MAX_STRING_LENGTH = 1000
+
+        def truncate_value(value: Any) -> Any:
+            if isinstance(value, str):
+                if len(value) > MAX_STRING_LENGTH:
+                    return value[:MAX_STRING_LENGTH] + "... (truncated)"
+            elif isinstance(value, list):
+                if len(value) > MAX_ITEMS:
+                    return value[:MAX_ITEMS] + [f"... ({len(value) - MAX_ITEMS} more items)"]
+            elif isinstance(value, dict):
+                return {k: truncate_value(v) for k, v in value.items()}
+            return value
+
+        # Create a copy of the state to avoid modifying the original
+        truncated_state = {}
+
+        # Always include task and status
+        if "task" in state:
+            truncated_state["task"] = truncate_value(state["task"])
+        if "status" in state:
+            truncated_state["status"] = state["status"]
+
+        # Include last result if present, but truncate it
+        if "last_result" in state:
+            truncated_state["last_result"] = truncate_value(state["last_result"])
+
+        # Include other important fields but truncate them
+        for key in ["error", "result"]:
+            if key in state:
+                truncated_state[key] = truncate_value(state[key])
+
+        return truncated_state
+
     async def plan_next_step(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Plan the next step based on current state"""
         try:
-            # For simple queries that don't require commands, treat them as test commands in test environment
-            if "task" in current_state and "prompt" in current_state["task"]:
-                prompt = current_state["task"]["prompt"]
-                if isinstance(prompt, str) and not any(cmd in prompt.lower() for cmd in self.commands.keys()):
-                    # In test environment, return test command
-                    return {
-                        "reasoning": "Test reasoning",
-                        "action": "test_command",
-                        "parameters": "param1=test",
-                        "is_final": True,
-                    }
+            # Truncate state before sending to LLM
+            truncated_state = self._truncate_state_for_llm(current_state)
 
             # For complex queries requiring commands, proceed with normal planning
             messages = [
@@ -263,42 +290,92 @@ class Autobot:
                 {
                     "role": "system",
                     "content": """Plan the next step based on the current state and available commands.
-Your response must be a JSON object with these fields:
+
+Your response MUST be a valid JSON object with these exact fields:
 {
     "reasoning": "Your thought process for choosing this step",
     "action": "command_name (no preceding slash)",
     "parameters": "parameter string for the command",
     "is_final": boolean (true if this should be the last step)
 }
-Do not enter loops and aim to complete the task in the least number of steps.""",
+
+IMPORTANT:
+1. Return ONLY the JSON object, no other text or markdown
+2. Use double quotes for strings
+3. Use true/false (lowercase) for booleans
+4. Do not include any explanatory text outside the JSON
+5. Do not wrap the JSON in code blocks or quotes
+6. The action must be one of the available commands
+7. The parameters must match the command's expected format
+
+Example of correct response:
+{
+    "reasoning": "Need to search for vulnerabilities",
+    "action": "search",
+    "parameters": "pattern='vulnerable'",
+    "is_final": false
+}
+
+Available commands and their parameters:"""
+                    + "\n"
+                    + "\n".join(
+                        f"- {name}: {cmd.description}\n  Parameters: {', '.join(cmd.required_params + cmd.optional_params)}"
+                        for name, cmd in self.commands.items()
+                    )
+                    + "\n",
                 },
-                {"role": "user", "content": f"Current state: {json.dumps(current_state, indent=2)}"},
+                {"role": "user", "content": f"Current state: {json.dumps(truncated_state, indent=2)}"},
             ]
 
-            # Get plan from LLM
+            # Get response from LLM
             response = await chat_completion(messages)
 
-            self.logger.info(f"Agent response: {response}")
+            # Clean up response - remove any markdown and whitespace
+            cleaned_response = response.strip()
+            if "```" in cleaned_response:
+                # Extract content between code blocks if present
+                parts = cleaned_response.split("```")
+                for part in parts:
+                    if "{" in part and "}" in part:
+                        cleaned_response = part.strip()
+                        break
 
+            # Remove any "json" or other language indicators
+            if cleaned_response.startswith("json"):
+                cleaned_response = cleaned_response[4:].strip()
+
+            # Parse response as JSON
             try:
-                # Strip markdown code block syntax if present
-                json_str = response
-                if "```json" in json_str:
-                    json_str = json_str.split("```json", 1)[1]
-                if "```" in json_str:
-                    json_str = json_str.split("```", 1)[0]
-                json_str = json_str.strip()
+                plan = json.loads(cleaned_response)
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Invalid JSON response from LLM: {cleaned_response}")
+                self.logger.error(f"JSON parse error: {str(e)}")
+                raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
 
-                plan = json.loads(json_str)
-                required_fields = ["reasoning", "action", "parameters", "is_final"]
-                if not all(field in plan for field in required_fields):
-                    raise ValueError(f"Missing required fields in plan. Got: {list(plan.keys())}")
-                return plan
-            except json.JSONDecodeError:
-                raise ValueError(f"Invalid JSON in plan: {response}")
+            # Validate required fields
+            required_fields = ["reasoning", "action", "parameters", "is_final"]
+            missing = [field for field in required_fields if field not in plan]
+            if missing:
+                raise ValueError(f"Missing required fields in plan: {missing}")
+
+            # Validate field types
+            if not isinstance(plan["reasoning"], str):
+                raise ValueError("Field 'reasoning' must be a string")
+            if not isinstance(plan["action"], str):
+                raise ValueError("Field 'action' must be a string")
+            if not isinstance(plan["parameters"], str):
+                raise ValueError("Field 'parameters' must be a string")
+            if not isinstance(plan["is_final"], bool):
+                raise ValueError("Field 'is_final' must be a boolean")
+
+            # Validate action exists
+            if plan["action"] not in self.commands:
+                raise ValueError(f"Unknown action: {plan['action']}. Must be one of: {', '.join(self.commands.keys())}")
+
+            return plan
 
         except Exception as e:
-            self.logger.error(f"Error in planning: {str(e)}")
+            self.logger.error(f"Error planning next step: {str(e)}")
             raise
 
     def record_step(self, action: str, input_data: Dict, output_data: Dict, reasoning: str, next_action: str) -> None:
