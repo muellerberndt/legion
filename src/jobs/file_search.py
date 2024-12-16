@@ -84,20 +84,14 @@ class FileSearchJob(Job, DBSessionMixin):
         try:
             # Skip binary and known binary extensions
             if self._should_skip_file(file_path) or is_binary_file(file_path):
-                self.logger.debug(f"Skipping file {file_path} due to extension or binary content")
                 return []
 
             # Read file content
             with open(file_path, "r") as f:
                 content = f.read()
 
-            self.logger.debug(f"Searching file {file_path}")
-            self.logger.debug(f"Pattern: {pattern.pattern}")
-            self.logger.debug(f"Content: {content}")
-
             # Use finditer to get non-overlapping matches with positions
             matches = list(pattern.finditer(content))
-            self.logger.debug(f"Found {len(matches)} matches")
             file_matches = []
 
             for match in matches:
@@ -121,13 +115,10 @@ class FileSearchJob(Job, DBSessionMixin):
         """Recursively search a directory for regex matches"""
         matches = []
         try:
-            self.logger.debug(f"Searching directory {directory}")
-            self.logger.debug(f"Pattern: {pattern.pattern}")
             for root, _, files in os.walk(directory):
                 for file in files:
                     file_path = os.path.join(root, file)
                     try:
-                        self.logger.debug(f"Processing file {file_path}")
                         file_matches = self._search_file(file_path, pattern)
                         if file_matches:
                             matches.append({"file_path": file_path, "matches": file_matches})
@@ -183,7 +174,6 @@ class FileSearchJob(Job, DBSessionMixin):
                                 self.logger.debug(f"Found {len(file_matches)} matches in file: {local_path}")
                                 asset_matches.append({"file_path": local_path, "matches": file_matches})
                     else:  # Directory
-                        self.logger.debug(f"Searching directory: {local_path}")
                         dir_matches = await self._search_directory_async(local_path, self.pattern)
                         for dir_match in dir_matches:
                             file_path = dir_match["file_path"]

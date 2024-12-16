@@ -91,11 +91,7 @@ def test_file_content_search(mock_config):
         patch("src.jobs.file_search.is_binary_file", return_value=False),  # Ensure binary check passes
     ):
         job = FileSearchJob(regex_pattern="pattern")
-        print(f"\nPattern: {job.pattern.pattern}")  # Debug print
-        print(f"Should skip .sol: {job._should_skip_file('test.sol')}")  # Debug print
         matches = job._search_file("test.sol", job.pattern)
-        print(f"Matches found: {matches}")  # Debug print
-        print(f"Mock calls: {mock_file.mock_calls}")  # Debug print
 
         assert len(matches) == 1
         match = matches[0]
@@ -142,12 +138,10 @@ async def test_directory_search(mock_config):
         yield directory, [], list(mock_files.keys())
 
     def mock_open_file(file_path, mode="r"):
-        print(f"\nMock opening file: {file_path} with mode {mode}")  # Debug print
         if file_path.endswith(".bin"):
             return mock_open(read_data=b"\x00\x01\x02")(file_path, mode)
         basename = os.path.basename(file_path)
         content = mock_files.get(basename, "")
-        print(f"Content for {basename}: {content}")  # Debug print
         m = mock_open(read_data=content)
         return m(file_path, mode)
 
@@ -157,11 +151,7 @@ async def test_directory_search(mock_config):
         patch("src.jobs.file_search.is_binary_file", return_value=False),  # Ensure binary check passes
     ):
         job = FileSearchJob(regex_pattern="test")
-        print(f"\nPattern: {job.pattern.pattern}")  # Debug print
-        print(f"Should skip .sol: {job._should_skip_file('test1.sol')}")  # Debug print
-        print(f"Should skip .cairo: {job._should_skip_file('test2.cairo')}")  # Debug print
         matches = job._search_directory("/test/dir", job.pattern)
-        print(f"Matches found: {matches}")  # Debug print
 
         # Should find matches in .sol and .cairo files
         assert len(matches) == 2
