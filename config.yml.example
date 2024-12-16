@@ -52,6 +52,18 @@ webhooks:
   port: 8080  # Port for webhook server
   # Add any webhook-specific configuration here
 
+# File search configuration
+file_search:
+  # File extensions to include in searches (default: smart contract languages)
+  allowed_extensions:
+    - ".sol"    # Solidity
+    - ".cairo"  # Cairo
+    - ".rs"     # Rust
+    - ".go"     # Go
+    - ".vy"     # Vyper
+    - ".move"   # Move
+    - ".yul"    # Yul
+
 # Scheduled actions configuration
 scheduled_actions:
   daily_immunefi_sync:

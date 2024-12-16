@@ -100,8 +100,9 @@ Example:
                 if job.outputs:
                     lines.extend(["", "📄 Outputs:"])
                     for output in job.outputs:
-                        # Indent outputs for better readability
-                        lines.extend("  " + line for line in output.split("\n"))
+                        # Split output into lines and indent them
+                        output_lines = ["  " + line for line in output.split("\n")]
+                        lines.extend(output_lines)
 
                 return "\n".join(lines)
 

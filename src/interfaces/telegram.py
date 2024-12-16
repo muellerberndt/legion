@@ -65,18 +65,23 @@ class TelegramInterface(Interface):
                     result = await action_handler()
 
                 if result:
-                    # Handle ActionResult objects
+                    # Convert result to string
                     if hasattr(result, "content"):
                         content = result.content
                     else:
                         content = str(result)
 
-                    # Send message through service to handle long messages properly
-                    # Disable HTML parsing for command outputs
-                    await update.message.reply_text(text=content, parse_mode=None)
+                    # Use TelegramService to handle message sending with proper size handling
+                    service = TelegramService.get_instance()
+                    service.chat_id = str(update.message.chat.id)
+                    await service.send_message(content)
+
             except Exception as e:
                 self.logger.error(f"Error executing command {command_name}: {e}")
-                await update.message.reply_text(text=f"Error executing command: {str(e)}", parse_mode=None)
+                error_msg = f"Error executing command: {str(e)}"
+                service = TelegramService.get_instance()
+                service.chat_id = str(update.message.chat.id)
+                await service.send_message(error_msg)
 
         return handler
 
@@ -197,39 +202,15 @@ class TelegramInterface(Interface):
         if not self.app or not self.app.bot:
             self.logger.error("Bot not initialized")
             return
+        try:
+            # Use TelegramService to handle message sending with proper size handling
+            service = TelegramService.get_instance()
+            service.chat_id = session_id  # Set the target chat ID
+            await service.send_message(content)
 
-        max_retries = 3
-        retry_delay = 1  # Initial delay in seconds
-
-        for attempt in range(max_retries):
-            try:
-                await self.app.bot.send_message(
-                    chat_id=session_id,
-                    text=content,
-                    parse_mode=telegram.constants.ParseMode.HTML,
-                    read_timeout=60,
-                    write_timeout=60,
-                    connect_timeout=60,
-                )
-                break  # Success, exit retry loop
-            except telegram.error.TimedOut:
-                if attempt < max_retries - 1:  # Don't sleep on last attempt
-                    self.logger.warning(
-                        f"Timeout sending message, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})"
-                    )
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                else:
-                    self.logger.error("Failed to send message after all retries")
-                    raise
-            except telegram.error.RetryAfter as e:
-                # Rate limit error - respect Telegram's retry_after
-                retry_in = e.retry_after
-                self.logger.warning(f"Rate limited, retrying in {retry_in}s")
-                await asyncio.sleep(retry_in)
-            except Exception as e:
-                self.logger.error(f"Failed to send message: {e}")
-                raise
+        except Exception as e:
+            self.logger.error(f"Failed to send message: {e}")
+            raise
 
     async def stop(self) -> None:
         """Stop the interface"""

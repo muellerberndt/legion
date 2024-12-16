@@ -1,4 +1,4 @@
-from src.jobs.base import Job, JobResult, JobStatus
+from src.jobs.base import Job, JobResult
 from src.backend.database import DBSessionMixin
 from src.util.logging import Logger
 import os
@@ -7,6 +7,7 @@ from typing import List, Dict
 from src.models.base import Asset
 from sqlalchemy import select
 import asyncio
+from src.config.config import Config
 
 
 def is_binary_file(file_path: str) -> bool:
@@ -62,12 +63,21 @@ class FileSearchJob(Job, DBSessionMixin):
         Job.__init__(self, job_type="file_search")
         DBSessionMixin.__init__(self)
         self.logger = Logger("FileSearchJob")
-        self.regex_pattern = regex_pattern
+        # Compile regex pattern - add word boundaries to match whole words
+        self.pattern = re.compile(re.escape(regex_pattern), re.IGNORECASE)
+
+        # Get allowed extensions from config
+        config = Config()
+        self.allowed_extensions = set(
+            config.get("file_search.allowed_extensions", [".sol", ".cairo", ".rs", ".vy", ".fe", ".move", ".yul"])
+        )
+        self.logger.info(f"Using allowed extensions: {self.allowed_extensions}")
 
     def _should_skip_file(self, file_path: str) -> bool:
         """Check if we should skip this file"""
         _, ext = os.path.splitext(file_path.lower())
-        return ext in self.SKIP_EXTENSIONS
+        # Skip if extension is in skip list or if we have allowed extensions and this isn't one of them
+        return ext in self.SKIP_EXTENSIONS or (self.allowed_extensions and ext not in self.allowed_extensions)
 
     def _search_file(self, file_path: str, pattern: re.Pattern) -> List[Dict]:
         """Search a single file for regex matches"""
@@ -80,6 +90,7 @@ class FileSearchJob(Job, DBSessionMixin):
             with open(file_path, "r") as f:
                 content = f.read()
 
+            # Use finditer to get non-overlapping matches with positions
             matches = list(pattern.finditer(content))
             file_matches = []
 
@@ -130,97 +141,90 @@ class FileSearchJob(Job, DBSessionMixin):
     async def start(self) -> None:
         """Execute the file search job"""
         try:
-            self.status = JobStatus.RUNNING
+            # self.status = JobStatus.RUNNING
             results = []
+            total_matches = 0
+            processed_paths = set()  # Keep track of processed file paths
 
             # Get all assets with local paths from database
             with self.get_session() as session:
                 stmt = select(Asset).where(Asset.local_path.isnot(None))
                 assets = session.execute(stmt).scalars().all()
                 path_to_asset = {asset.local_path: asset for asset in assets}
+                self.logger.debug(f"Found {len(path_to_asset)} assets to search")
 
-            # Compile regex pattern
-            pattern = re.compile(self.regex_pattern)
+            self.logger.debug(f"Using search pattern: {self.pattern.pattern}")
 
             # Search through assets
             for local_path, asset in path_to_asset.items():
                 if not os.path.exists(local_path):
+                    self.logger.debug(f"Skipping non-existent path: {local_path}")
                     continue
 
                 try:
+                    asset_matches = []
                     # Handle both files and directories
                     if os.path.isfile(local_path):
-                        file_matches = await self._search_file_async(local_path, pattern)
-                        if file_matches:
-                            results.append(
-                                {
-                                    "asset": {
-                                        "id": asset.id,
-                                        "asset_type": asset.asset_type,
-                                        "source_url": asset.source_url,
-                                        "local_path": local_path,
-                                        "extra_data": asset.extra_data,
-                                    },
-                                    "matches": file_matches,
-                                }
-                            )
+                        if local_path not in processed_paths:
+                            processed_paths.add(local_path)
+                            file_matches = await self._search_file_async(local_path, self.pattern)
+                            if file_matches:
+                                self.logger.debug(f"Found {len(file_matches)} matches in file: {local_path}")
+                                asset_matches.append({"file_path": local_path, "matches": file_matches})
                     else:  # Directory
-                        dir_matches = await self._search_directory_async(local_path, pattern)
-                        if dir_matches:
-                            # Flatten directory matches
-                            all_matches = []
-                            for dir_match in dir_matches:
-                                all_matches.extend(dir_match["matches"])
+                        self.logger.debug(f"Searching directory: {local_path}")
+                        dir_matches = await self._search_directory_async(local_path, self.pattern)
+                        for dir_match in dir_matches:
+                            file_path = dir_match["file_path"]
+                            if file_path not in processed_paths:
+                                processed_paths.add(file_path)
+                                self.logger.debug(f"Found {len(dir_match['matches'])} matches in: {file_path}")
+                                asset_matches.append(dir_match)
 
-                            if all_matches:
-                                results.append(
-                                    {
-                                        "asset": {
-                                            "id": asset.id,
-                                            "asset_type": asset.asset_type,
-                                            "source_url": asset.source_url,
-                                            "local_path": local_path,
-                                            "extra_data": asset.extra_data,
-                                        },
-                                        "matches": all_matches,
-                                    }
-                                )
+                    # Only add asset to results if it has matches
+                    if asset_matches:
+                        # Count matches
+                        file_match_count = sum(len(file_match["matches"]) for file_match in asset_matches)
+                        total_matches += file_match_count
+                        self.logger.debug(f"Asset {asset.id} has {file_match_count} matches in {len(asset_matches)} files")
+                        results.append(
+                            {
+                                "asset": {
+                                    "id": asset.id,
+                                    "asset_type": asset.asset_type,
+                                    "source_url": asset.source_url,
+                                    "extra_data": asset.extra_data,
+                                },
+                                "matches": asset_matches,
+                            }
+                        )
 
                 except Exception as e:
                     self.logger.error(f"Error processing asset {local_path}: {str(e)}")
                     continue
 
-            # Format results for output
-            formatted_results = []
-            for result in results:
-                asset = result["asset"]
-                for match in result["matches"]:
-                    formatted_results.append(
-                        {
-                            "asset_id": asset["id"],
-                            "asset_type": asset["asset_type"],
-                            "source_url": asset["source_url"],
-                            "local_path": asset["local_path"],
-                            "match": match["match"],
-                            "context": match["context"],
-                            "start": match["start"],
-                            "end": match["end"],
-                        }
-                    )
+            self.logger.info(f"Search complete: {total_matches} matches in {len(results)} assets")
+            self.logger.debug(f"Processed {len(processed_paths)} unique files")
 
             # Create result with outputs
-            result = JobResult(success=True, message=f"Found matches in {len(results)} assets", data={"results": results})
+            result = JobResult(
+                success=True, message=f"Found {total_matches} matches across {len(results)} assets", data={"results": results}
+            )
 
-            # Add formatted outputs
-            for match in formatted_results:
-                output = (
-                    f"Match in {match['asset_id']} ({match['asset_type']}):\n"
-                    f"Source: {match['source_url']}\n"
-                    f"File: {match['local_path']}\n"
-                    f"Match: {match['match']}\n"
-                    f"Context: {match['context']}\n"
-                )
-                result.add_output(output)
+            # Add all outputs without limiting
+            for asset_result in results:
+                asset = asset_result["asset"]
+                for file_match in asset_result["matches"]:
+                    file_path = file_match["file_path"]
+                    for match in file_match["matches"]:
+                        output = (
+                            f"Match in {asset['source_url']} ({asset['asset_type']}):\n"
+                            f"Source: {asset['source_url']}\n"
+                            f"File: {file_path}\n"
+                            f"Match: {match['match']}\n"
+                            f"Context: {match['context']}\n"
+                        )
+                        result.add_output(output)
 
             # Complete the job with results
             await self.complete(result)

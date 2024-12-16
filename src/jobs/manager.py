@@ -309,9 +309,19 @@ class JobManager(DBSessionMixin):
             # Import here to avoid circular imports
             from src.jobs.notification import JobNotifier
 
-            # Start the job
+            # Set initial job status and start time
             job.status = JobStatus.RUNNING
             job.started_at = datetime.utcnow()
+
+            # Update database record with running status
+            with self.get_session() as session:
+                job_record = session.query(JobRecord).filter(JobRecord.id == job.id).first()
+                if job_record:
+                    job_record.status = job.status.value
+                    job_record.started_at = job.started_at
+                    session.commit()
+
+            # Start the job
             await job.start()
 
             # If job completed successfully

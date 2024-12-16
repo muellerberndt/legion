@@ -110,6 +110,17 @@ CONFIG_SCHEMA = {
             },
             "default": {},
         },
+        "file_search": {
+            "type": "object",
+            "properties": {
+                "allowed_extensions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": [".sol", ".cairo", ".rs", ".vy", ".fe", ".move", ".yul"],
+                }
+            },
+            "default": {"allowed_extensions": [".sol", ".cairo", ".rs", ".vy", ".fe", ".move", ".yul"]},
+        },
     },
     "required": ["database", "data_dir"],
 }
