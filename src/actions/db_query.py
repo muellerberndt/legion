@@ -107,7 +107,7 @@ class DBQueryAction(BaseAction, DBSessionMixin):
                     # Add summary to metadata
                     metadata = {"summary": f"Found {total_count} results", "total": total_count}
 
-                    return ActionResult.text(f"{metadata['summary']}\n\n```\n{chr(10).join(csv_lines)}\n```")
+                    return ActionResult.text(f"{metadata['summary']}\n\n{chr(10).join(csv_lines)}\n")
 
             except Exception as e:
                 self.logger.error(f"Error executing query: {str(e)}")

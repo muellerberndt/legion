@@ -64,7 +64,6 @@ async def test_db_query_action(mock_session, mock_query_builder):
         result_str = str(result)
         # Result should be a string containing CSV data
         assert "Found 1 results" in result_str
-        assert "```" in result_str  # Check for code block formatting
         assert "asset_type,id,source_url" in result_str  # Check CSV headers (alphabetically sorted)
         assert "github_file,test-id,https://github.com/test/repo" in result_str  # Check CSV data
 

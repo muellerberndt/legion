@@ -2,7 +2,6 @@
 
 from typing import Dict, List
 import json
-import html
 from src.config.config import Config
 from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
@@ -91,8 +90,6 @@ class Chatbot:
 
     def _format_response(self, text: str) -> str:
         """Format response text to be safe for Telegram"""
-        # Escape any HTML-like characters
-        text = html.escape(text)
 
         # Format code blocks and JSON
         if text.startswith("{") and text.endswith("}"):
