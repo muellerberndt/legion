@@ -1,8 +1,7 @@
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.manager import JobManager
 from src.util.logging import Logger
-from src.backend.database import DBSessionMixin
-from src.models.job import JobRecord
+from src.actions.result import ActionResult
 
 
 class ListJobsAction(BaseAction):
@@ -32,94 +31,108 @@ Example:
         BaseAction.__init__(self)
         self.logger = Logger("ListJobsAction")
 
-    async def execute(self, *args, **kwargs) -> str:
+    async def execute(self, *args, **kwargs) -> ActionResult:
         """Execute the list jobs action"""
         try:
             job_manager = JobManager()
             jobs = job_manager.list_jobs()
 
             if not jobs:
-                return "No jobs found."
+                return ActionResult.text("No jobs found.")
 
-            lines = ["Running Jobs:"]
+            # Format as table
+            headers = ["ID", "Type", "Status", "Started", "Completed"]
+            rows = []
             for job in jobs:
-                lines.append(f"- Job {job['id']} ({job['type']}): {job['status']}")
-            return "\n".join(lines)
+                rows.append(
+                    [
+                        job["id"],
+                        job["type"],
+                        job["status"],
+                        job["started_at"] or "Not started",
+                        job["completed_at"] or "Not completed",
+                    ]
+                )
+
+            return ActionResult.table(headers=headers, rows=rows)
 
         except Exception as e:
             self.logger.error(f"Failed to list jobs: {str(e)}")
-            raise
+            return ActionResult.error(f"Failed to list jobs: {str(e)}")
 
 
-class GetJobResultAction(BaseAction, DBSessionMixin):
+class GetJobResultAction(BaseAction):
     """Action to get job results"""
 
     spec = ActionSpec(
         name="job",
-        description="Get results of a job by ID or the most recent finished job",
-        help_text="""Get the results or status of a background job.
+        description="Get results of a job",
+        help_text="""Get the results of a specific job.
 
 Usage:
 /job [job_id]
 
-If job_id is provided, shows results for that specific job.
-If no job_id is provided, shows results of the most recently finished job.
+Shows:
+- Job status
+- Start/completion times
+- Results or error messages
+- Additional outputs
 
-This command will show:
-- Job status (running, completed, failed)
-- Job results or error message
-- Start and completion times
-- Additional outputs if available
+If no job_id is provided, shows the most recently completed job.
 
 Examples:
 /job abc123  # Get results for job abc123
-/job         # Get results of most recent finished job""",
-        agent_hint="Use this command to check the status and results of background jobs like scans, searches, or analysis tasks.",
+/job         # Get results of most recent job""",
+        agent_hint="Use this command to check the results of a previously started job",
         arguments=[ActionArgument(name="job_id", description="ID of the job to check", required=False)],
     )
 
     def __init__(self):
-        DBSessionMixin.__init__(self)
         self.logger = Logger("GetJobResultAction")
 
-    async def execute(self, job_id: str = None) -> str:
+    async def execute(self, job_id: str = None) -> ActionResult:
         """Get job results"""
         try:
-            with self.get_session() as session:
-                job = None
-                if job_id:
-                    job = session.query(JobRecord).filter_by(id=job_id).first()
-                    if not job:
-                        return f"❌ Job {job_id} not found"
-                else:
-                    job_manager = JobManager()
-                    job = job_manager.get_most_recent_finished_job()
-                    if not job:
-                        return "❌ No finished jobs found"
+            job_manager = JobManager()
 
-                # Format job info
-                lines = [f"🔍 Job {job.id}", f"Type: {job.type}", f"Status: {job.status}"]
+            # If no job ID provided, get most recent job
+            if not job_id:
+                job_record = job_manager.get_most_recent_finished_job()
+                if not job_record:
+                    return ActionResult.text("No completed jobs found.")
+                job_id = job_record.id
 
-                if job.started_at:
-                    lines.append(f"Started: {job.started_at}")
-                if job.completed_at:
-                    lines.append(f"Completed: {job.completed_at}")
+            # Get the job
+            job = job_manager.get_job(job_id)
+            if not job:
+                return ActionResult.error(f"Job {job_id} not found")
 
-                if job.message:
-                    lines.extend(["", "📝 Result:", job.message])
+            # Build job info structure
+            job_info = {
+                "id": job_id,
+                "type": job.type,
+                "status": job.status,
+                "started_at": job.started_at.isoformat() if job.started_at else None,
+                "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+            }
 
-                if job.outputs:
-                    lines.extend(["", "📄 Outputs:"])
-                    for output in job.outputs:
-                        # Split output into lines and indent them
-                        output_lines = ["  " + line for line in output.split("\n")]
-                        lines.extend(output_lines)
+            # Add result info if available
+            if job.result:
+                job_info.update(
+                    {
+                        "success": job.result.success,
+                        "message": job.result.message,
+                        "error": job.result.error,
+                        "outputs": job.result.outputs,
+                        "data": job.result.data,
+                    }
+                )
 
-                return "\n".join(lines)
+            return ActionResult.tree(job_info)
 
         except Exception as e:
-            self.logger.error(f"Failed to get job results: {str(e)}")
-            return f"❌ Error getting job results: {str(e)}"
+            self.logger.error(f"Failed to get job result: {str(e)}")
+            return ActionResult.error(f"Failed to get job result: {str(e)}")
 
 
 class StopJobAction(BaseAction):
@@ -145,16 +158,16 @@ Example:
     def __init__(self):
         self.logger = Logger("StopJobAction")
 
-    async def execute(self, job_id: str) -> str:
+    async def execute(self, job_id: str) -> ActionResult:
         """Stop a job"""
         try:
             job_manager = JobManager()
             await job_manager.stop_job(job_id)
-            return f"Requested stop for job {job_id}"
+            return ActionResult.text(f"Requested stop for job {job_id}")
 
         except Exception as e:
             self.logger.error(f"Failed to stop job: {str(e)}")
-            return f"Error stopping job: {str(e)}"
+            return ActionResult.error(f"Failed to stop job: {str(e)}")
 
 
 # Export actions

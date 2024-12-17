@@ -4,6 +4,7 @@ from src.actions.base import BaseAction, ActionSpec
 from src.jobs.embed import EmbedJob
 from src.jobs.manager import JobManager
 from src.util.logging import Logger
+from src.actions.result import ActionResult
 
 
 class EmbeddingsAction(BaseAction):
@@ -37,7 +38,7 @@ Example:
     def __init__(self):
         self.logger = Logger("EmbeddingsAction")
 
-    async def execute(self, *args, **kwargs) -> str:
+    async def execute(self, *args, **kwargs) -> ActionResult:
         """Start the embedding generation job"""
         try:
             # Create and submit the job
@@ -45,8 +46,10 @@ Example:
             job_manager = JobManager()
             job_id = await job_manager.submit_job(job)
 
-            return f"Started embedding generation job with ID: {job_id}\nUse /job {job_id} to check progress."
+            return ActionResult.text(
+                f"Started embedding generation job with ID: {job_id}\nUse /job {job_id} to check progress."
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to start embedding job: {str(e)}")
-            return f"Failed to start embedding job: {str(e)}"
+            return ActionResult.error(f"Failed to start embedding job: {str(e)}")

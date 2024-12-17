@@ -2,43 +2,35 @@ from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.file_search import FileSearchJob
 from src.jobs.manager import JobManager
 from src.util.logging import Logger
+from src.actions.result import ActionResult
 
 
 class FileSearchAction(BaseAction):
-    """Action to search local files using regex and retrieve associated asset info"""
+    """Action to search files using regex"""
 
     spec = ActionSpec(
         name="file_search",
-        description="Search local files using regex patterns",
-        help_text="""Search through downloaded files using regular expressions.
+        description="Search files using regex pattern",
+        help_text="""Search through files using a regular expression pattern.
 
 Usage:
-/file_search <regex_pattern>
+/file_search <pattern>
 
-The regex pattern will be used to search through all downloaded files (smart contracts, source code, etc.).
-Results will include:
-- Matching file paths
-- Line numbers and content of matches
-- Associated asset and project information
+The search will:
+1. Look through all files in the database
+2. Match the regex pattern against file contents
+3. Return matches with context
 
-Examples:
-/file_search "function.*public"  # Find public functions
-/file_search "import.*@openzeppelin"  # Find OpenZeppelin imports
-/file_search "constructor\\s*\\("  # Find constructors""",
-        agent_hint="Use this command to search through actual file contents using regex patterns. Useful for finding specific code patterns or implementations.",
-        arguments=[
-            ActionArgument(
-                name="regex",
-                description="Regular expression pattern to search for. Use quotes if pattern contains spaces.",
-                required=True,
-            )
-        ],
+Example:
+/file_search 'function\\s+transfer'""",
+        agent_hint="Use this command to search through files using regex patterns",
+        arguments=[ActionArgument(name="pattern", description="Regex pattern to search for", required=True)],
     )
 
     def __init__(self):
         self.logger = Logger("FileSearchAction")
 
-    async def execute(self, *args, **kwargs) -> str:
+    async def execute(self, *args, **kwargs) -> ActionResult:
         """Execute the file search action"""
         try:
             # Join all arguments into a single regex pattern
@@ -50,8 +42,8 @@ Examples:
             job_id = await job_manager.submit_job(job)
 
             # Return job ID for tracking
-            return f"File search started with job ID: {job_id}\nUse 'job {job_id}' to check results."
+            return ActionResult.text(f"File search started with job ID: {job_id}\nUse 'job {job_id}' to check results.")
 
         except Exception as e:
             self.logger.error(f"Failed to start file search: {str(e)}")
-            raise
+            return ActionResult.error(f"Failed to start file search: {str(e)}")

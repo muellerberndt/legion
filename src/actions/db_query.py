@@ -3,6 +3,7 @@ from src.backend.query_builder import QueryBuilder
 from src.backend.database import DBSessionMixin
 from src.util.db_schema import get_db_query_hint
 from src.util.logging import Logger
+from src.actions.result import ActionResult
 import json
 from datetime import datetime
 
@@ -33,38 +34,26 @@ class DBQueryAction(BaseAction, DBSessionMixin):
                 model_dict[column.name] = self._serialize_value(getattr(value, column.name))
             return model_dict
         elif isinstance(value, datetime):
-            # Convert datetime to ISO format string
             return value.isoformat()
-        return value
+        else:
+            return value
 
-    async def execute(self, query: str) -> str:
-        """Execute a database query using the query builder format.
-
-        Args:
-            query: JSON string containing the query specification
-
-        Returns:
-            Formatted string containing query results
-        """
+    async def execute(self, query: str) -> ActionResult:
+        """Execute a database query"""
         try:
-            # Parse query spec
+            # Parse query specification
             try:
-                spec = json.loads(query)
+                query_spec = json.loads(query)
             except json.JSONDecodeError:
-                return '❌ Invalid query format. Query must be a valid JSON string.\n\nExample:\n```\n{\n  "from": "projects",\n  "where": [\n    {\n      "field": "name",\n      "op": "ilike",\n      "value": "test"\n    }\n  ]\n}\n```'
+                return ActionResult.error("Invalid query format - must be valid JSON")
 
             # Build and execute query
             try:
-                # Build the query
-                query = self.query_builder.from_spec(spec).build()
-
-                # Execute with session
+                query_builder = self.query_builder.from_spec(query_spec)
+                query = query_builder.build()  # Build the SQLAlchemy query
                 with self.get_session() as session:
-                    rows = session.execute(query).all()
-
-                    # Convert results to list of dicts
                     results = []
-                    for row in rows:
+                    for row in session.execute(query).all():
                         if hasattr(row, "_mapping"):
                             # Handle SQLAlchemy Result rows
                             result = {}
@@ -78,25 +67,22 @@ class DBQueryAction(BaseAction, DBSessionMixin):
                     # Format results
                     total_count = len(results)
                     if total_count == 0:
-                        return "No results found."
+                        return ActionResult.text("No results found.")
 
-                    lines = [f"📊 Found {total_count} results:"]
-
-                    # Add truncation note if needed
+                    # Format results with summary line
+                    summary = f"Found {total_count} results"
                     if total_count > 100:
+                        summary += " (Showing first 100)"
                         results = results[:100]
-                        lines.append(f"(Showing first 100 of {total_count} results)\n")
 
-                    # Format each result
-                    for i, result in enumerate(results, 1):
-                        lines.append(f"\n{i}. {json.dumps(result, indent=2)}")
-
-                    return "\n".join(lines)
+                    # Return as formatted text with JSON data
+                    result_text = summary + ":\n" + json.dumps(results, indent=2)
+                    return ActionResult.text(result_text)
 
             except Exception as e:
                 self.logger.error(f"Error executing query: {str(e)}")
-                return f"❌ Error executing query: {str(e)}"
+                return ActionResult.error(f"Error executing query: {str(e)}")
 
         except Exception as e:
             self.logger.error(f"Query execution failed: {str(e)}")
-            return f"❌ Query execution failed: {str(e)}"
+            return ActionResult.error(f"Query execution failed: {str(e)}")

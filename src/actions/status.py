@@ -3,6 +3,7 @@ from src.jobs.manager import JobManager
 from src.jobs.scheduler import Scheduler
 from src.webhooks.server import WebhookServer
 from src.util.logging import Logger
+from src.actions.result import ActionResult
 
 
 class StatusAction(BaseAction):
@@ -22,7 +23,7 @@ class StatusAction(BaseAction):
     def __init__(self):
         self.logger = Logger("StatusAction")
 
-    async def execute(self, *args) -> str:
+    async def execute(self, *args) -> ActionResult:
         """Execute the status action"""
         try:
             lines = []
@@ -74,8 +75,8 @@ class StatusAction(BaseAction):
             except Exception as e:
                 lines.append(f"• Error getting webhook status: {str(e)}")
 
-            return "\n".join(lines)
+            return ActionResult.text("\n".join(lines))
 
         except Exception as e:
             self.logger.error(f"Status action failed: {str(e)}")
-            return f"Error getting status: {str(e)}"
+            return ActionResult.error(f"Error getting status: {str(e)}")

@@ -81,5 +81,5 @@ async def test_db_query_action(mock_session, mock_query_builder):
     mock_session.execute.return_value.all.return_value = many_results
 
     result = await action.execute(json.dumps(query_spec))
-    assert "Found 150 results:" in result
+    assert "Found 150 results" in result
     assert "(Showing first 100" in result

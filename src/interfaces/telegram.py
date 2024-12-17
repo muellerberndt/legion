@@ -9,6 +9,9 @@ from src.services.telegram import TelegramService
 from src.ai.chatbot import Chatbot
 import telegram
 from src.util.command_parser import CommandParser
+from src.actions.result import ActionResult, ResultType
+import json
+from typing import Any, Dict, List
 
 
 class TelegramInterface(Interface):
@@ -24,6 +27,116 @@ class TelegramInterface(Interface):
         self._polling_task = None
         self._initialized = False
         self.command_parser = CommandParser()
+
+    def _format_result(self, result: ActionResult) -> str:
+        """Format an ActionResult for Telegram output"""
+        # Handle error results first
+        if result.type == ResultType.ERROR:
+            return f"❌ Error: {result.error or result.content}"
+
+        # Handle empty results
+        if result.content is None:
+            return "No results available."
+
+        if result.type == ResultType.TEXT:
+            return str(result.content)
+
+        elif result.type == ResultType.LIST:
+            items = result.content
+            if not items:
+                return "No items found."
+
+            # Get total count from metadata if available
+            total = result.metadata.get("total", len(items)) if result.metadata else len(items)
+            lines = [f"📋 Found {total} items:"]
+
+            # Add truncation note if needed
+            if result.metadata and "truncated" in result.metadata:
+                lines.append(f"(Showing first {len(items)} of {total} items)\n")
+
+            # Format each item
+            for i, item in enumerate(items, 1):
+                lines.append(f"{i}. {str(item)}")
+
+            return "\n".join(lines)
+
+        elif result.type == ResultType.TABLE:
+            if not isinstance(result.content, dict) or "headers" not in result.content or "rows" not in result.content:
+                return str(result.content)
+
+            headers = result.content["headers"]
+            rows = result.content["rows"]
+            if not rows:
+                return "No data found."
+
+            # Calculate column widths
+            widths = [len(str(h)) for h in headers]
+            for row in rows:
+                for i, cell in enumerate(row):
+                    widths[i] = max(widths[i], len(str(cell)))
+
+            # Format table
+            lines = []
+
+            # Add header
+            header_line = " | ".join(str(h).ljust(w) for h, w in zip(headers, widths))
+            lines.append(header_line)
+            lines.append("-" * len(header_line))
+
+            # Add rows
+            for row in rows:
+                lines.append(" | ".join(str(cell).ljust(w) for cell, w in zip(row, widths)))
+
+            return "```\n" + "\n".join(lines) + "\n```"
+
+        elif result.type == ResultType.TREE:
+
+            def format_tree(data: Dict[str, Any], level: int = 0) -> List[str]:
+                lines = []
+                indent = "  " * level
+                for key, value in data.items():
+                    # Format value first
+                    if hasattr(value, "value"):  # Handle enum values
+                        formatted_value = value.value
+                        # Add emoji based on status
+                        if key == "Status":
+                            if formatted_value == "running":
+                                formatted_value = "🏃 Running"
+                            elif formatted_value == "completed":
+                                formatted_value = "✅ Completed"
+                            elif formatted_value == "failed":
+                                formatted_value = "❌ Failed"
+                            elif formatted_value == "cancelled":
+                                formatted_value = "⛔️ Cancelled"
+                            elif formatted_value == "pending":
+                                formatted_value = "⏳ Pending"
+                    elif isinstance(value, dict):
+                        lines.append(f"{indent}{key}:")
+                        lines.extend(format_tree(value, level + 1))
+                        continue
+                    elif isinstance(value, list):
+                        lines.append(f"{indent}{key}:")
+                        for item in value:
+                            if isinstance(item, dict):
+                                lines.extend(format_tree(item, level + 1))
+                            else:
+                                lines.append(f"{indent}  • {str(item)}")
+                        continue
+                    else:
+                        formatted_value = str(value)
+
+                    lines.append(f"{indent}{key}: {formatted_value}")
+                return lines
+
+            return "\n".join(format_tree(result.content))
+
+        elif result.type == ResultType.JSON:
+            # Format JSON with proper indentation
+            formatted_json = json.dumps(result.content, indent=2)
+            return f"```json\n{formatted_json}\n```"
+
+        else:
+            return str(result.content)
 
     def _create_command_handler(self, command_name: str, action_handler):
         """Create a command handler function for a specific command"""
@@ -50,16 +163,13 @@ class TelegramInterface(Interface):
                     result = await action_handler(*args)
 
                 if result:
-                    # Convert result to string
-                    if hasattr(result, "content"):
-                        content = result.content
-                    else:
-                        content = str(result)
+                    # Handle the result
+                    formatted_result = await self._handle_command_result(result)
 
                     # Use TelegramService to handle message sending with proper size handling
                     service = TelegramService.get_instance()
                     service.chat_id = str(update.message.chat.id)
-                    await service.send_message(content)
+                    await service.send_message(formatted_result)
 
             except Exception as e:
                 self.logger.error(f"Error executing command {command_name}: {e}")
@@ -268,3 +378,69 @@ class TelegramInterface(Interface):
         """Handle the /start command"""
         welcome_message = "gm 👋\n" "How can I be of service today?"
         await update.message.reply_text(welcome_message)
+
+    async def _handle_command_result(self, result: Any) -> str:
+        """Handle and format command results"""
+        try:
+            # If result is already an ActionResult, format it
+            if isinstance(result, ActionResult):
+                # Special handling for job tree results
+                if result.type == ResultType.TREE and isinstance(result.content, dict) and "id" in result.content:
+                    # Format job info with emojis and nice labels
+                    job_info = {
+                        "🔍 Job": result.content["id"],
+                        "Type": result.content["type"],
+                    }
+
+                    # Format status with emoji
+                    status = result.content["status"]
+                    status_value = status.value if hasattr(status, "value") else str(status)
+                    if status_value == "running":
+                        job_info["Status"] = "🏃 Running"
+                    elif status_value == "completed":
+                        job_info["Status"] = "✅ Completed"
+                    elif status_value == "failed":
+                        job_info["Status"] = "❌ Failed"
+                    elif status_value == "cancelled":
+                        job_info["Status"] = "⛔️ Cancelled"
+                    elif status_value == "pending":
+                        job_info["Status"] = "⏳ Pending"
+                    else:
+                        job_info["Status"] = status_value
+
+                    # Format timestamps
+                    job_info["Started"] = result.content["started_at"] or "Not started"
+                    job_info["Completed"] = result.content["completed_at"] or "Not completed"
+
+                    # Add result info if available
+                    if result.content.get("success") is not None:
+                        if result.content["success"]:
+                            if result.content.get("message"):
+                                job_info["📝 Result"] = result.content["message"]
+                        elif result.content.get("error"):
+                            job_info["❌ Error"] = result.content["error"]
+
+                    # Add outputs and data if available
+                    if result.content.get("outputs"):
+                        job_info["Outputs"] = result.content["outputs"]
+                    if result.content.get("data"):
+                        job_info["Data"] = result.content["data"]
+
+                    return self._format_result(ActionResult.tree(job_info))
+
+                return self._format_result(result)
+
+            # Convert other types to appropriate ActionResult and format them
+            if isinstance(result, str):
+                return self._format_result(ActionResult.text(result))
+            elif isinstance(result, dict):
+                return self._format_result(ActionResult.json(result))
+            elif isinstance(result, list):
+                return self._format_result(ActionResult.list(result))
+            elif result is None:
+                return self._format_result(ActionResult.text("Command completed successfully."))
+            else:
+                return self._format_result(ActionResult.text(str(result)))
+        except Exception as e:
+            self.logger.error(f"Error handling command result: {e}")
+            return self._format_result(ActionResult.error(f"Error formatting result: {str(e)}"))

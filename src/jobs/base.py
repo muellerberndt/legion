@@ -27,6 +27,7 @@ class JobResult(DBSessionMixin):
         DBSessionMixin.__init__(self)
         self.success = success
         self.message = message
+        self.error = None if success else message  # Store error message if failed
         self.data = data or {}
         self.outputs: List[str] = []
         self.logger = Logger("JobResult")
