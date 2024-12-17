@@ -261,13 +261,20 @@ Your response MUST be a valid JSON object with these exact fields:
     "is_final": boolean (true if this should be the last step)
 }
 
+For direct responses without executing a command, use an empty string for command:
+{
+    "reasoning": "Your direct response to the user",
+    "command": "",
+    "is_final": true
+}
+
 IMPORTANT:
 1. Return ONLY the JSON object, no other text or markdown
 2. Use double quotes for strings
 3. Use true/false (lowercase) for booleans
 4. Do not include any explanatory text outside the JSON
 5. Do not wrap the JSON in code blocks or quotes
-6. The command must be one of the available commands
+6. If using a command, it must be one of the available commands
 7. Arguments containing spaces or special characters must be quoted
 8. Do not include a preceding slash in the command name
 
@@ -283,6 +290,12 @@ Example responses:
     "reasoning": "Need to query the database",
     "command": "db_query '{'from': 'projects', 'order_by': [{'field': 'id', 'direction': 'desc'}], 'limit': 10}'",
     "is_final": false
+}
+
+{
+    "reasoning": "Hello! I'm here to help you.",
+    "command": "",
+    "is_final": true
 }
 
 Available commands and their parameters:"""
@@ -335,11 +348,13 @@ Available commands and their parameters:"""
             if not isinstance(plan["is_final"], bool):
                 raise ValueError("Field 'is_final' must be a boolean")
 
-            # Extract command name and validate it exists
-            command_parts = plan["command"].split(maxsplit=1)
-            command_name = command_parts[0]
-            if command_name not in self.commands:
-                raise ValueError(f"Unknown command: {command_name}. Must be one of: {', '.join(self.commands.keys())}")
+            # Only validate command if it's not empty
+            if plan["command"].strip():
+                # Extract command name and validate it exists
+                command_parts = plan["command"].split(maxsplit=1)
+                command_name = command_parts[0]
+                if command_name not in self.commands:
+                    raise ValueError(f"Unknown command: {command_name}. Must be one of: {', '.join(self.commands.keys())}")
 
             return plan
 
@@ -444,19 +459,29 @@ Available commands and their parameters:"""
             # Plan next step
             plan = await self.plan_next_step(self.state)
 
+            # Handle empty command (direct response)
+            if not plan["command"].strip():
+                # Record the step
+                self.record_step(
+                    action="response",
+                    input_data={"command": ""},
+                    output_data={"result": plan["reasoning"]},
+                    reasoning=plan["reasoning"],
+                    next_action="complete",
+                )
+
+                # Update state
+                self.state["result"] = plan["reasoning"]
+                self.state["status"] = "completed"
+                self.state["is_final"] = True
+                return AutobotResult(success=True, data={"result": plan["reasoning"]})
+
             # Split command into name and parameters
             command_parts = plan["command"].split(maxsplit=1)
             command = command_parts[0]
             param_str = command_parts[1] if len(command_parts) > 1 else ""
 
             try:
-                # If concluding with empty action, return summary
-                if not command and plan["is_final"]:
-                    summary = self.get_execution_summary()
-                    self.state["result"] = summary
-                    self.state["status"] = "completed"
-                    return AutobotResult(success=True, data={"result": summary})
-
                 # Execute the command
                 result = await self.execute_command(command, param_str)
 
@@ -464,7 +489,7 @@ Available commands and their parameters:"""
 
                 # Record the step
                 self.record_step(
-                    action=command or "test_command",  # Use test_command for empty actions in tests
+                    action=command,
                     input_data={"command": plan["command"]},
                     output_data={"result": result},
                     reasoning=plan["reasoning"],
@@ -475,13 +500,12 @@ Available commands and their parameters:"""
                 self.state["last_result"] = result
                 self.state["is_final"] = plan["is_final"]
                 if plan["is_final"]:
-                    # For final steps, include both the result and a summary
-                    summary = self.get_execution_summary()
-                    self.state["result"] = {"final_result": result, "execution_summary": summary}
+                    # For final steps, store just the result
+                    self.state["result"] = result
                     self.state["status"] = "completed"
 
-                # Return just the result for non-final steps, full result structure for final steps
-                return AutobotResult(success=True, data={"result": self.state["result"] if self.state["is_final"] else result})
+                # Return just the result
+                return AutobotResult(success=True, data={"result": result})
 
             except Exception as e:
                 self.logger.error(f"Error executing command: {str(e)}")

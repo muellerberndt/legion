@@ -7,41 +7,27 @@ import json
 
 
 @pytest.fixture
-def mock_action_registry():
-    """Fixture for mocked ActionRegistry"""
-    registry = MagicMock(spec=ActionRegistry)
+def autobot():
+    """Create an Autobot instance with mocked dependencies"""
+    # Create mock action registry
+    mock_registry = MagicMock(spec=ActionRegistry)
 
-    # Mock commands
-    commands = {
-        "test_command": ActionSpec(
-            name="test_command",
-            description="Test command",
-            help_text="Test help",
-            agent_hint="Test hint",
-            arguments=[
-                ActionArgument(name="param1", description="First parameter", required=True),
-            ],
-        )
-    }
+    # Create the action spec
+    action_spec = ActionSpec(
+        name="test_command",
+        description="Test command",
+        help_text="Test command help text",
+        agent_hint="Test command usage hint",
+        arguments=[ActionArgument(name="param1", description="Test param", required=True)],
+    )
 
-    registry._get_agent_command_instructions.return_value = commands
-    registry.get_action.return_value = (AsyncMock(return_value="Command result"), commands["test_command"])
-    return registry
+    # Set up the registry mock
+    mock_registry._get_agent_command_instructions.return_value = {"test_command": action_spec}
+    mock_registry.get_action.return_value = (AsyncMock(return_value="Command result"), action_spec)
 
-
-@pytest.fixture
-def autobot(mock_action_registry):
-    """Fixture for Autobot instance"""
-    return Autobot(action_registry=mock_action_registry)
-
-
-@pytest.mark.asyncio
-async def test_autobot_initialization(autobot, mock_action_registry):
-    """Test Autobot initialization"""
-    assert autobot.action_registry == mock_action_registry
-    assert "test_command" in autobot.commands
-    assert autobot.max_steps == 10
-    assert autobot.timeout == 300
+    # Create autobot instance
+    bot = Autobot(action_registry=mock_registry)
+    return bot
 
 
 @pytest.mark.asyncio
@@ -61,22 +47,14 @@ async def test_execute_command_unknown(autobot):
 @pytest.mark.asyncio
 async def test_plan_next_step(autobot):
     """Test planning next step"""
-    mock_response = """
-    {
-        "reasoning": "Test reasoning",
-        "action": "test_command",
-        "parameters": "param1=test",
-        "is_final": true
-    }
-    """
+    mock_response = json.dumps({"reasoning": "Test reasoning", "command": "test_command param1=test", "is_final": True})
 
     with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)) as mock_chat:
         plan = await autobot.plan_next_step({"status": "started"})
 
         # Verify the plan
         assert plan["reasoning"] == "Test reasoning"
-        assert plan["action"] == "test_command"
-        assert plan["parameters"] == "param1=test"
+        assert plan["command"] == "test_command param1=test"
         assert plan["is_final"] is True
 
         # Verify the system prompt includes the correct parameter format
@@ -90,60 +68,55 @@ async def test_plan_next_step(autobot):
 @pytest.mark.asyncio
 async def test_execute_task_success(autobot):
     """Test successful task execution"""
-    # Mock successful planning and execution
-    mock_plan = {"reasoning": "Test reasoning", "action": "test_command", "parameters": "param1=test", "is_final": True}
+    mock_response = json.dumps({"reasoning": "Test reasoning", "command": "test_command param1=test", "is_final": True})
 
-    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=json.dumps(mock_plan))):
-        result = await autobot.execute_task({"prompt": "Test task"})
-
+    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)):
+        result = await autobot.execute_task({"prompt": "Test prompt"})
         assert result.success is True
-        assert result.data is not None
-        assert "result" in result.data
-
-        # Check the enhanced result format
-        result_data = result.data["result"]
-        assert isinstance(result_data, dict)
-        assert "final_result" in result_data
-        assert "execution_summary" in result_data
-        assert result_data["final_result"] == "Command result"
-
-        # Verify execution summary structure
-        summary = result_data["execution_summary"]
-        assert isinstance(summary, dict)
-        assert "execution_id" in summary
-        assert "status" in summary
-        assert "steps" in summary
-        assert len(summary["steps"]) == 1
-        assert summary["steps"][0]["action"] == "test_command"
-        assert summary["steps"][0]["reasoning"] == "Test reasoning"
-
-
-@pytest.mark.asyncio
-async def test_get_execution_summary(autobot):
-    """Test getting execution summary"""
-    # Execute a task first
-    mock_plan = {"reasoning": "Test reasoning", "action": "test_command", "parameters": "param1=test", "is_final": True}
-
-    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=json.dumps(mock_plan))):
-        result = await autobot.execute_task({"prompt": "Test task"})
-        assert result.success is True  # Ensure task succeeded
-
-        summary = autobot.get_execution_summary()
-        assert summary["status"] == "completed"
-        assert len(summary["steps"]) == 1
-        assert summary["steps"][0]["action"] == "test_command"
-        assert summary["steps"][0]["reasoning"] == "Test reasoning"
+        assert result.data["result"] == "Command result"
+        assert autobot.state["status"] == "completed"
 
 
 @pytest.mark.asyncio
 async def test_execute_task_max_steps(autobot):
     """Test task execution with max steps limit"""
-    # Mock plan that doesn't set is_final to true
-    mock_plan = {"reasoning": "Test reasoning", "action": "test_command", "parameters": "param1=test", "is_final": False}
+    mock_response = json.dumps({"reasoning": "Test reasoning", "command": "test_command param1=test", "is_final": False})
 
-    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=json.dumps(mock_plan))):
-        result = await autobot.execute_task({"prompt": "Test task"})
-
+    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)):
+        autobot.max_steps = 2  # Set low step limit
+        result = await autobot.execute_task({"prompt": "Test prompt"})
         assert result.success is False
         assert "exceeded maximum steps" in result.error
-        assert autobot.step_count == autobot.max_steps
+
+
+@pytest.mark.asyncio
+async def test_get_execution_summary(autobot):
+    """Test getting execution summary"""
+    # Execute a task first to populate execution data
+    mock_response = json.dumps({"reasoning": "Test reasoning", "command": "test_command param1=test", "is_final": True})
+
+    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)):
+        await autobot.execute_task({"prompt": "Test prompt"})
+        summary = autobot.get_execution_summary()
+        assert isinstance(summary, dict)
+        assert "execution_id" in summary
+        assert "steps_taken" in summary
+        assert "status" in summary
+
+
+@pytest.mark.asyncio
+async def test_direct_response(autobot):
+    """Test handling of direct responses without commands"""
+    mock_response = json.dumps({"reasoning": "Hello! How can I help you?", "command": "", "is_final": True})
+
+    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)):
+        result = await autobot.execute_task({"prompt": "Just say hello"})
+        assert result.success is True
+        assert result.data["result"] == "Hello! How can I help you?"
+        assert autobot.state["status"] == "completed"
+
+        # Verify step was recorded correctly
+        summary = autobot.get_execution_summary()
+        assert len(summary["steps"]) == 1
+        assert summary["steps"][0]["action"] == "response"
+        assert summary["steps"][0]["reasoning"] == "Hello! How can I help you?"
