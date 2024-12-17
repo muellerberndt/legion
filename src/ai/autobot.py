@@ -98,7 +98,9 @@ class Autobot:
         base_prompt += "2. The command result indicates success or completion\n"
         base_prompt += "3. The command result shows an error or failure\n"
         base_prompt += "4. You've gathered enough information to provide a meaningful response\n\n"
-        base_prompt += "ALWAYS quote arguments that contain spaces or special characters, e.g.:\n"
+        base_prompt += "CRITICAL INSTRUCTIONS:\n"
+        base_prompt += "1. Don't truncate your output. Always show complete results.\n"
+        base_prompt += "3. ALWAYS quote arguments that contain spaces or special characters, e.g.:\n"
         base_prompt += "db_query '{'from': 'projects', 'order_by': [{'field': 'id', 'direction': 'desc'}], 'limit': 10}'\n"
 
         if self.commands:
@@ -206,40 +208,22 @@ class Autobot:
             raise
 
     def _truncate_state_for_llm(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Truncate state to prevent context length issues"""
-        MAX_ITEMS = 10
-        MAX_STRING_LENGTH = 1000
-
-        def truncate_value(value: Any) -> Any:
-            if isinstance(value, str):
-                if len(value) > MAX_STRING_LENGTH:
-                    return value[:MAX_STRING_LENGTH] + "... (truncated)"
-            elif isinstance(value, list):
-                if len(value) > MAX_ITEMS:
-                    return value[:MAX_ITEMS] + [f"... ({len(value) - MAX_ITEMS} more items)"]
-            elif isinstance(value, dict):
-                return {k: truncate_value(v) for k, v in value.items()}
-            return value
-
+        """Prepare state for LLM without truncating results"""
         # Create a copy of the state to avoid modifying the original
-        truncated_state = {}
+        prepared_state = {}
 
         # Always include task and status
         if "task" in state:
-            truncated_state["task"] = truncate_value(state["task"])
+            prepared_state["task"] = state["task"]
         if "status" in state:
-            truncated_state["status"] = state["status"]
+            prepared_state["status"] = state["status"]
 
-        # Include last result if present, but truncate it
-        if "last_result" in state:
-            truncated_state["last_result"] = truncate_value(state["last_result"])
-
-        # Include other important fields but truncate them
-        for key in ["error", "result"]:
+        # Include last result and other important fields without truncation
+        for key in ["last_result", "error", "result"]:
             if key in state:
-                truncated_state[key] = truncate_value(state[key])
+                prepared_state[key] = state[key]
 
-        return truncated_state
+        return prepared_state
 
     async def plan_next_step(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Plan the next step based on current state"""
@@ -252,51 +236,47 @@ class Autobot:
                 {"role": "system", "content": self.system_prompt},
                 {
                     "role": "system",
-                    "content": """Plan the next step based on the current state and available commands.
+                    "content": """Plan and execute tasks using the available commands.
 
-Your response MUST be a valid JSON object with these exact fields:
+Your response MUST be a valid JSON object with these fields:
 {
-    "reasoning": "Your thought process for choosing this step",
+    "thought": "Your internal reasoning about what to do next",
     "command": "command_name param1 param2 (...)",
-    "is_final": boolean (true if this should be the last step)
+    "output": "The message to show to the user",
+    "is_final": boolean (true if this is your final response)
 }
 
-For direct responses without executing a command, use an empty string for command:
-{
-    "reasoning": "Your direct response to the user",
-    "command": "",
-    "is_final": true
-}
+The "output" field will be shown directly to the user, so it should be properly formatted.
+For intermediate steps (is_final=false), you can leave "output" empty.
 
-IMPORTANT:
-1. Return ONLY the JSON object, no other text or markdown
-2. Use double quotes for strings
-3. Use true/false (lowercase) for booleans
-4. Do not include any explanatory text outside the JSON
-5. Do not wrap the JSON in code blocks or quotes
-6. If using a command, it must be one of the available commands
-7. Arguments containing spaces or special characters must be quoted
-8. Do not include a preceding slash in the command name
+CRITICAL INSTRUCTIONS:
+1. NEVER truncate your output. Show ALL results completely.
+2. Do not add notes like "(truncated)" or "for brevity".
+3. When formatting lists or results, include ALL items with their complete information.
 
 Example responses:
 
 {
-    "reasoning": "Need to search for vulnerabilities",
-    "command": "search vulnerable",
+    "thought": "I need to get the list of projects from the database",
+    "command": "db_query '{\"from\": \"projects\", \"limit\": 5}'",
+    "output": "",
     "is_final": false
 }
 
 {
-    "reasoning": "Need to query the database",
-    "command": "db_query '{'from': 'projects', 'order_by': [{'field': 'id', 'direction': 'desc'}], 'limit': 10}'",
-    "is_final": false
-}
-
-{
-    "reasoning": "Hello! I'm here to help you.",
+    "thought": "I have the project data, now I'll format it nicely for the user",
     "command": "",
+    "output": "Here are the projects:\n• Project A - Complete description of project A with all details\n• Project B - Complete description of project B with all details",
     "is_final": true
 }
+
+IMPORTANT:
+1. Return ONLY the JSON object, no other text
+2. Use double quotes for strings
+3. Use true/false (lowercase) for booleans
+4. If using a command, it must be one of the available commands
+5. Arguments containing spaces must be quoted
+6. NEVER truncate or omit information from results
 
 Available commands and their parameters:"""
                     + "\n"
@@ -335,16 +315,18 @@ Available commands and their parameters:"""
                 raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
 
             # Validate required fields
-            required_fields = ["reasoning", "command", "is_final"]
+            required_fields = ["thought", "command", "output", "is_final"]
             missing = [field for field in required_fields if field not in plan]
             if missing:
                 raise ValueError(f"Missing required fields in plan: {missing}")
 
             # Validate field types
-            if not isinstance(plan["reasoning"], str):
-                raise ValueError("Field 'reasoning' must be a string")
+            if not isinstance(plan["thought"], str):
+                raise ValueError("Field 'thought' must be a string")
             if not isinstance(plan["command"], str):
                 raise ValueError("Field 'command' must be a string")
+            if not isinstance(plan["output"], str):
+                raise ValueError("Field 'output' must be a string")
             if not isinstance(plan["is_final"], bool):
                 raise ValueError("Field 'is_final' must be a boolean")
 
@@ -461,20 +443,32 @@ Available commands and their parameters:"""
 
             # Handle empty command (direct response)
             if not plan["command"].strip():
-                # Record the step
-                self.record_step(
-                    action="response",
-                    input_data={"command": ""},
-                    output_data={"result": plan["reasoning"]},
-                    reasoning=plan["reasoning"],
-                    next_action="complete",
-                )
+                # For final steps, the reasoning should be the formatted result
+                if plan["is_final"]:
+                    # Record the step
+                    self.record_step(
+                        action="response",
+                        input_data={"command": ""},
+                        output_data={"result": plan["output"]},
+                        reasoning=plan["thought"],
+                        next_action="complete",
+                    )
 
-                # Update state
-                self.state["result"] = plan["reasoning"]
-                self.state["status"] = "completed"
-                self.state["is_final"] = True
-                return AutobotResult(success=True, data={"result": plan["reasoning"]})
+                    # Update state with the formatted result
+                    self.state["result"] = plan["output"]
+                    self.state["status"] = "completed"
+                    self.state["is_final"] = True
+                    return AutobotResult(success=True, data={"result": plan["output"]})
+                else:
+                    # For non-final direct responses
+                    self.record_step(
+                        action="response",
+                        input_data={"command": ""},
+                        output_data={"result": plan["output"]},
+                        reasoning=plan["thought"],
+                        next_action="continue",
+                    )
+                    return AutobotResult(success=True, data={"result": plan["output"]})
 
             # Split command into name and parameters
             command_parts = plan["command"].split(maxsplit=1)
@@ -492,20 +486,21 @@ Available commands and their parameters:"""
                     action=command,
                     input_data={"command": plan["command"]},
                     output_data={"result": result},
-                    reasoning=plan["reasoning"],
+                    reasoning=plan["thought"],
                     next_action="complete" if plan["is_final"] else "continue",
                 )
 
                 # Update state
                 self.state["last_result"] = result
                 self.state["is_final"] = plan["is_final"]
+
+                # For final steps after a command, use the reasoning as the formatted result
                 if plan["is_final"]:
-                    # For final steps, store just the result
-                    self.state["result"] = result
+                    self.state["result"] = plan["output"]
                     self.state["status"] = "completed"
 
-                # Return just the result
-                return AutobotResult(success=True, data={"result": result})
+                # Return the result
+                return AutobotResult(success=True, data={"result": plan["output"] if plan["is_final"] else result})
 
             except Exception as e:
                 self.logger.error(f"Error executing command: {str(e)}")

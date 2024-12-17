@@ -47,14 +47,17 @@ async def test_execute_command_unknown(autobot):
 @pytest.mark.asyncio
 async def test_plan_next_step(autobot):
     """Test planning next step"""
-    mock_response = json.dumps({"reasoning": "Test reasoning", "command": "test_command param1=test", "is_final": True})
+    mock_response = json.dumps(
+        {"thought": "Test reasoning", "command": "test_command param1=test", "output": "Test output", "is_final": True}
+    )
 
     with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)) as mock_chat:
         plan = await autobot.plan_next_step({"status": "started"})
 
         # Verify the plan
-        assert plan["reasoning"] == "Test reasoning"
+        assert plan["thought"] == "Test reasoning"
         assert plan["command"] == "test_command param1=test"
+        assert plan["output"] == "Test output"
         assert plan["is_final"] is True
 
         # Verify the system prompt includes the correct parameter format
@@ -68,19 +71,23 @@ async def test_plan_next_step(autobot):
 @pytest.mark.asyncio
 async def test_execute_task_success(autobot):
     """Test successful task execution"""
-    mock_response = json.dumps({"reasoning": "Test reasoning", "command": "test_command param1=test", "is_final": True})
+    mock_response = json.dumps(
+        {"thought": "Test reasoning", "command": "test_command param1=test", "output": "Test output", "is_final": True}
+    )
 
     with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)):
         result = await autobot.execute_task({"prompt": "Test prompt"})
         assert result.success is True
-        assert result.data["result"] == "Command result"
+        assert result.data["result"] == "Test output"
         assert autobot.state["status"] == "completed"
 
 
 @pytest.mark.asyncio
 async def test_execute_task_max_steps(autobot):
     """Test task execution with max steps limit"""
-    mock_response = json.dumps({"reasoning": "Test reasoning", "command": "test_command param1=test", "is_final": False})
+    mock_response = json.dumps(
+        {"thought": "Test reasoning", "command": "test_command param1=test", "output": "Test output", "is_final": False}
+    )
 
     with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)):
         autobot.max_steps = 2  # Set low step limit
@@ -93,7 +100,7 @@ async def test_execute_task_max_steps(autobot):
 async def test_get_execution_summary(autobot):
     """Test getting execution summary"""
     # Execute a task first to populate execution data
-    mock_response = json.dumps({"reasoning": "Test reasoning", "command": "test_command param1=test", "is_final": True})
+    mock_response = json.dumps({"thought": "Test reasoning", "command": "test_command param1=test", "is_final": True})
 
     with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)):
         await autobot.execute_task({"prompt": "Test prompt"})
@@ -107,7 +114,9 @@ async def test_get_execution_summary(autobot):
 @pytest.mark.asyncio
 async def test_direct_response(autobot):
     """Test handling of direct responses without commands"""
-    mock_response = json.dumps({"reasoning": "Hello! How can I help you?", "command": "", "is_final": True})
+    mock_response = json.dumps(
+        {"thought": "Hello! How can I help you?", "command": "", "output": "Hello! How can I help you?", "is_final": True}
+    )
 
     with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)):
         result = await autobot.execute_task({"prompt": "Just say hello"})

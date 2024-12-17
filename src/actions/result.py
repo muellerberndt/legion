@@ -119,6 +119,6 @@ class ActionResult:
         return ActionResult(type=ResultType.JSON, content=data, metadata=metadata)
 
     @staticmethod
-    def error(message: str, metadata: Optional[Dict[str, Any]] = None) -> "ActionResult":
+    def error(message: str, metadata: Optional[Dict[str, Any]] = None) -> "ActionResult":  # noqa: F811
         """Create an error result"""
         return ActionResult(type=ResultType.ERROR, content=message, error=message, metadata=metadata)
