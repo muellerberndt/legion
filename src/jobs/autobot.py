@@ -29,37 +29,39 @@ class AutobotJob(Job):
             result = await self.agent.execute_task(task)
 
             # Create job result
-            job_result = JobResult(
-                success=result.success,
-                message=(
-                    str(result.data.get("result")) if result.data and "result" in result.data else "Autobot completed task"
-                ),
-                data={
-                    "prompt": self.prompt,
-                    "response": result.data.get("result") if result.data else None,
-                    "execution_time": (datetime.utcnow() - self.started_at).total_seconds(),
-                },
-            )
+            if result.success:
+                # Get the final result
+                final_result = result.data.get("result") if result.data else None
 
-            # Add agent's response to outputs
-            if result.data and "result" in result.data:
-                result_data = result.data["result"]
-                if isinstance(result_data, dict) and "execution_summary" in result_data:
-                    # Handle enhanced result format with summary
-                    job_result.add_output(str(result_data["final_result"]))
-                    job_result.add_output("\n\nExecution Summary:")
-                    job_result.add_output(str(result_data["execution_summary"]))
-                    if "note" in result_data:
-                        job_result.add_output(f"\nNote: {result_data['note']}")
+                # Format the result message
+                if isinstance(final_result, (str, list, dict)):
+                    message = str(final_result)
                 else:
-                    # Handle simple result format
-                    job_result.add_output(str(result_data))
-            elif result.error:
-                job_result.add_output(f"Error: {result.error}")
+                    message = "Task completed successfully"
 
-            await self.complete(job_result)
+                job_result = JobResult(
+                    success=True,
+                    message=message,
+                    data={
+                        "prompt": self.prompt,
+                        "response": final_result,
+                        "execution_time": (datetime.utcnow() - self.started_at).total_seconds(),
+                    },
+                )
+
+                # Add the final result to outputs
+                if final_result:
+                    job_result.add_output(str(final_result))
+
+                # Complete the job with success
+                await self.complete(job_result)
+            else:
+                # Handle error case
+                error_msg = result.error or "Task failed without specific error message"
+                await self.fail(error_msg)
 
         except Exception as e:
+            self.logger.error(f"Autobot job failed: {str(e)}")
             await self.fail(str(e))
 
     async def stop_handler(self) -> None:

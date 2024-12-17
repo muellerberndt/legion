@@ -98,6 +98,8 @@ class Autobot:
         base_prompt += "2. The command result indicates success or completion\n"
         base_prompt += "3. The command result shows an error or failure\n"
         base_prompt += "4. You've gathered enough information to provide a meaningful response\n\n"
+        base_prompt += "ALWAYS quote arguments that contain spaces or special characters, e.g.:\n"
+        base_prompt += "db_query '{'from': 'projects', 'order_by': [{'field': 'id', 'direction': 'desc'}], 'limit': 10}'\n"
 
         if self.commands:
             base_prompt += "Available commands:\n\n"
@@ -147,6 +149,10 @@ class Autobot:
     async def execute_command(self, command: str, param_str: str) -> Any:
         """Execute a registered command"""
         # Handle empty command case for conclusion
+
+        # Remove preceding slash
+        command = command.lstrip("/")
+
         if not command:
             return self.get_execution_summary()
 
@@ -163,7 +169,12 @@ class Autobot:
 
         try:
             # Parse and validate arguments
-            args = self.command_parser.parse_arguments(param_str, spec)
+            if isinstance(param_str, list):
+                # If we already have a list of parameters, use them directly
+                args = param_str
+            else:
+                # Otherwise parse the string into arguments
+                args = self.command_parser.parse_arguments(param_str, spec)
             self.command_parser.validate_arguments(args, spec)
 
             # Execute the command
@@ -246,8 +257,7 @@ class Autobot:
 Your response MUST be a valid JSON object with these exact fields:
 {
     "reasoning": "Your thought process for choosing this step",
-    "action": "command_name (no preceding slash)",
-    "parameters": "parameter string for the command",
+    "command": "command_name param1 param2 (...)",
     "is_final": boolean (true if this should be the last step)
 }
 
@@ -257,14 +267,21 @@ IMPORTANT:
 3. Use true/false (lowercase) for booleans
 4. Do not include any explanatory text outside the JSON
 5. Do not wrap the JSON in code blocks or quotes
-6. The action must be one of the available commands
-7. The parameters must match the command's expected format
+6. The command must be one of the available commands
+7. Arguments containing spaces or special characters must be quoted
+8. Do not include a preceding slash in the command name
 
-Example of correct response:
+Example responses:
+
 {
     "reasoning": "Need to search for vulnerabilities",
-    "action": "search",
-    "parameters": "pattern='vulnerable'",
+    "command": "search vulnerable",
+    "is_final": false
+}
+
+{
+    "reasoning": "Need to query the database",
+    "command": "db_query '{'from': 'projects', 'order_by': [{'field': 'id', 'direction': 'desc'}], 'limit': 10}'",
     "is_final": false
 }
 
@@ -305,7 +322,7 @@ Available commands and their parameters:"""
                 raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
 
             # Validate required fields
-            required_fields = ["reasoning", "action", "parameters", "is_final"]
+            required_fields = ["reasoning", "command", "is_final"]
             missing = [field for field in required_fields if field not in plan]
             if missing:
                 raise ValueError(f"Missing required fields in plan: {missing}")
@@ -313,16 +330,16 @@ Available commands and their parameters:"""
             # Validate field types
             if not isinstance(plan["reasoning"], str):
                 raise ValueError("Field 'reasoning' must be a string")
-            if not isinstance(plan["action"], str):
-                raise ValueError("Field 'action' must be a string")
-            if not isinstance(plan["parameters"], str):
-                raise ValueError("Field 'parameters' must be a string")
+            if not isinstance(plan["command"], str):
+                raise ValueError("Field 'command' must be a string")
             if not isinstance(plan["is_final"], bool):
                 raise ValueError("Field 'is_final' must be a boolean")
 
-            # Validate action exists
-            if plan["action"] not in self.commands:
-                raise ValueError(f"Unknown action: {plan['action']}. Must be one of: {', '.join(self.commands.keys())}")
+            # Extract command name and validate it exists
+            command_parts = plan["command"].split(maxsplit=1)
+            command_name = command_parts[0]
+            if command_name not in self.commands:
+                raise ValueError(f"Unknown command: {command_name}. Must be one of: {', '.join(self.commands.keys())}")
 
             return plan
 
@@ -385,11 +402,35 @@ Available commands and their parameters:"""
                     return step_result
 
                 if self.is_task_complete():
-                    result = AutobotResult(
-                        success=True, data={"result": self.state.get("result"), "steps_taken": self.step_count}
-                    )
+                    # Get the final result from the last step
+                    final_result = None
+                    if step_result.data:
+                        if isinstance(step_result.data, dict):
+                            if "result" in step_result.data:
+                                final_result = step_result.data["result"]
+                            elif "final_result" in step_result.data:
+                                final_result = step_result.data["final_result"]
+                        else:
+                            final_result = step_result.data
+
+                    # If we have a final result from the last step, use it
+                    if final_result:
+                        self.state["result"] = final_result
+                    # Otherwise, generate a response based on the task and results
+                    else:
+                        # Get the last command result
+                        last_result = self.state.get("last_result")
+
+                        # Format a response based on the results
+                        if isinstance(last_result, dict) and "data" in last_result:
+                            self.state["result"] = last_result["data"]
+                        elif isinstance(last_result, (str, list, dict)):
+                            self.state["result"] = last_result
+                        else:
+                            self.state["result"] = "Task completed successfully"
+
                     self.state["status"] = "completed"
-                    return result
+                    return AutobotResult(success=True, data={"result": self.state["result"], "steps_taken": self.step_count})
 
         except Exception as e:
             self.logger.error(f"Error in task execution: {str(e)}")
@@ -403,9 +444,10 @@ Available commands and their parameters:"""
             # Plan next step
             plan = await self.plan_next_step(self.state)
 
-            # Execute the planned action
-            command = plan["action"]
-            parameters = plan["parameters"]
+            # Split command into name and parameters
+            command_parts = plan["command"].split(maxsplit=1)
+            command = command_parts[0]
+            param_str = command_parts[1] if len(command_parts) > 1 else ""
 
             try:
                 # If concluding with empty action, return summary
@@ -415,14 +457,15 @@ Available commands and their parameters:"""
                     self.state["status"] = "completed"
                     return AutobotResult(success=True, data={"result": summary})
 
-                result = await self.execute_command(command, parameters)
+                # Execute the command
+                result = await self.execute_command(command, param_str)
 
                 self.logger.info(f"Command result: {result}")
 
                 # Record the step
                 self.record_step(
                     action=command or "test_command",  # Use test_command for empty actions in tests
-                    input_data={"parameters": parameters},
+                    input_data={"command": plan["command"]},
                     output_data={"result": result},
                     reasoning=plan["reasoning"],
                     next_action="complete" if plan["is_final"] else "continue",

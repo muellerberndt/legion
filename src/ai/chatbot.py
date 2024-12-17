@@ -116,6 +116,9 @@ class Chatbot:
 
     async def execute_command(self, command: str, param_str: str) -> str:
         """Execute a registered command"""
+        # Remove preceding slash
+        command = command.lstrip("/")
+
         # Handle empty command case for conclusion
         if not command:
             return self.get_execution_summary()
@@ -139,8 +142,10 @@ class Chatbot:
             # Execute the command
             if isinstance(args, dict):
                 result = await handler(**args)
-            else:
+            elif args:  # Only pass args if we have any
                 result = await handler(*args)
+            else:  # No args case
+                result = await handler()
 
             return result
 
@@ -154,7 +159,23 @@ class Chatbot:
             # Add user message to history
             self._add_to_history("user", message)
 
-            # First get AI's understanding of the request
+            # Check if this is a direct command invocation
+            if message.startswith("/"):
+                command, args_str = self.command_parser.parse_command(message)
+                if command in self.commands:
+                    try:
+                        # Execute the command directly
+                        result = await self.execute_command(command, args_str)
+                        result = self._truncate_result(str(result))
+                        formatted_response = self._format_response(result)
+                        self._add_to_history("assistant", formatted_response)
+                        return formatted_response
+                    except Exception as e:
+                        error_msg = f"Error executing command: {str(e)}"
+                        self.logger.error(error_msg)
+                        return self._format_response(error_msg)
+
+            # For non-command messages, proceed with LLM processing
             plan = await chat_completion(
                 self.history
                 + [
@@ -176,7 +197,7 @@ Database schema:
 
 If a command is needed, respond with exactly:
 EXECUTE: command_name param1 param2 (...)
- For casual chat: Just respond normally
+For casual chat: Just respond normally
 
 Do not try to execute multiple commands or modify queries based on previous results. Execute one command and wait for the response.
 Do not use HTML formatting in your responses.""",
@@ -196,13 +217,8 @@ Do not use HTML formatting in your responses.""",
 
             # Parse command and parameters
             parts = command_line.split(" ", 1)
-            if len(parts) != 2:
-                error_msg = f"Invalid command format: {command_line}"
-                self.logger.error(error_msg)
-                return self._format_response(error_msg)
-
             command = parts[0]
-            params_str = parts[1].strip()
+            params_str = parts[1].strip() if len(parts) > 1 else ""
 
             try:
                 # Execute the command
@@ -211,17 +227,8 @@ Do not use HTML formatting in your responses.""",
                 # Truncate large results
                 result = self._truncate_result(str(result))
 
-                # Get AI to format the result nicely
-                summary_messages = self.history + [
-                    {
-                        "role": "system",
-                        "content": "Format these command results in a clear and helpful way. Do not use HTML formatting.",
-                    },
-                    {"role": "user", "content": result},
-                ]
-
-                formatted_response = await chat_completion(summary_messages)
-                formatted_response = self._format_response(formatted_response)
+                # Format the result nicely
+                formatted_response = self._format_response(result)
                 self._add_to_history("assistant", formatted_response)
                 return formatted_response
 

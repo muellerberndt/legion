@@ -63,9 +63,9 @@ keywords: tags that describe the project e.g. "Solidity"
 """
 
     examples = """
-- List projects: /db_query '{"from": "projects", "order_by": [{"field": "id", "direction": "desc"}], "limit": 10}'
-- Search events: /db_query '{"from": "event_logs", "order_by": [{"field": "created_at", "direction": "desc"}], "limit": 10}'
-- Filter by multiple conditions: /db_query '{"from": "event_logs", "where": [{"field": "handler_name", "op": "=", "value": "ProjectEventHandler"},{"field": "created_at", "op": ">", "value": "2024-01-01"}], "limit": 10}'
+- List projects: db_query '{"from": "projects", "order_by": [{"field": "id", "direction": "desc"}], "limit": 10}'
+- Search events: db_query '{"from": "event_logs", "order_by": [{"field": "created_at", "direction": "desc"}], "limit": 10}'
+- Filter by multiple conditions: db_query '{"from": "event_logs", "where": [{"field": "handler_name", "op": "=", "value": "ProjectEventHandler"},{"field": "created_at", "op": ">", "value": "2024-01-01"}], "limit": 10}'
 """
 
     return f"""Database Schema:
@@ -75,8 +75,11 @@ keywords: tags that describe the project e.g. "Solidity"
 
 {examples}
 
-First argument must be a JSON string containing the query specification.
-Only the following tables are accessible: {', '.join(sorted(ALLOWED_TABLES))}.
+First argument must be a JSON string containing the query specification in quotes, e.g.:
+
+db_query '{{"from": "projects", "order_by": [{{"field": "id", "direction": "desc"}}], "limit": 10}}'
+
+The following tables are accessible: {', '.join(sorted(ALLOWED_TABLES))}.
 
 Query format:
 - "from": Required. One of: {', '.join(sorted(ALLOWED_TABLES))}
