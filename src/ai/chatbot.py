@@ -37,23 +37,25 @@ class Chatbot:
 
         # Add command descriptions
         command_descriptions = []
-        for name, spec in self.commands.items():
+        for name, cmd in self.commands.items():
             # Build parameter string
             params = []
-            if spec.arguments:
-                for arg in spec.arguments:
-                    param = f"<{arg.name}>" if arg.required else f"[{arg.name}]"
-                    params.append(param)
+            if cmd.arguments:
+                for arg in cmd.arguments:
+                    if arg.required:
+                        params.append(f"<{arg.name}>")
+                    else:
+                        params.append(f"[{arg.name}]")
 
             param_str = " ".join(params)
 
             # Build command description with help text and agent hint
-            command_desc = [f"/{name} {param_str}", spec.description]
+            command_desc = [f"/{name} {param_str}", cmd.description]
 
-            if spec.help_text:
-                command_desc.append(f"Help: {spec.help_text}")
-            if spec.agent_hint:
-                command_desc.append(f"Usage hint: {spec.agent_hint}")
+            if cmd.help_text:
+                command_desc.append(f"Help: {cmd.help_text}")
+            if cmd.agent_hint:
+                command_desc.append(f"Usage hint: {cmd.agent_hint}")
 
             command_descriptions.append("\n".join(command_desc))
 
@@ -173,17 +175,8 @@ Database schema:
   project_assets.asset_id references assets.id
 
 If a command is needed, respond with exactly:
-EXECUTE: command_name param=value
-
-Example responses:
-- For casual chat: Just respond normally
-- For listing projects: EXECUTE: db_query query='{"from": "projects", "limit": 5}'
-- For finding project assets: EXECUTE: db_query query='{"from": "assets", "join": {"table": "project_assets", "on": {"id": "asset_id"}}, "join": {"table": "projects", "on": {"project_id": "id"}}, "where": [{"field": "projects.name", "op": "ilike", "value": "%ProjectName%"}], "limit": 10}'
-- For latest Solidity project: EXECUTE: db_query query='{"from": "projects", "where": [{"field": "keywords", "op": "@>", "value": ["Solidity"]}], "order_by": [{"field": "created_at", "direction": "desc"}], "limit": 1}'
-
-Note:
-- When joining tables through an association table, you need to join through project_assets first, then to projects.
-- To search in JSON arrays like keywords, use the "@>" operator with an array value: {"op": "@>", "value": ["Keyword"]}
+EXECUTE: command_name param1 param2 (...)
+ For casual chat: Just respond normally
 
 Do not try to execute multiple commands or modify queries based on previous results. Execute one command and wait for the response.
 Do not use HTML formatting in your responses.""",

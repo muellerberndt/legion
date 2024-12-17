@@ -105,16 +105,16 @@ class BaseAgent:
             param_str = param_str[1:-1].strip()
 
         # Special handling for db_query
-        if command == "db_query":
-            if param_str.startswith("query="):
-                param_str = param_str[6:].strip()
-            try:
-                query_json = json.loads(param_str)
-                if "limit" not in query_json:
-                    query_json["limit"] = 10
-                return [], {"query": query_json}
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid query format: {str(e)}")
+        # if command == "db_query":
+        #     if param_str.startswith("query="):
+        #         param_str = param_str[6:].strip()
+        #     try:
+        #         query_json = json.loads(param_str)
+        #         if "limit" not in query_json:
+        #             query_json["limit"] = 10
+        #         return [], {"query": query_json}
+        #     except json.JSONDecodeError as e:
+        #         raise ValueError(f"Invalid query format: {str(e)}")
 
         # Get command spec
         cmd_spec = self.commands.get(command)

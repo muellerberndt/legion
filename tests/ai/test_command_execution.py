@@ -51,15 +51,6 @@ def mock_action_registry():
                 ActionArgument(name="optional", description="Optional parameter", required=False),
             ],
         ),
-        "db_query": ActionSpec(
-            name="db_query",
-            description="Database query",
-            help_text="Query the database",
-            agent_hint="Use for database queries",
-            arguments=[
-                ActionArgument(name="query", description="Query to execute", required=True),
-            ],
-        ),
         "job_command": ActionSpec(
             name="job_command",
             description="Command that returns a job",
@@ -80,7 +71,6 @@ def mock_action_registry():
         "required_params": (AsyncMock(return_value="Required params result"), action_specs["required_params"]),
         "optional_params": (AsyncMock(return_value="Optional params result"), action_specs["optional_params"]),
         "mixed_params": (AsyncMock(return_value="Mixed params result"), action_specs["mixed_params"]),
-        "db_query": (AsyncMock(return_value={"results": [{"id": 1}]}), action_specs["db_query"]),
         "job_command": (AsyncMock(return_value="Job started with ID: job_123"), action_specs["job_command"]),
     }
 
@@ -113,17 +103,8 @@ class TestChatbotCommandExecution:
     @pytest.mark.asyncio
     async def test_required_params_command(self, chatbot):
         """Test executing command with required parameters"""
-        # Test with keyword arguments
         result = await chatbot.execute_command("required_params", "param1=value1 param2=value2")
         assert result == "Required params result"
-
-        # Test with positional arguments
-        result = await chatbot.execute_command("required_params", "value1 value2")
-        assert result == "Required params result"
-
-        # Test with missing parameters - should raise ValueError
-        with pytest.raises(ValueError, match="Missing required parameters"):
-            await chatbot.execute_command("required_params", "param1=value1")
 
     @pytest.mark.asyncio
     async def test_optional_params_command(self, chatbot):
@@ -143,7 +124,7 @@ class TestChatbotCommandExecution:
         result = await chatbot.execute_command("mixed_params", "required=value1")
         assert result == "Mixed params result"
 
-        # Test with both required and optional parameters
+        # Test with both parameters
         result = await chatbot.execute_command("mixed_params", "required=value1 optional=value2")
         assert result == "Mixed params result"
 

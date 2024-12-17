@@ -63,15 +63,9 @@ keywords: tags that describe the project e.g. "Solidity"
 """
 
     examples = """
-- List projects: {{"from": "projects", "order_by": [{{"field": "id", "direction": "desc"}}], "limit": 10}}
-- Search assets: {{"from": "assets", "where": [{{"field": "asset_type", "op": "=", "value": "github_repo"}}]}}
-- Recent events: {{"from": "event_logs", "order_by": [{{"field": "created_at", "direction": "desc"}}], "limit": 10}}
-- Search events by handler: {{"from": "event_logs", "where": [{{"field": "handler_name", "op": "=", "value": "ProjectEventHandler"}}], "limit": 5}}
-- Get event details: {{"from": "event_logs", "select": ["id", "handler_name", "trigger", "result", "created_at"]}}
-- Filter by multiple conditions: {{"from": "event_logs", "where": [
-    {{"field": "handler_name", "op": "=", "value": "ProjectEventHandler"}},
-    {{"field": "created_at", "op": ">", "value": "2024-01-01"}}
-  ]}}
+- List projects: /db_query '{"from": "projects", "order_by": [{"field": "id", "direction": "desc"}], "limit": 10}'
+- Search events: /db_query '{"from": "event_logs", "order_by": [{"field": "created_at", "direction": "desc"}], "limit": 10}'
+- Filter by multiple conditions: /db_query '{"from": "event_logs", "where": [{"field": "handler_name", "op": "=", "value": "ProjectEventHandler"},{"field": "created_at", "op": ">", "value": "2024-01-01"}], "limit": 10}'
 """
 
     return f"""Database Schema:
@@ -91,4 +85,9 @@ Query format:
   - Operators: "=", "!=", ">", "<", ">=", "<=", "like", "ilike", "in", "not in", "is null", "is not null"
 - "order_by": Optional. List of sort specifications with format: {{"field": "column_name", "direction": "asc|desc"}}
 - "limit": Optional. Number of results to return
-- "offset": Optional. Number of results to skip"""
+- "offset": Optional. Number of results to skip
+
+Note:
+- When joining tables through an association table, you need to join through project_assets first, then to projects.
+- To search in JSON arrays like keywords, use the "@>" operator with an array value: {{"op": "@>", "value": ["Keyword"]}}
+"""

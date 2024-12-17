@@ -44,14 +44,14 @@ class DBQueryAction(BaseAction, DBSessionMixin):
             query: JSON string containing the query specification
 
         Returns:
-            JSON string containing query results
+            Formatted string containing query results
         """
         try:
             # Parse query spec
             try:
                 spec = json.loads(query)
             except json.JSONDecodeError:
-                return json.dumps({"error": "Invalid JSON query specification"})
+                return '❌ Invalid query format. Query must be a valid JSON string.\n\nExample:\n```\n{\n  "from": "projects",\n  "where": [\n    {\n      "field": "name",\n      "op": "ilike",\n      "value": "test"\n    }\n  ]\n}\n```'
 
             # Build and execute query
             try:
@@ -75,23 +75,28 @@ class DBQueryAction(BaseAction, DBSessionMixin):
                             # Handle SQLAlchemy model objects
                             results.append(self._serialize_value(row))
 
-                    # Add count and truncate if needed
+                    # Format results
                     total_count = len(results)
+                    if total_count == 0:
+                        return "No results found."
+
+                    lines = [f"📊 Found {total_count} results:"]
+
+                    # Add truncation note if needed
                     if total_count > 100:
                         results = results[:100]
-                        return json.dumps(
-                            {
-                                "count": total_count,
-                                "results": results,
-                                "note": f"Results truncated to 100 of {total_count} total matches",
-                            }
-                        )
+                        lines.append(f"(Showing first 100 of {total_count} results)\n")
 
-                    return json.dumps({"count": total_count, "results": results})
+                    # Format each result
+                    for i, result in enumerate(results, 1):
+                        lines.append(f"\n{i}. {json.dumps(result, indent=2)}")
+
+                    return "\n".join(lines)
 
             except Exception as e:
-                return json.dumps({"error": f"Error executing query: {str(e)}"})
+                self.logger.error(f"Error executing query: {str(e)}")
+                return f"❌ Error executing query: {str(e)}"
 
         except Exception as e:
             self.logger.error(f"Query execution failed: {str(e)}")
-            return json.dumps({"error": f"Query execution failed: {str(e)}"})
+            return f"❌ Query execution failed: {str(e)}"

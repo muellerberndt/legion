@@ -18,7 +18,9 @@ class CommandParser:
         Returns:
             Tuple of (command_name, raw_args_string)
         """
-        parts = message.lstrip("/").split(None, 1)
+        # Split only on the first whitespace to preserve quotes in args
+        message = message.lstrip("/")
+        parts = message.split(None, 1)
         command = parts[0] if parts else ""
         args_str = parts[1] if len(parts) > 1 else ""
         return command, args_str
@@ -38,25 +40,46 @@ class CommandParser:
             return []
 
         try:
-            # Use shlex to handle all quoting and escaping
-            parts = shlex.split(args_str)
+            # Use shlex with posix=True to handle quotes properly
+            parts = shlex.split(args_str, posix=True)
 
-            # If any part contains '=', treat as key=value pairs
-            if any("=" in part for part in parts):
+            # Check if we have key=value pairs
+            if any("=" in part and not part.startswith("=") for part in parts):
                 kwargs = {}
+                current_key = None
+                current_value = []
+
                 for part in parts:
-                    if "=" not in part:
+                    if "=" in part and not part.startswith("="):
+                        # If we have a previous key, store it
+                        if current_key:
+                            kwargs[current_key] = " ".join(current_value)
+
+                        # Start new key=value pair
+                        key, value = part.split("=", 1)
+                        current_key = key.strip()
+                        current_value = [value.strip()] if value else []
+                    elif current_key:
+                        # Append to current value
+                        current_value.append(part)
+                    else:
+                        # Handle case where first part doesn't contain =
                         continue
-                    key, value = part.split("=", 1)
-                    kwargs[key.strip()] = value.strip()
+
+                # Store the last key=value pair
+                if current_key:
+                    kwargs[current_key] = " ".join(current_value)
+
                 return kwargs
 
-            # Otherwise return as positional arguments
+            # Return as positional arguments
             return parts
 
-        except ValueError:
-            # If shlex fails, return as single argument
-            return [args_str.strip()]
+        except ValueError as e:
+            # If shlex fails, try to handle as a single argument
+            if spec and len(spec.arguments) == 1:
+                return [args_str.strip()]
+            raise ValueError(f"Failed to parse arguments: {str(e)}")
 
     @staticmethod
     def validate_arguments(args: Union[List[str], Dict[str, str]], spec: Optional[ActionSpec] = None) -> bool:
@@ -93,6 +116,10 @@ class CommandParser:
                     raise ValueError(f"Unknown parameters: {', '.join(unknown)}")
 
         else:  # List of positional arguments
+            # For single argument commands, join all args if needed
+            if spec and len(spec.arguments) == 1:
+                return True  # Already handled in parse_arguments
+
             required_params = [arg.name for arg in spec.arguments if arg.required]
             if required_params and len(args) < len(required_params):
                 raise ValueError(f"Not enough arguments. Required: {len(required_params)}, got: {len(args)}")
