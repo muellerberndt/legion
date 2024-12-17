@@ -43,14 +43,45 @@ class CommandParser:
             # Use shlex with posix=True to handle quotes properly
             parts = shlex.split(args_str, posix=True)
 
-            # Check if we have key=value pairs
-            if any("=" in part and not part.startswith("=") for part in parts):
+            # Check if any unquoted part contains =
+            # We can detect this by comparing the original string with the split parts
+            is_key_value = False
+            start_idx = 0
+            for part in parts:
+                # Find this part in the original string
+                while start_idx < len(args_str):
+                    # Skip whitespace
+                    while start_idx < len(args_str) and args_str[start_idx].isspace():
+                        start_idx += 1
+
+                    # If we find a quote, this part was quoted
+                    if start_idx < len(args_str) and args_str[start_idx] in "\"'":
+                        break
+
+                    # If we find an equals sign before the part, it's a key-value pair
+                    if start_idx < len(args_str) and args_str[start_idx] == "=":
+                        is_key_value = True
+                        break
+
+                    # If we find the part and it contains an equals sign, it's a key-value pair
+                    if start_idx < len(args_str) and args_str.startswith(part, start_idx) and "=" in part:
+                        is_key_value = True
+                        break
+
+                    start_idx += 1
+
+                if is_key_value:
+                    break
+
+            if is_key_value:
                 kwargs = {}
                 current_key = None
                 current_value = []
 
                 for part in parts:
-                    if "=" in part and not part.startswith("="):
+                    # Only split on = if the part isn't quoted (doesn't start/end with quotes)
+                    is_quoted = (part.startswith('"') and part.endswith('"')) or (part.startswith("'") and part.endswith("'"))
+                    if "=" in part and not is_quoted:
                         # If we have a previous key, store it
                         if current_key:
                             kwargs[current_key] = " ".join(current_value)
@@ -76,9 +107,6 @@ class CommandParser:
             return parts
 
         except ValueError as e:
-            # If shlex fails, try to handle as a single argument
-            if spec and len(spec.arguments) == 1:
-                return [args_str.strip()]
             raise ValueError(f"Failed to parse arguments: {str(e)}")
 
     @staticmethod

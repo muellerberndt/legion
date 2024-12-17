@@ -11,7 +11,7 @@ import telegram
 from src.util.command_parser import CommandParser
 from src.actions.result import ActionResult, ResultType
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class TelegramInterface(Interface):
@@ -32,111 +32,105 @@ class TelegramInterface(Interface):
         """Format an ActionResult for Telegram output"""
         # Handle error results first
         if result.type == ResultType.ERROR:
-            return f"❌ Error: {result.error or result.content}"
+            return self._format_error_result(result)
 
         # Handle empty results
         if result.content is None:
             return "No results available."
 
-        if result.type == ResultType.TEXT:
-            return str(result.content)
+        # Dispatch to appropriate formatter based on type
+        formatters = {
+            ResultType.TEXT: self._format_text_result,
+            ResultType.LIST: self._format_list_result,
+            ResultType.TREE: self._format_tree_result,
+            ResultType.JSON: self._format_json_result,
+        }
 
-        elif result.type == ResultType.LIST:
-            items = result.content
-            if not items:
-                return "No items found."
+        formatter = formatters.get(result.type, str)
+        return formatter(result)
 
-            # Get total count from metadata if available
-            total = result.metadata.get("total", len(items)) if result.metadata else len(items)
-            lines = [f"📋 Found {total} items:"]
+    def _format_error_result(self, result: ActionResult) -> str:
+        """Format an error result"""
+        return f"❌ Error: {result.error or result.content}"
 
-            # Add truncation note if needed
-            if result.metadata and "truncated" in result.metadata:
-                lines.append(f"(Showing first {len(items)} of {total} items)\n")
+    def _format_text_result(self, result: ActionResult) -> str:
+        """Format a text result"""
+        return str(result.content)
 
-            # Format each item
-            for i, item in enumerate(items, 1):
-                lines.append(f"{i}. {str(item)}")
+    def _format_list_result(self, result: ActionResult) -> str:
+        """Format a list result"""
+        items = result.content
+        if not items:
+            return "No items found."
 
-            return "\n".join(lines)
+        # Get total count from metadata if available
+        total = result.metadata.get("total", len(items)) if result.metadata else len(items)
+        lines = [f"📋 Found {total} items:"]
 
-        elif result.type == ResultType.TABLE:
-            if not isinstance(result.content, dict) or "headers" not in result.content or "rows" not in result.content:
-                return str(result.content)
+        # Add truncation note if needed
+        if result.metadata and "truncated" in result.metadata:
+            lines.append(f"(Showing first {len(items)} of {total} items)\n")
 
-            headers = result.content["headers"]
-            rows = result.content["rows"]
-            if not rows:
-                return "No data found."
+        # Format each item
+        for i, item in enumerate(items, 1):
+            lines.append(f"{i}. {str(item)}")
 
-            # Calculate column widths
-            widths = [len(str(h)) for h in headers]
-            for row in rows:
-                for i, cell in enumerate(row):
-                    widths[i] = max(widths[i], len(str(cell)))
+        return "\n".join(lines)
 
-            # Format table
-            lines = []
+    def _format_tree_result(self, result: ActionResult) -> str:
+        """Format a tree result"""
+        return "\n".join(self._format_tree_data(result.content))
 
-            # Add header
-            header_line = " | ".join(str(h).ljust(w) for h, w in zip(headers, widths))
-            lines.append(header_line)
-            lines.append("-" * len(header_line))
+    def _format_tree_data(self, data: Dict[str, Any], level: int = 0) -> List[str]:
+        """Format tree data recursively"""
+        lines = []
+        indent = "  " * level
+        for key, value in data.items():
+            formatted_value = self._format_tree_value(key, value, level)
+            if formatted_value is not None:
+                lines.extend(formatted_value)
+            else:
+                lines.append(f"{indent}{key}: {str(value)}")
+        return lines
 
-            # Add rows
-            for row in rows:
-                lines.append(" | ".join(str(cell).ljust(w) for cell, w in zip(row, widths)))
+    def _format_tree_value(self, key: str, value: Any, level: int) -> Optional[List[str]]:
+        """Format a single value in the tree"""
+        indent = "  " * level
+        if hasattr(value, "value"):
+            return [f"{indent}{key}: {self._format_status_value(key, value.value)}"]
+        elif isinstance(value, dict):
+            return [f"{indent}{key}:"] + self._format_tree_data(value, level + 1)
+        elif isinstance(value, list):
+            return self._format_tree_list(key, value, level)
+        return None
 
-            return "```\n" + "\n".join(lines) + "\n```"
+    def _format_status_value(self, key: str, value: str) -> str:
+        """Format a status value with emoji"""
+        if key == "Status":
+            status_emojis = {
+                "running": "🏃 Running",
+                "completed": "✅ Completed",
+                "failed": "❌ Failed",
+                "cancelled": "⛔️ Cancelled",
+                "pending": "⏳ Pending",
+            }
+            return status_emojis.get(value, value)
+        return value
 
-        elif result.type == ResultType.TREE:
+    def _format_tree_list(self, key: str, items: List[Any], level: int) -> List[str]:
+        """Format a list in the tree"""
+        lines = [f"{'  ' * level}{key}:"]
+        for item in items:
+            if isinstance(item, dict):
+                lines.extend(self._format_tree_data(item, level + 1))
+            else:
+                lines.append(f"{'  ' * (level + 1)}• {str(item)}")
+        return lines
 
-            def format_tree(data: Dict[str, Any], level: int = 0) -> List[str]:
-                lines = []
-                indent = "  " * level
-                for key, value in data.items():
-                    # Format value first
-                    if hasattr(value, "value"):  # Handle enum values
-                        formatted_value = value.value
-                        # Add emoji based on status
-                        if key == "Status":
-                            if formatted_value == "running":
-                                formatted_value = "🏃 Running"
-                            elif formatted_value == "completed":
-                                formatted_value = "✅ Completed"
-                            elif formatted_value == "failed":
-                                formatted_value = "❌ Failed"
-                            elif formatted_value == "cancelled":
-                                formatted_value = "⛔️ Cancelled"
-                            elif formatted_value == "pending":
-                                formatted_value = "⏳ Pending"
-                    elif isinstance(value, dict):
-                        lines.append(f"{indent}{key}:")
-                        lines.extend(format_tree(value, level + 1))
-                        continue
-                    elif isinstance(value, list):
-                        lines.append(f"{indent}{key}:")
-                        for item in value:
-                            if isinstance(item, dict):
-                                lines.extend(format_tree(item, level + 1))
-                            else:
-                                lines.append(f"{indent}  • {str(item)}")
-                        continue
-                    else:
-                        formatted_value = str(value)
-
-                    lines.append(f"{indent}{key}: {formatted_value}")
-                return lines
-
-            return "\n".join(format_tree(result.content))
-
-        elif result.type == ResultType.JSON:
-            # Format JSON with proper indentation
-            formatted_json = json.dumps(result.content, indent=2)
-            return f"```json\n{formatted_json}\n```"
-
-        else:
-            return str(result.content)
+    def _format_json_result(self, result: ActionResult) -> str:
+        """Format a JSON result"""
+        formatted_json = json.dumps(result.content, indent=2)
+        return f"```json\n{formatted_json}\n```"
 
     def _create_command_handler(self, command_name: str, action_handler):
         """Create a command handler function for a specific command"""

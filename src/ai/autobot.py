@@ -101,7 +101,7 @@ class Autobot:
         base_prompt += "CRITICAL INSTRUCTIONS:\n"
         base_prompt += "1. Don't truncate your output. Always show complete results.\n"
         base_prompt += "3. ALWAYS quote arguments that contain spaces or special characters, e.g.:\n"
-        base_prompt += "db_query '{'from': 'projects', 'order_by': [{'field': 'id', 'direction': 'desc'}], 'limit': 10}'\n"
+        base_prompt += '/file_search "is Ownable"\n'
 
         if self.commands:
             base_prompt += "Available commands:\n\n"

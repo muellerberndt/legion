@@ -28,7 +28,6 @@ Example:
     )
 
     def __init__(self):
-        BaseAction.__init__(self)
         self.logger = Logger("ListJobsAction")
 
     async def execute(self, *args, **kwargs) -> ActionResult:
@@ -40,21 +39,18 @@ Example:
             if not jobs:
                 return ActionResult.text("No jobs found.")
 
-            # Format as table
-            headers = ["ID", "Type", "Status", "Started", "Completed"]
-            rows = []
+            # Format as list
+            lines = []
             for job in jobs:
-                rows.append(
-                    [
-                        job["id"],
-                        job["type"],
-                        job["status"],
-                        job["started_at"] or "Not started",
-                        job["completed_at"] or "Not completed",
-                    ]
-                )
+                lines.append(f"🔹 Job {job['id']}")
+                lines.append(f"  Type: {job['type']}")
+                lines.append(f"  Status: {job['status']}")
+                lines.append(f"  Started: {job['started_at'] or 'Not started'}")
+                if job["completed_at"]:
+                    lines.append(f"  Completed: {job['completed_at']}")
+                lines.append("")  # Empty line between jobs
 
-            return ActionResult.table(headers=headers, rows=rows)
+            return ActionResult.text("\n".join(lines))
 
         except Exception as e:
             self.logger.error(f"Failed to list jobs: {str(e)}")

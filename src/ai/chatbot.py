@@ -136,16 +136,20 @@ class Chatbot:
 
         try:
             # Parse and validate arguments
-            args = self.command_parser.parse_arguments(param_str, spec)
+            if isinstance(param_str, list):
+                # If we already have a list of parameters, use them directly
+                args = param_str
+            else:
+                # Parse arguments
+                args = self.command_parser.parse_arguments(param_str, spec)
+
             self.command_parser.validate_arguments(args, spec)
 
             # Execute the command
             if isinstance(args, dict):
                 result = await handler(**args)
-            elif args:  # Only pass args if we have any
+            else:
                 result = await handler(*args)
-            else:  # No args case
-                result = await handler()
 
             return result
 

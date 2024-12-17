@@ -53,31 +53,61 @@ class DBQueryAction(BaseAction, DBSessionMixin):
                 query = query_builder.build()  # Build the SQLAlchemy query
                 with self.get_session() as session:
                     results = []
+                    columns = set()  # Track all columns for table headers
+
+                    # First pass: collect all possible columns
                     for row in session.execute(query).all():
                         if hasattr(row, "_mapping"):
                             # Handle SQLAlchemy Result rows
                             result = {}
                             for key in row._mapping.keys():
-                                result[key] = self._serialize_value(row._mapping.get(key))
+                                value = row._mapping.get(key)
+                                # Handle nested objects (e.g. Project.name -> project_name)
+                                if hasattr(value, "__table__"):
+                                    for col in value.__table__.columns:
+                                        col_name = f"{value.__table__.name.lower()}_{col.name}"
+                                        result[col_name] = self._serialize_value(getattr(value, col.name))
+                                        columns.add(col_name)
+                                else:
+                                    result[key] = self._serialize_value(value)
+                                    columns.add(key)
                             results.append(result)
                         else:
                             # Handle SQLAlchemy model objects
-                            results.append(self._serialize_value(row))
+                            result = self._serialize_value(row)
+                            columns.update(result.keys())
+                            results.append(result)
 
                     # Format results
                     total_count = len(results)
                     if total_count == 0:
                         return ActionResult.text("No results found.")
 
-                    # Format results with summary line
-                    summary = f"Found {total_count} results"
-                    if total_count > 100:
-                        summary += " (Showing first 100)"
-                        results = results[:100]
+                    # Convert results to CSV format
+                    headers = sorted(list(columns))  # Sort columns for consistent order
+                    csv_lines = [",".join(headers)]  # Header row
 
-                    # Return as formatted text with JSON data
-                    result_text = summary + ":\n" + json.dumps(results, indent=2)
-                    return ActionResult.text(result_text)
+                    for result in results:
+                        row = []
+                        for header in headers:
+                            value = result.get(header)
+                            # Format special values
+                            if isinstance(value, (list, dict)):
+                                value = json.dumps(value).replace('"', '""')  # Escape quotes for CSV
+                            elif value is None:
+                                value = ""
+                            else:
+                                value = str(value).replace('"', '""')  # Escape quotes for CSV
+                            # Quote the value if it contains commas, quotes, or newlines
+                            if any(c in str(value) for c in ',""\n\r'):
+                                value = f'"{value}"'
+                            row.append(value)
+                        csv_lines.append(",".join(row))
+
+                    # Add summary to metadata
+                    metadata = {"summary": f"Found {total_count} results", "total": total_count}
+
+                    return ActionResult.text(f"{metadata['summary']}\n\n```\n{chr(10).join(csv_lines)}\n```")
 
             except Exception as e:
                 self.logger.error(f"Error executing query: {str(e)}")

@@ -1,8 +1,10 @@
 import pytest
 from src.actions.db_query import DBQueryAction
 import json
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from src.util.logging import Logger
+from src.actions.base import BaseAction
+from src.backend.database import DBSessionMixin
 
 logger = Logger("TestDBQuery")
 
@@ -38,48 +40,60 @@ def mock_query_builder():
 
 @pytest.mark.asyncio
 async def test_db_query_action(mock_session, mock_query_builder):
-    action = DBQueryAction()
+    # Create mocks for base class __init__ methods
+    base_init = Mock(return_value=None)
+    db_init = Mock(return_value=None)
 
-    # Test valid query
-    query_spec = {"from": "assets", "where": [{"field": "asset_type", "op": "=", "value": "github_file"}]}
+    with (
+        patch.object(BaseAction, "__init__", base_init),
+        patch.object(DBSessionMixin, "__init__", db_init),
+        patch.object(DBSessionMixin, "get_session", return_value=mock_session),
+    ):
 
-    logger.info(f"Executing query with spec: {query_spec}")
-    result = await action.execute(json.dumps(query_spec))
-    logger.info(f"Got result: {result}")
+        action = DBQueryAction()
+        action.logger = Mock()
+        action.query_builder = mock_query_builder
 
-    # Result should be a string containing JSON data
-    assert "Found 1 results:" in result
-    assert "test-id" in result
-    assert "github_file" in result
-    assert "https://github.com/test/repo" in result
+        # Test valid query
+        query_spec = {"from": "assets", "where": [{"field": "asset_type", "op": "=", "value": "github_file"}]}
 
-    # Test invalid JSON
-    result = await action.execute("invalid json")
-    assert "Invalid query format" in result
+        logger.info(f"Executing query with spec: {query_spec}")
+        result = await action.execute(json.dumps(query_spec))
+        logger.info(f"Got result: {result}")
 
-    # Test invalid query spec
-    mock_query_builder.from_spec.side_effect = ValueError("Invalid query")
-    result = await action.execute('{"invalid": "spec"}')
-    assert "Error executing query" in result
+        result_str = str(result)
+        # Result should be a string containing CSV data
+        assert "Found 1 results" in result_str
+        assert "```" in result_str  # Check for code block formatting
+        assert "asset_type,id,source_url" in result_str  # Check CSV headers (alphabetically sorted)
+        assert "github_file,test-id,https://github.com/test/repo" in result_str  # Check CSV data
 
-    # Reset mock for remaining tests
-    mock_query_builder.from_spec.side_effect = None
+        # Test invalid JSON
+        result = await action.execute("invalid json")
+        assert "Invalid query format" in str(result)
 
-    # Test query with no results
-    mock_session.execute.return_value.all.return_value = []
-    result = await action.execute(json.dumps(query_spec))
-    assert "No results found." in result
+        # Test invalid query spec
+        mock_query_builder.from_spec.side_effect = ValueError("Invalid query")
+        result = await action.execute('{"invalid": "spec"}')
+        assert "Error executing query" in str(result)
 
-    # Test query with many results
-    many_results = []
-    for i in range(150):
-        row = Mock()
-        mapping_dict = {"id": f"test-{i}"}
-        row._mapping = mapping_dict
-        many_results.append(row)
+        # Reset mock for remaining tests
+        mock_query_builder.from_spec.side_effect = None
 
-    mock_session.execute.return_value.all.return_value = many_results
+        # Test query with no results
+        mock_session.execute.return_value.all.return_value = []
+        result = await action.execute(json.dumps(query_spec))
+        assert "No results found." in str(result)
 
-    result = await action.execute(json.dumps(query_spec))
-    assert "Found 150 results" in result
-    assert "(Showing first 100" in result
+        # Test query with special characters
+        result_row = Mock()
+        mapping_dict = {"id": "test,id", "description": 'test"description', "list_field": ["item1", "item2"]}
+        result_row._mapping = mapping_dict
+        mock_session.execute.return_value.all.return_value = [result_row]
+
+        result = await action.execute(json.dumps(query_spec))
+        result_str = str(result)
+        assert "Found 1 results" in result_str
+        assert '"test,id"' in result_str  # Value with comma should be quoted
+        assert '"test""description"' in result_str  # Quotes should be escaped
+        assert '"[""item1"", ""item2""]"' in result_str  # Lists should be JSON-stringified and quoted
