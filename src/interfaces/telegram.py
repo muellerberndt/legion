@@ -12,10 +12,14 @@ from src.util.command_parser import CommandParser
 from src.actions.result import ActionResult, ResultType
 import json
 from typing import Any, Dict, List, Optional
+import tempfile
+import re
 
 
 class TelegramInterface(Interface):
     """Telegram bot interface"""
+
+    MAX_MESSAGE_LENGTH = 4096  # Telegram's message length limit
 
     def __init__(self, action_registry: ActionRegistry):
         super().__init__()
@@ -351,19 +355,41 @@ class TelegramInterface(Interface):
             await self.send_message(f"Sorry, I encountered an error: {str(e)}", session_id)
 
     async def send_message(self, content: str, session_id: str) -> None:
-        """Send a message to a specific chat"""
+        """Send a message to a specific chat, handling long content appropriately"""
         if not self.app or not self.app.bot:
             self.logger.error("Bot not initialized")
             return
+
         try:
-            # Use TelegramService to handle message sending with proper size handling
-            service = TelegramService.get_instance()
-            service.chat_id = session_id  # Set the target chat ID
-            await service.send_message(content)
+            # Truncate content if needed
+            truncated, full_content = self._truncate_content(content)
+            
+            # Send truncated message
+            await self.app.bot.send_message(chat_id=session_id, text=truncated)
+            
+            # If content was truncated, send full version as HTML
+            if full_content:
+                html_content = self._format_as_html(full_content)
+                
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.html', encoding='utf-8') as f:
+                    f.write(html_content)
+                    f.flush()
+                    
+                    # Send the HTML file
+                    await self.app.bot.send_document(
+                        chat_id=session_id,
+                        document=open(f.name, 'rb'),
+                        caption="Full response (formatted as HTML)"
+                    )
 
         except Exception as e:
             self.logger.error(f"Failed to send message: {e}")
-            raise
+            # Try to send error message
+            try:
+                error_msg = f"Error sending message: {str(e)}"
+                await self.app.bot.send_message(chat_id=session_id, text=error_msg)
+            except:
+                self.logger.error("Failed to send error message")
 
     async def stop(self) -> None:
         """Stop the interface"""
@@ -517,15 +543,16 @@ class TelegramInterface(Interface):
                 command, args_str = self.command_parser.parse_command(text)
                 result = await self._handle_command(command, args_str, chat_id)
                 if result:
-                    await update.message.reply_text(str(result))
+                    await self.send_message(str(result), chat_id)
             else:
-                # For non-command messages, use the agent for natural language processing
+                # For non-command messages, use the agent
                 agent = self._get_or_create_agent(chat_id)
-                await agent.process_message(text, update.message)
+                await agent.process_message(text, 
+                    update_callback=lambda msg: self.send_message(msg, chat_id))
         except Exception as e:
             error_msg = f"Error processing message: {str(e)}"
             self.logger.error(error_msg)
-            await update.message.reply_text(error_msg)
+            await self.send_message(error_msg, chat_id)
 
     async def _handle_command(self, command: str, args_str: str, chat_id: str) -> Any:
         """Handle a command message"""
@@ -555,9 +582,106 @@ class TelegramInterface(Interface):
 
     async def _send_update(self, chat_id: str, message: str) -> None:
         """Send a status update to a specific chat"""
-        try:
-            service = TelegramService.get_instance()
-            service.chat_id = chat_id
-            await service.send_message(message)
-        except Exception as e:
-            self.logger.error(f"Failed to send status update: {e}")
+        await self.send_message(message, chat_id)
+
+    def _format_as_html(self, content: str) -> str:
+        """Format content as HTML with nice styling"""
+        html = """
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
+                table { border-collapse: collapse; width: 100%; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th { background-color: #f5f5f5; }
+                .tree-view { font-family: monospace; }
+                .tree-view .node { margin-left: 20px; }
+                .json { color: #333; }
+                .json .key { color: #0066cc; }
+                .json .string { color: #008800; }
+                .json .number { color: #aa0000; }
+                .json .boolean { color: #aa0000; }
+            </style>
+        </head>
+        <body>
+        """
+
+        # Try to detect and format different types of content
+        if content.strip().startswith(("{", "[")):
+            try:
+                # Format JSON with syntax highlighting
+                data = json.loads(content)
+                formatted = json.dumps(data, indent=2)
+                html += "<pre class='json'>"
+                # Add basic syntax highlighting
+                formatted = formatted.replace('"', '&quot;')
+                formatted = re.sub(r'(".*?"):', r'<span class="key">\1</span>:', formatted)
+                formatted = re.sub(r': "(.+?)"', r': <span class="string">&quot;\1&quot;</span>', formatted)
+                formatted = re.sub(r': (\d+)', r': <span class="number">\1</span>', formatted)
+                formatted = re.sub(r': (true|false)', r': <span class="boolean">\1</span>', formatted)
+                html += formatted
+                html += "</pre>"
+            except json.JSONDecodeError:
+                html += f"<pre>{content}</pre>"
+        elif "\n" in content and "|" in content:
+            # Looks like a table, convert to HTML table
+            rows = [row.strip().split("|") for row in content.strip().split("\n")]
+            html += "<table>"
+            for i, row in enumerate(rows):
+                html += "<tr>"
+                tag = "th" if i == 0 else "td"
+                for cell in row:
+                    html += f"<{tag}>{cell.strip()}</{tag}>"
+                html += "</tr>"
+            html += "</table>"
+        elif content.startswith(("├", "└", "│")):
+            # Looks like a tree structure
+            html += "<pre class='tree-view'>"
+            html += content
+            html += "</pre>"
+        else:
+            # Default to pre-formatted text
+            html += f"<pre>{content}</pre>"
+
+        html += "</body></html>"
+        return html
+
+    def _truncate_content(self, content: str) -> tuple[str, str | None]:
+        """Truncate content and return both truncated version and full content if needed"""
+        if len(content) <= self.MAX_MESSAGE_LENGTH:
+            return content, None
+
+        # For JSON content, try to truncate intelligently
+        if content.strip().startswith(("{", "[")):
+            try:
+                data = json.loads(content)
+                if isinstance(data, dict):
+                    if "results" in data and isinstance(data["results"], list):
+                        original_count = len(data["results"])
+                        data["results"] = data["results"][:10]
+                        data["note"] = f"Results truncated (showing 10 of {original_count})"
+                        truncated = json.dumps(data, indent=2)
+                        if len(truncated) <= self.MAX_MESSAGE_LENGTH:
+                            return truncated, content
+            except json.JSONDecodeError:
+                pass
+        
+        # For list-like content (multiple lines starting with numbers or bullets)
+        if "\n" in content and any(line.strip().startswith(("- ", "* ", "1.", "2.")) for line in content.splitlines()):
+            lines = content.splitlines()
+            truncated_lines = []
+            total_lines = len(lines)
+            
+            for line in lines[:10]:  # Keep first 10 items
+                truncated_lines.append(line)
+            
+            truncated = "\n".join(truncated_lines)
+            truncated += f"\n\n... (truncated, showing 10 of {total_lines} items)"
+            
+            if len(truncated) <= self.MAX_MESSAGE_LENGTH:
+                return truncated, content
+
+        # Default truncation
+        truncated = content[:self.MAX_MESSAGE_LENGTH - 100] + "...\n(truncated, see full content in the HTML file)"
+        return truncated, content

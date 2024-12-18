@@ -69,10 +69,73 @@ class Chatbot:
         self.max_history = max_history
         self.history: List[Dict[str, str]] = [{"role": "system", "content": self.system_prompt}]
 
-    def _truncate_result(self, result: str, max_length: int = 4000) -> str:
-        """Truncate a result string to a reasonable size"""
+    def _format_as_html(self, content: str) -> str:
+        """Format content as HTML with nice styling"""
+        html = """
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
+                table { border-collapse: collapse; width: 100%; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th { background-color: #f5f5f5; }
+                .tree-view { font-family: monospace; }
+                .tree-view .node { margin-left: 20px; }
+                .json { color: #333; }
+                .json .key { color: #0066cc; }
+                .json .string { color: #008800; }
+                .json .number { color: #aa0000; }
+                .json .boolean { color: #aa0000; }
+            </style>
+        </head>
+        <body>
+        """
+
+        # Try to detect and format different types of content
+        if content.strip().startswith(("{", "[")):
+            try:
+                # Format JSON with syntax highlighting
+                data = json.loads(content)
+                formatted = json.dumps(data, indent=2)
+                html += "<pre class='json'>"
+                # Add basic syntax highlighting
+                formatted = formatted.replace('"', '&quot;')
+                formatted = re.sub(r'(".*?"):', r'<span class="key">\1</span>:', formatted)
+                formatted = re.sub(r': "(.+?)"', r': <span class="string">&quot;\1&quot;</span>', formatted)
+                formatted = re.sub(r': (\d+)', r': <span class="number">\1</span>', formatted)
+                formatted = re.sub(r': (true|false)', r': <span class="boolean">\1</span>', formatted)
+                html += formatted
+                html += "</pre>"
+            except json.JSONDecodeError:
+                html += f"<pre>{content}</pre>"
+        elif "\n" in content and "|" in content:
+            # Looks like a table, convert to HTML table
+            rows = [row.strip().split("|") for row in content.strip().split("\n")]
+            html += "<table>"
+            for i, row in enumerate(rows):
+                html += "<tr>"
+                tag = "th" if i == 0 else "td"
+                for cell in row:
+                    html += f"<{tag}>{cell.strip()}</{tag}>"
+                html += "</tr>"
+            html += "</table>"
+        elif content.startswith(("├", "└", "│")):
+            # Looks like a tree structure
+            html += "<pre class='tree-view'>"
+            html += content
+            html += "</pre>"
+        else:
+            # Default to pre-formatted text
+            html += f"<pre>{content}</pre>"
+
+        html += "</body></html>"
+        return html
+
+    def _truncate_result(self, result: str, max_length: int = 4000) -> tuple[str, str | None]:
+        """Truncate a result string and return both truncated text and full content if truncated"""
         if len(result) <= max_length:
-            return result
+            return result, None
 
         # For JSON strings, try to parse and truncate the content
         try:
@@ -83,12 +146,15 @@ class Chatbot:
                     original_count = len(data["results"])
                     data["results"] = data["results"][:10]  # Keep only first 10 results
                     data["note"] = f"Results truncated to 10 of {original_count} total matches"
-                return json.dumps(data, indent=2)  # Pretty print JSON
+                    truncated = json.dumps(data, indent=2)
+                    if len(truncated) <= max_length:
+                        return truncated, result  # Return original result as full content
         except json.JSONDecodeError:
             pass
 
         # For plain text, truncate with ellipsis
-        return result[:max_length] + "... (truncated)"
+        truncated = result[:max_length] + "... (truncated)"
+        return truncated, result  # Return original result as full content
 
     def _format_response(self, text: str) -> str:
         """Format response text to be safe for Telegram"""
