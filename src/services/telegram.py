@@ -37,85 +37,52 @@ class TelegramService(NotificationService):
     def set_app(self, app: Application) -> None:
         """Set the application instance"""
         self.app = app
-        self.logger.info("Telegram application instance set")
 
-    def _create_temp_file(self, content: str, prefix: str = "message_") -> str:
-        """Create a temporary file with the message content"""
+    async def send_message(self, message: str, chat_id: Optional[str] = None) -> None:
+        """Send a message through Telegram"""
         try:
-            # Create temp file with timestamp in name
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{prefix}{timestamp}.txt"
-            temp_dir = tempfile.gettempdir()
-            file_path = os.path.join(temp_dir, filename)
+            target_chat = chat_id or self.chat_id
+            if not target_chat:
+                raise ValueError("No chat ID configured")
 
-            # Write content to file
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-            return file_path
-        except Exception as e:
-            self.logger.error(f"Failed to create temp file: {e}")
-            raise
-
-    async def send_message(self, message: str) -> None:
-        """Send a message to the configured chat"""
-        try:
-            self.logger.debug("Checking Telegram service prerequisites...")
-
-            if not self.bot:
-                self.logger.error("Bot not initialized")
-                raise RuntimeError("Bot not initialized")
-
-            if not self.chat_id:
-                self.logger.error("No chat_id configured")
-                raise RuntimeError("No chat_id configured")
-
-            self.logger.debug(f"Prerequisites OK. Bot: {bool(self.bot)}, Chat ID: {self.chat_id}")
-            self.logger.debug(f"Message length: {len(message)}")
-
+            # Split message if it's too long
             if len(message) > self.MAX_MESSAGE_LENGTH:
-                self.logger.debug("Message exceeds length limit, sending as file...")
-
-                # Create a preview of the message
-                preview_length = 1000  # Show first 1000 characters
-                preview = message[:preview_length] + "...\n\n(Full content in attached file)"
-
-                # Send preview message
-                await self.bot.send_message(chat_id=self.chat_id, text=preview)
-
-                # Create and send file with full content
-                file_path = self._create_temp_file(message)
-                try:
-                    await self.send_file(file_path, caption="Full message content")
-                finally:
-                    # Clean up temp file
-                    try:
-                        os.remove(file_path)
-                    except Exception as e:
-                        self.logger.error(f"Failed to remove temp file {file_path}: {e}")
+                chunks = [message[i:i + self.MAX_MESSAGE_LENGTH] for i in range(0, len(message), self.MAX_MESSAGE_LENGTH)]
+                for chunk in chunks:
+                    await self.bot.send_message(
+                        chat_id=target_chat,
+                        text=chunk,
+                        parse_mode=telegram.constants.ParseMode.MARKDOWN
+                    )
             else:
-                # Send normal message
-                await self.bot.send_message(chat_id=self.chat_id, text=message)
+                await self.bot.send_message(
+                    chat_id=target_chat,
+                    text=message,
+                    parse_mode=telegram.constants.ParseMode.MARKDOWN
+                )
 
-            self.logger.debug("Message sent successfully")
         except Exception as e:
-            self.logger.error(f"Failed to send message: {str(e)}")
-            self.logger.debug(f"Bot state: {self.bot}")
-            self.logger.debug(f"Chat ID: {self.chat_id}")
+            self.logger.error(f"Failed to send Telegram message: {e}")
             raise
 
-    async def send_file(self, file_path: str, caption: str = None) -> None:
-        """Send a file to the configured chat"""
-        if not self.bot:
-            raise RuntimeError("Bot not initialized")
-
+    async def send_file(self, file_path: str, caption: Optional[str] = None, filename: Optional[str] = None, chat_id: Optional[str] = None) -> None:
+        """Send a file through Telegram"""
         try:
-            with open(file_path, "rb") as f:
+            target_chat = chat_id or self.chat_id
+            if not target_chat:
+                raise ValueError("No chat ID configured")
+
+            # Open and send the file
+            with open(file_path, 'rb') as f:
                 await self.bot.send_document(
-                    chat_id=self.chat_id, document=f, caption=caption, filename=os.path.basename(file_path)
+                    chat_id=target_chat,
+                    document=f,
+                    filename=filename,
+                    caption=caption
                 )
+
         except Exception as e:
-            self.logger.error(f"Failed to send file: {e}")
+            self.logger.error(f"Failed to send file via Telegram: {e}")
             raise
 
     async def start_bot(self):

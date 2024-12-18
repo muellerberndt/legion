@@ -44,6 +44,14 @@ class ActionRegistry:
         async def handler(*args, **kwargs) -> str:
             try:
                 action = action_class()
+                
+                # Extract update_callback from kwargs if provided
+                update_callback = kwargs.pop('_update_callback', None)
+                
+                # If action supports progress updates and callback is provided
+                if hasattr(action, 'set_update_callback') and update_callback:
+                    action.set_update_callback(update_callback)
+                
                 # Pass args or kwargs directly to execute
                 if args:
                     result = await action.execute(*args)

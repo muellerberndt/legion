@@ -1,12 +1,17 @@
 """Chatbot implementation using the new chat_completion function"""
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Any
 import json
 from src.config.config import Config
 from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
 from src.ai.llm import chat_completion
 from src.util.command_parser import CommandParser
+import telegram
+import tempfile
+import os
+from datetime import datetime
+import re
 
 
 class Chatbot:
@@ -90,13 +95,15 @@ class Chatbot:
 
     def _format_response(self, text: str) -> str:
         """Format response text to be safe for Telegram"""
-
-        # Format code blocks and JSON
+        # Remove any special characters that could cause parsing issues
+        text = text.replace("`", "").replace("*", "").replace("_", "")
+        
+        # For JSON responses, format them cleanly
         if text.startswith("{") and text.endswith("}"):
             try:
-                # Try to parse and pretty print JSON
                 data = json.loads(text)
-                return f"```\n{json.dumps(data, indent=2)}\n```"
+                # Format without special characters
+                return json.dumps(data, indent=2, ensure_ascii=True)
             except json.JSONDecodeError:
                 pass
 
@@ -111,14 +118,14 @@ class Chatbot:
             # Remove oldest messages but keep system message
             self.history = [self.history[0]] + self.history[-(self.max_history) :]
 
-    async def execute_command(self, command: str, param_str: str) -> str:
+    async def execute_command(self, command: str, param_str: str, update_callback=None) -> str:
         """Execute a registered command"""
         # Remove preceding slash
         command = command.lstrip("/")
 
         # Handle empty command case for conclusion
         if not command:
-            return self.get_execution_summary()
+            return "Command completed successfully"
 
         if command not in self.commands:
             raise ValueError(f"Unknown command: {command}")
@@ -148,17 +155,160 @@ class Chatbot:
             else:
                 result = await handler(*args)
 
+            # Check if this is a job result
+            if isinstance(result, str):
+                # Look for job ID patterns
+                job_patterns = [
+                    r"[Jj]ob (?:ID: )?([a-f0-9-]+)",
+                    r"[Jj]ob_id: ([a-f0-9-]+)",
+                    r"[Ss]tarted.*[Jj]ob.*?([a-f0-9-]+)",
+                ]
+                
+                for pattern in job_patterns:
+                    match = re.search(pattern, result)
+                    if match:
+                        job_id = match.group(1)
+                        return f"Started job {job_id}\nUse /job {job_id} to check results"
+
             return result
 
         except Exception as e:
             self.logger.error(f"Error executing command: {str(e)}")
             raise
 
-    async def process_message(self, message: str) -> str:
+    async def _plan_next_step(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Plan the next step based on current state"""
+        try:
+            # For complex queries requiring commands, proceed with planning
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {
+                    "role": "system",
+                    "content": """Plan and execute tasks using the available commands.
+
+Your response MUST be a valid JSON object with these fields:
+{
+    "thought": "Your internal reasoning about what to do next",
+    "command": "command_name param1 param2 (...)",
+    "output": "The message to show to the user",
+    "is_final": boolean (true if this is your final response)
+}
+
+The "output" field will be shown directly to the user, so it should be properly formatted.
+For intermediate steps (is_final=false), you can leave "output" empty.
+
+CRITICAL INSTRUCTIONS:
+1. For complex tasks that require multiple steps or jobs, use the /autobot command to delegate the task.
+2. For tasks involving file searching, analysis, or multiple steps, ALWAYS use the /autobot command.
+3. NEVER truncate your output. Show ALL results completely.
+4. Do not add notes like "(truncated)" or "for brevity".
+5. When formatting lists or results, include ALL items with their complete information.
+
+Example responses:
+
+For simple tasks:
+{
+    "thought": "I need to get the list of projects from the database",
+    "command": "db_query '{\"from\": \"projects\", \"limit\": 5}'",
+    "output": "",
+    "is_final": false
+}
+
+For complex tasks:
+{
+    "thought": "This task requires searching through files and analyzing results. I should delegate it to an autobot.",
+    "command": "autobot Search for files containing 'bla bla' and analyze the results",
+    "output": "",
+    "is_final": true
+}
+
+IMPORTANT:
+1. Return ONLY the JSON object, no other text
+2. Use double quotes for strings
+3. Use true/false (lowercase) for booleans
+4. If using a command, it must be one of the available commands
+5. Arguments containing spaces must be quoted
+6. NEVER truncate or omit information from results
+7. For complex tasks requiring multiple steps, ALWAYS use the /autobot command
+8. For file searching tasks, ALWAYS use the /autobot command instead of /filesearch
+
+Available commands and their parameters:"""
+                    + "\n"
+                    + "\n".join(
+                        f"- {name}: {cmd.description}\n  Parameters: {', '.join(arg.name + ('*' if arg.required else '') for arg in cmd.arguments)}"
+                        for name, cmd in self.commands.items()
+                    )
+                    + "\n",
+                },
+                {"role": "user", "content": f"Current state: {json.dumps(current_state, indent=2)}"},
+            ]
+
+            # Get response from LLM
+            response = await chat_completion(messages)
+
+            # Clean up response - remove any markdown and whitespace
+            cleaned_response = response.strip()
+            if "```" in cleaned_response:
+                # Extract content between code blocks if present
+                parts = cleaned_response.split("```")
+                for part in parts:
+                    if "{" in part and "}" in part:
+                        cleaned_response = part.strip()
+                        break
+
+            # Remove any "json" or other language indicators
+            if cleaned_response.startswith("json"):
+                cleaned_response = cleaned_response[4:].strip()
+
+            # Parse response as JSON
+            try:
+                plan = json.loads(cleaned_response)
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Invalid JSON response from LLM: {cleaned_response}")
+                self.logger.error(f"JSON parse error: {str(e)}")
+                raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
+
+            # Validate required fields
+            required_fields = ["thought", "command", "output", "is_final"]
+            missing = [field for field in required_fields if field not in plan]
+            if missing:
+                raise ValueError(f"Missing required fields in plan: {missing}")
+
+            # Validate field types
+            if not isinstance(plan["thought"], str):
+                raise ValueError("Field 'thought' must be a string")
+            if not isinstance(plan["command"], str):
+                raise ValueError("Field 'command' must be a string")
+            if not isinstance(plan["output"], str):
+                raise ValueError("Field 'output' must be a string")
+            if not isinstance(plan["is_final"], bool):
+                raise ValueError("Field 'is_final' must be a boolean")
+
+            # Only validate command if it's not empty
+            if plan["command"].strip():
+                # Extract command name and validate it exists
+                command_parts = plan["command"].split(maxsplit=1)
+                command_name = command_parts[0]
+                if command_name not in self.commands:
+                    raise ValueError(f"Unknown command: {command_name}. Must be one of: {', '.join(self.commands.keys())}")
+
+            return plan
+
+        except Exception as e:
+            self.logger.error(f"Error planning next step: {str(e)}")
+            raise
+
+    async def process_message(self, message: str, update_callback=None) -> str:
         """Process a user message and return a response"""
         try:
             # Add user message to history
             self._add_to_history("user", message)
+
+            # Initialize state
+            state = {
+                "task": {"prompt": message, "timestamp": datetime.utcnow().isoformat()},
+                "status": "started"
+            }
 
             # Check if this is a direct command invocation
             if message.startswith("/"):
@@ -176,69 +326,91 @@ class Chatbot:
                         self.logger.error(error_msg)
                         return self._format_response(error_msg)
 
-            # For non-command messages, proceed with LLM processing
-            plan = await chat_completion(
-                self.history
-                + [
-                    {
-                        "role": "system",
-                        "content": """Determine if this message requires executing any commands.
-For casual conversation or greetings, just respond naturally.
-Only suggest commands if the user is asking for specific information or actions.
+            # For non-command messages, proceed with multi-step execution
+            max_steps = 10
+            step_count = 0
 
-IMPORTANT: You can only execute ONE command at a time. If you need multiple queries, execute the most relevant one first and wait for the result.
+            while True:
+                # Check step limit
+                if step_count >= max_steps:
+                    error_msg = f"Task exceeded maximum steps ({max_steps})"
+                    self.logger.error(error_msg)
+                    return self._format_response(error_msg)
 
-Database schema:
-- projects table: Contains project information (id, name, project_type, etc.)
-  keywords field is a JSON array of strings
-- assets table: Contains assets (id, asset_type, source_url, etc.)
-- project_assets table: Association table linking projects and assets (project_id, asset_id)
-  project_assets.project_id references projects.id
-  project_assets.asset_id references assets.id
+                # Plan next step
+                plan = await self._plan_next_step(state)
 
-If a command is needed, respond with exactly:
-EXECUTE: command_name param1 param2 (...)
-For casual chat: Just respond normally
+                # Handle empty command (direct response)
+                if not plan["command"].strip():
+                    # For final steps, return the formatted result
+                    if plan["is_final"]:
+                        # Add to history and return
+                        self._add_to_history("assistant", plan["output"])
+                        return self._format_response(plan["output"])
+                    else:
+                        # For non-final direct responses, continue to next step
+                        state["last_result"] = plan["output"]
+                        step_count += 1
+                        continue
 
-Do not try to execute multiple commands or modify queries based on previous results. Execute one command and wait for the response.
-Do not use HTML formatting in your responses.""",
-                    }
-                ]
-            )
+                # For command execution, show step info
+                if update_callback:
+                    step_info = []
+                    if plan["thought"]:
+                        # Remove any special characters from thought
+                        thought = plan["thought"].replace("`", "").replace("'", "").replace('"', "")
+                        step_info.append(f"Thinking: {thought}")
+                    if plan['command'].strip():
+                        # Extract command name and parameters
+                        cmd_parts = plan['command'].split(maxsplit=1)
+                        cmd_name = cmd_parts[0]
+                        cmd_params = cmd_parts[1] if len(cmd_parts) > 1 else ""
+                        
+                        # Try to parse and format JSON parameters if present
+                        try:
+                            if cmd_params.strip().startswith('{'):
+                                params_obj = json.loads(cmd_params)
+                                # Format JSON without special characters
+                                cmd_params = json.dumps(params_obj, separators=(',',':'), ensure_ascii=True)
+                        except:
+                            # If JSON parsing fails, just use the original string
+                            # Remove any special characters
+                            cmd_params = cmd_params.replace("`", "").replace("'", "").replace('"', "")
+                            
+                        step_info.append(f"Running: {cmd_name} {cmd_params}")
+                    if step_info:
+                        await update_callback("\n".join(step_info))
 
-            # For casual conversation, add response to history and return
-            if "EXECUTE:" not in plan:
-                formatted_response = self._format_response(plan)
-                self._add_to_history("assistant", formatted_response)
-                return formatted_response
+                # Split command into name and parameters
+                command_parts = plan["command"].split(maxsplit=1)
+                command = command_parts[0]
+                param_str = command_parts[1] if len(command_parts) > 1 else ""
 
-            # Extract and execute the command
-            command_line = plan.split("EXECUTE:", 1)[1].strip()
-            self.logger.info(f"Processing command: {command_line}")
+                try:
+                    # Execute the command
+                    result = await self.execute_command(command, param_str)
+                    self.logger.info(f"Command result: {result}")
 
-            # Parse command and parameters
-            parts = command_line.split(" ", 1)
-            command = parts[0]
-            params_str = parts[1].strip() if len(parts) > 1 else ""
+                    # Update state
+                    state["last_result"] = result
+                    state["is_final"] = plan["is_final"]
 
-            try:
-                # Execute the command
-                result = await self.execute_command(command, params_str)
+                    # For final steps after a command, use the output as the formatted result
+                    if plan["is_final"]:
+                        state["result"] = plan["output"]
+                        state["status"] = "completed"
+                        self._add_to_history("assistant", plan["output"])
+                        return self._format_response(plan["output"])
 
-                # Truncate large results
-                result = self._truncate_result(str(result))
+                    # For non-final steps, continue to next step
+                    step_count += 1
 
-                # Format the result nicely
-                formatted_response = self._format_response(result)
-                self._add_to_history("assistant", formatted_response)
-                return formatted_response
-
-            except Exception as e:
-                error_msg = f"Error executing command: {str(e)}"
-                self.logger.error(error_msg)
-                return self._format_response(error_msg)
+                except Exception as e:
+                    error_msg = f"Error executing command: {str(e)}"
+                    self.logger.error(error_msg)
+                    return self._format_response(error_msg)
 
         except Exception as e:
-            error_msg = f"Error processing message: {str(e)}"
-            self.logger.error(error_msg)
-            return self._format_response(error_msg)
+            self.logger.error(f"Error processing message: {str(e)}")
+            return self._format_response(f"Error processing message: {str(e)}")
+

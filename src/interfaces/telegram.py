@@ -23,7 +23,7 @@ class TelegramInterface(Interface):
         self.action_registry = action_registry
         self.app = None
         self.service = TelegramService.get_instance()
-        self._agents = {}  # Session ID -> Chat
+        self._agents = {}  # Chat ID -> TelegramAutobot
         self._polling_task = None
         self._initialized = False
         self.command_parser = CommandParser()
@@ -32,7 +32,7 @@ class TelegramInterface(Interface):
         """Format an ActionResult for Telegram output"""
         # Handle error results first
         if result.type == ResultType.ERROR:
-            return self._format_error_result(result)
+            return f"Error: {result.error or result.content}"
 
         # Handle empty results
         if result.content is None:
@@ -47,11 +47,11 @@ class TelegramInterface(Interface):
         }
 
         formatter = formatters.get(result.type, str)
-        return formatter(result)
-
-    def _format_error_result(self, result: ActionResult) -> str:
-        """Format an error result"""
-        return f"❌ Error: {result.error or result.content}"
+        formatted = formatter(result)
+        
+        # Remove any special characters that could cause Telegram parsing issues
+        formatted = formatted.replace("`", "").replace("*", "").replace("_", "")
+        return formatted
 
     def _format_text_result(self, result: ActionResult) -> str:
         """Format a text result"""
@@ -150,11 +150,20 @@ class TelegramInterface(Interface):
                 # Validate arguments
                 self.command_parser.validate_arguments(args, spec)
 
-                # Execute the action with the arguments
+                # Create update callback
+                chat_id = str(update.message.chat_id)
+                async def update_callback(message: str):
+                    await self._send_update(chat_id, message)
+
+                # Send initial status
+                await self._send_update(chat_id, f"🏃 Starting command: /{command_name}")
+
+                # Execute the action with the arguments and update callback
                 if isinstance(args, dict):
+                    args['_update_callback'] = update_callback
                     result = await action_handler(**args)
                 else:
-                    result = await action_handler(*args)
+                    result = await action_handler(*args, _update_callback=update_callback)
 
                 if result:
                     # Handle the result
@@ -162,14 +171,14 @@ class TelegramInterface(Interface):
 
                     # Use TelegramService to handle message sending with proper size handling
                     service = TelegramService.get_instance()
-                    service.chat_id = str(update.message.chat.id)
+                    service.chat_id = str(update.message.chat_id)
                     await service.send_message(formatted_result)
 
             except Exception as e:
                 self.logger.error(f"Error executing command {command_name}: {e}")
                 error_msg = f"Error executing command: {str(e)}"
                 service = TelegramService.get_instance()
-                service.chat_id = str(update.message.chat.id)
+                service.chat_id = str(update.message.chat_id)
                 await service.send_message(error_msg)
 
         return handler
@@ -242,12 +251,8 @@ class TelegramInterface(Interface):
         # Register start command first
         self.app.add_handler(CommandHandler("start", self._handle_start_command))
 
-        # Register other command handlers
-        for name, (handler, spec) in self.action_registry.get_actions().items():
-            self.app.add_handler(CommandHandler(name, self._create_command_handler(name, handler)))
-
-        # Register message handler for non-commands
-        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
+        # Register message handler for all messages
+        self.app.add_handler(MessageHandler(filters.TEXT, self._handle_message))
 
     async def _register_commands(self) -> None:
         """Register bot commands with Telegram"""
@@ -269,7 +274,51 @@ class TelegramInterface(Interface):
 
     async def _handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Internal handler for Telegram messages"""
-        await self.handle_message(update.message.text, str(update.message.chat.id))
+        if not update.message or not update.message.text:
+            return
+
+        text = update.message.text
+        chat_id = str(update.message.chat_id)
+
+        try:
+            # Check if it's a direct command
+            if text.startswith('/'):
+                command, args_str = self.command_parser.parse_command(text)
+                if command == "start":
+                    await self._handle_start_command(update, context)
+                    return
+                    
+                if command in self.action_registry.get_actions():
+                    # Execute command directly through action registry
+                    action = self.action_registry.get_action(command)
+                    if not action:
+                        raise ValueError(f"Action not found for command: {command}")
+                    handler, spec = action
+
+                    # Parse and validate arguments
+                    args = self.command_parser.parse_arguments(args_str, spec)
+                    self.command_parser.validate_arguments(args, spec)
+
+                    # Execute the command
+                    if isinstance(args, dict):
+                        result = await handler(**args)
+                    else:
+                        result = await handler(*args)
+
+                    # Format and send result
+                    formatted_result = await self._handle_command_result(result)
+                    await self.send_message(formatted_result, chat_id)
+                    return
+
+            # For non-command messages or unknown commands, use the Chatbot
+            await self.handle_message(text, chat_id)
+
+        except Exception as e:
+            self.logger.error(f"Error in message handler: {e}")
+            error_msg = str(e)
+            # Remove any special characters that could cause Telegram parsing issues
+            error_msg = error_msg.replace("`", "").replace("*", "").replace("_", "")
+            await self.send_message(f"Error: {error_msg}", chat_id)
 
     async def handle_message(self, content: str, session_id: str) -> None:
         """Handle a non-command message through the conversation agent"""
@@ -279,7 +328,13 @@ class TelegramInterface(Interface):
                 self._agents[session_id] = Chatbot()
 
             agent = self._agents[session_id]
-            response = await agent.process_message(content)
+
+            # Create update callback
+            async def update_callback(message: str):
+                await self.send_message(message, session_id)
+
+            # Process message with update callback
+            response = await agent.process_message(content, update_callback=update_callback)
             await self.send_message(response, session_id)
 
         except Exception as e:
@@ -438,3 +493,62 @@ class TelegramInterface(Interface):
         except Exception as e:
             self.logger.error(f"Error handling command result: {e}")
             return self._format_result(ActionResult.error(f"Error formatting result: {str(e)}"))
+
+    async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle text messages"""
+        if not update.message or not update.message.text:
+            return
+
+        chat_id = str(update.message.chat_id)
+        text = update.message.text
+
+        try:
+            # Check if it's a command
+            if text.startswith('/'):
+                command, args_str = self.command_parser.parse_command(text)
+                result = await self._handle_command(command, args_str, chat_id)
+                if result:
+                    await update.message.reply_text(str(result))
+            else:
+                # For non-command messages, use the agent for natural language processing
+                agent = self._get_or_create_agent(chat_id)
+                await agent.process_message(text, update.message)
+        except Exception as e:
+            error_msg = f"Error processing message: {str(e)}"
+            self.logger.error(error_msg)
+            await update.message.reply_text(error_msg)
+
+    async def _handle_command(self, command: str, args_str: str, chat_id: str) -> Any:
+        """Handle a command message"""
+        try:
+            # Get the action from registry
+            action = self.action_registry.get_action(command)
+            if not action:
+                raise ValueError(f"Unknown command: {command}")
+
+            handler, spec = action
+            
+            # Parse and validate arguments
+            args = self.command_parser.parse_arguments(args_str, spec)
+            self.command_parser.validate_arguments(args, spec)
+
+            # Execute the command
+            if isinstance(args, dict):
+                result = await handler(**args)
+            else:
+                result = await handler(*args)
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error executing command: {str(e)}")
+            raise
+
+    async def _send_update(self, chat_id: str, message: str) -> None:
+        """Send a status update to a specific chat"""
+        try:
+            service = TelegramService.get_instance()
+            service.chat_id = chat_id
+            await service.send_message(message)
+        except Exception as e:
+            self.logger.error(f"Failed to send status update: {e}")
