@@ -22,7 +22,7 @@ class Chatbot:
         self.command_parser = CommandParser()
 
         # Get all available commands
-        self.commands = self.action_registry._get_agent_command_instructions()
+        self.commands = self.action_registry._get_agent_command_instructions(include_all=True)
         self.logger.info("Initialized with commands:", extra_data={"commands": list(self.commands.keys())})
 
         # Build system prompt
@@ -213,8 +213,8 @@ For simple tasks:
 
 For complex tasks:
 {
-    "thought": "This task requires searching through files and analyzing results. I should delegate it to an autobot.",
-    "command": "autobot Search for files containing 'bla bla' and analyze the results",
+    "thought": "This task requires multiple search and database commands. I should delegate it to an autobot.",
+    "command": "autobot Search for files containing 'bla bla', then retrieve the project information for each match and summarize the results",
     "output": "",
     "is_final": true
 }
@@ -227,7 +227,6 @@ IMPORTANT:
 5. Arguments containing spaces must be quoted
 6. NEVER truncate or omit information from results
 7. For complex tasks requiring multiple steps, ALWAYS use the /autobot command
-8. For file searching tasks, ALWAYS use the /autobot command instead of /filesearch
 
 Available commands and their parameters:"""
                     + "\n"

@@ -76,7 +76,9 @@ class ActionRegistry:
             self.initialize()
         return self.actions
 
-    def _get_agent_command_instructions(self, command_names: Optional[List[str]] = None) -> Dict[str, ActionSpec]:
+    def _get_agent_command_instructions(
+        self, command_names: Optional[List[str]] = None, include_all: bool = False
+    ) -> Dict[str, ActionSpec]:
         """Get the commands available to this component"""
         commands = {}
 
@@ -86,21 +88,26 @@ class ActionRegistry:
 
         # If command_names is None, include ALL commands (for Chatbot)
         if command_names is None:
-            # Filter out actions marked with @no_autobot
             command_names = []
-            for name, (handler, spec) in actions.items():
-                # Get the original action class from the registry
-                action_class = None
-                for cls in BaseAction.__subclasses__():
-                    if cls.spec.name == name:
-                        action_class = cls
-                        break
+            if include_all:
+                # Include all commands regardless of @no_autobot
+                command_names = list(actions.keys())
+                self.logger.info("Including ALL available commands (including @no_autobot)")
+            else:
+                # Filter out actions marked with @no_autobot
+                for name, (handler, spec) in actions.items():
+                    # Get the original action class from the registry
+                    action_class = None
+                    for cls in BaseAction.__subclasses__():
+                        if cls.spec.name == name:
+                            action_class = cls
+                            break
 
-                # Skip if action is marked with @no_autobot
-                if action_class and not hasattr(action_class, "_no_autobot"):
-                    command_names.append(name)
+                    # Skip if action is marked with @no_autobot
+                    if action_class and not hasattr(action_class, "_no_autobot"):
+                        command_names.append(name)
 
-            self.logger.info("Including available commands (filtered for Autobot)")
+                self.logger.info("Including available commands (filtered for Autobot)")
         elif not command_names:
             self.logger.info("No commands specified")
             return commands
