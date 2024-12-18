@@ -347,7 +347,7 @@ Available commands and their parameters:"""
                 if not plan["command"].strip():
                     # For final steps, return the formatted result
                     if plan["is_final"]:
-                        # Add to history and return
+                        # Add to history and return without showing thinking process
                         self._add_to_history("assistant", plan["output"])
                         return self._format_response(plan["output"])
                     else:
@@ -357,16 +357,19 @@ Available commands and their parameters:"""
                         continue
 
                 # For command execution, show step info
-                if update_callback:
-                    step_info = []
-                    if plan["thought"]:
-                        # Remove any special characters from thought
-                        thought = plan["thought"].replace("`", "").replace("'", "").replace('"', "")
-                        step_info.append(f"🤔 Thinking: {thought}")
-                    if plan["command"].strip():
-                        # Extract command name and parameters
-                        cmd_parts = plan["command"].split(maxsplit=1)
-                        cmd_name = cmd_parts[0]
+                if update_callback and plan["command"].strip():
+                    # Extract command name and parameters first
+                    cmd_parts = plan["command"].split(maxsplit=1)
+                    cmd_name = cmd_parts[0]
+
+                    # Only show thinking process for actual commands (not direct responses)
+                    if cmd_name in self.commands:
+                        step_info = []
+                        if plan["thought"]:
+                            # Remove any special characters from thought
+                            thought = plan["thought"].replace("`", "").replace("'", "").replace('"', "")
+                            step_info.append(f"🤔 Thinking: {thought}")
+
                         cmd_params = cmd_parts[1] if len(cmd_parts) > 1 else ""
 
                         # Try to parse and format JSON parameters if present
@@ -380,9 +383,14 @@ Available commands and their parameters:"""
                             # Remove any special characters
                             cmd_params = cmd_params.replace("`", "").replace("'", "").replace('"', "")
 
-                        step_info.append(f"🏃 Running: {cmd_name} {cmd_params}")
-                    if step_info:
-                        await update_callback("\n".join(step_info))
+                        # Only show command if it's different from the last one
+                        command_msg = f"🛠️ Running: {cmd_name} {cmd_params}"
+                        if not hasattr(self, "_last_command_msg") or self._last_command_msg != command_msg:
+                            step_info.append(command_msg)
+                            self._last_command_msg = command_msg
+
+                        if step_info:
+                            await update_callback("\n".join(step_info))
 
                 # Split command into name and parameters
                 command_parts = plan["command"].split(maxsplit=1)
