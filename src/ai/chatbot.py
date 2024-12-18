@@ -152,6 +152,10 @@ class Chatbot:
             else:
                 result = await handler(*args)
 
+            # For autobot command, return the result directly without error checking
+            if command == "autobot":
+                return result
+
             # Check if this is a job result
             if isinstance(result, str):
                 # Look for job ID patterns
@@ -214,7 +218,7 @@ For simple tasks:
 For complex tasks:
 {
     "thought": "This task requires multiple search and database commands. I should delegate it to an autobot.",
-    "command": "autobot Search for files containing 'bla bla', then retrieve the project information for each match and summarize the results",
+    "command": "autobot \"Search for files containing 'bla bla', then retrieve the project information for each match and summarize the results\"",
     "output": "",
     "is_final": true
 }
@@ -224,7 +228,7 @@ IMPORTANT:
 2. Use double quotes for strings
 3. Use true/false (lowercase) for booleans
 4. If using a command, it must be one of the available commands
-5. Arguments containing spaces must be quoted
+5. Arguments containing spaces must be quoted!
 6. NEVER truncate or omit information from results
 7. For complex tasks requiring multiple steps, ALWAYS use the /autobot command
 
@@ -310,6 +314,9 @@ Available commands and their parameters:"""
                     try:
                         # Execute the command directly
                         result = await self.execute_command(command, args_str)
+                        # For autobot command, don't show error messages
+                        if command == "autobot" and "error" in result.lower():
+                            return ""
                         result = self._truncate_result(str(result))
                         formatted_response = self._format_response(result)
                         self._add_to_history("assistant", formatted_response)
@@ -317,6 +324,9 @@ Available commands and their parameters:"""
                     except Exception as e:
                         error_msg = f"Error executing command: {str(e)}"
                         self.logger.error(error_msg)
+                        # For autobot command, don't show error messages
+                        if command == "autobot":
+                            return ""
                         return self._format_response(error_msg)
 
             # For non-command messages, proceed with multi-step execution
@@ -352,7 +362,7 @@ Available commands and their parameters:"""
                     if plan["thought"]:
                         # Remove any special characters from thought
                         thought = plan["thought"].replace("`", "").replace("'", "").replace('"', "")
-                        step_info.append(f"Thinking: {thought}")
+                        step_info.append(f"🤔 Thinking: {thought}")
                     if plan["command"].strip():
                         # Extract command name and parameters
                         cmd_parts = plan["command"].split(maxsplit=1)
@@ -370,7 +380,7 @@ Available commands and their parameters:"""
                             # Remove any special characters
                             cmd_params = cmd_params.replace("`", "").replace("'", "").replace('"', "")
 
-                        step_info.append(f"Running: {cmd_name} {cmd_params}")
+                        step_info.append(f"🏃 Running: {cmd_name} {cmd_params}")
                     if step_info:
                         await update_callback("\n".join(step_info))
 

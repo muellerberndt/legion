@@ -38,6 +38,11 @@ class TelegramService(NotificationService):
     async def send_message(self, message: str, chat_id: Optional[str] = None) -> None:
         """Send a message through Telegram"""
         try:
+            # Check for empty message
+            if not message or not message.strip():
+                self.logger.debug("Skipping empty message")
+                return
+
             target_chat = chat_id or self.chat_id
             if not target_chat:
                 raise ValueError("No chat ID configured")
@@ -46,7 +51,8 @@ class TelegramService(NotificationService):
             if len(message) > self.MAX_MESSAGE_LENGTH:
                 chunks = [message[i : i + self.MAX_MESSAGE_LENGTH] for i in range(0, len(message), self.MAX_MESSAGE_LENGTH)]
                 for chunk in chunks:
-                    await self.bot.send_message(chat_id=target_chat, text=chunk)
+                    if chunk.strip():  # Only send non-empty chunks
+                        await self.bot.send_message(chat_id=target_chat, text=chunk)
             else:
                 await self.bot.send_message(chat_id=target_chat, text=message)
 

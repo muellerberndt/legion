@@ -300,15 +300,23 @@ class TelegramInterface(Interface):
                     args = self.command_parser.parse_arguments(args_str, spec)
                     self.command_parser.validate_arguments(args, spec)
 
+                    # Create update callback
+                    async def update_callback(message: str):
+                        if message and message.strip():
+                            await self._send_update(chat_id, message)
+
                     # Execute the command
                     if isinstance(args, dict):
+                        args["_update_callback"] = update_callback
                         result = await handler(**args)
                     else:
-                        result = await handler(*args)
+                        result = await handler(*args, _update_callback=update_callback)
 
-                    # Format and send result
-                    formatted_result = await self._handle_command_result(result)
-                    await self.send_message(formatted_result, chat_id)
+                    # Only send result if it's not None and not empty
+                    if result:
+                        formatted_result = await self._handle_command_result(result)
+                        if formatted_result and formatted_result.strip():
+                            await self.send_message(formatted_result, chat_id)
                     return
 
             # For non-command messages or unknown commands, use the Chatbot
