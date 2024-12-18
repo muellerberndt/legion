@@ -4,7 +4,7 @@ This guide explains how to customize and extend its functionality. See [extensio
 
 ## Extension System
 
-Extensions in r4dar are stored in the `/extensions` directory. Each extension is expected to be a directory containing Python files.
+Extensions in Legion are stored in the `/extensions` directory. Each extension is expected to be a directory containing Python files.
 
 ```
 /extensions
@@ -26,13 +26,13 @@ active_extensions:
 
 ## Core concepts
 
-1. **Actions** are the basic building blocks of R4dar's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents. Actions can also be scheduled to run at configured intervals.
+1. **Actions** are the basic building blocks of Legion's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents. Actions can also be scheduled to run at configured intervals.
 2. **Jobs** (a.k.a. asyc actions) implement long-running tasks. They can be managed by users via the bot interface.
 4. **Handlers** react events such as webhooks, scope updates, GitHub events, etc.
 
 ## 1. Actions
 
-Actions are the basic building blocks of R4dar's functionality. Actions in registered extensions automatically appear in Telegram as commands and are made available to the LLM agents. The more actions you add, the more powerful your agents will be!
+Actions are the basic building blocks of Legion's functionality. Actions in registered extensions automatically appear in Telegram as commands and are made available to the LLM agents. The more actions you add, the more powerful your agents will be!
 
 ### Creating an Action
 
@@ -150,7 +150,7 @@ return ActionResult(
 
 ### Built-in Actions
 
-R4dar comes with several built-in actions:
+Legion comes with several built-in actions:
 
 - `help` - Display help information about available commands
 - `db_query` - Query the database

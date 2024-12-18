@@ -185,7 +185,7 @@ class Config:
     def load_config(self):
         """Load configuration from file and environment"""
         # Get config path from environment or use default
-        config_path = os.environ.get("R4DAR_CONFIG", "config.yml")
+        config_path = os.environ.get("Legion_CONFIG", "config.yml")
         Config._config = load_config(config_path, test_mode=Config._test_mode)
 
     def load_extension_config(self, config_path: str) -> None:
@@ -260,24 +260,24 @@ class Config:
 # Environment variable mappings
 ENV_MAPPINGS = {
     # Core config
-    "data_dir": "R4DAR_DATA_DIR",
+    "data_dir": "LEGION_DATA_DIR",
     "database.url": "DATABASE_URL",
     # Block explorer API keys
-    "block_explorers.etherscan.key": "R4DAR_ETHERSCAN_KEY",
-    "block_explorers.basescan.key": "R4DAR_BASESCAN_KEY",
-    "block_explorers.arbiscan.key": "R4DAR_ARBISCAN_KEY",
+    "block_explorers.etherscan.key": "LEGION_ETHERSCAN_KEY",
+    "block_explorers.basescan.key": "LEGION_BASESCAN_KEY",
+    "block_explorers.arbiscan.key": "LEGION_ARBISCAN_KEY",
     # Telegram config
-    "telegram.bot_token": "R4DAR_BOT_TOKEN",
-    "telegram.chat_id": "R4DAR_CHAT_ID",
+    "telegram.bot_token": "LEGION_BOT_TOKEN",
+    "telegram.chat_id": "LEGION_CHAT_ID",
     # OpenAI config
-    "llm.openai.key": "R4DAR_OPENAI_KEY",
-    "llm.openai.model": "R4DAR_OPENAI_MODEL",
-    "llm.personality": "R4DAR_LLM_PERSONALITY",
+    "llm.openai.key": "LEGION_OPENAI_KEY",
+    "llm.openai.model": "LEGION_OPENAI_MODEL",
+    "llm.personality": "Legion_LLM_PERSONALITY",
     # Other config
-    "extensions_dir": "R4DAR_EXTENSIONS_DIR",
-    "active_extensions": {"env": "R4DAR_EXTENSIONS", "type": "list"},
-    "watchers.active_watchers": {"env": "R4DAR_WATCHERS", "type": "list"},
-    "github.api_token": "R4DAR_GITHUB_TOKEN",
+    "extensions_dir": "LEGION_EXTENSIONS_DIR",
+    "active_extensions": {"env": "LEGION_EXTENSIONS", "type": "list"},
+    "watchers.active_watchers": {"env": "LEGION_WATCHERS", "type": "list"},
+    "github.api_token": "LEGION_GITHUB_TOKEN",
 }
 
 # Default configuration

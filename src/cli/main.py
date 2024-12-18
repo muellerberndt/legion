@@ -74,7 +74,7 @@ def async_command(f):
 )
 @click.pass_context
 def cli(ctx, verbose, log_level):
-    """R4dar CLI"""
+    """Legion CLI"""
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
     ctx.obj["log_level"] = "DEBUG" if verbose else log_level

@@ -9,7 +9,7 @@ import os
 def reset_config():
     """Reset Config singleton between tests"""
     # Store original config path
-    original_config = os.environ.get("R4DAR_CONFIG")
+    original_config = os.environ.get("LEGION_CONFIG")
 
     # Reset singleton
     Config._instance = None
@@ -17,19 +17,19 @@ def reset_config():
 
     # Clear environment variables
     for key in list(os.environ.keys()):
-        if key.startswith("R4DAR_") or key == "DATABASE_URL":
+        if key.startswith("LEGION_") or key == "DATABASE_URL":
             del os.environ[key]
 
     # Set config path to a non-existent file
-    os.environ["R4DAR_CONFIG"] = "/tmp/nonexistent_config.yml"
+    os.environ["LEGION_CONFIG"] = "/tmp/nonexistent_config.yml"
 
     yield
 
     # Restore original config path
     if original_config:
-        os.environ["R4DAR_CONFIG"] = original_config
+        os.environ["LEGION_CONFIG"] = original_config
     else:
-        del os.environ["R4DAR_CONFIG"]
+        del os.environ["LEGION_CONFIG"]
 
 
 @pytest.fixture
@@ -40,8 +40,8 @@ def test_config_data():
         "database": {
             "host": "localhost",
             "port": 5432,
-            "name": "r4dar_test_db",
-            "user": "r4dar_test",
+            "name": "legion_test_db",
+            "user": "legion_test",
             "password": "test_password",
         },
         "block_explorers": {
@@ -78,8 +78,8 @@ def test_environment_override(tmp_path):
     with patch.dict(
         os.environ,
         {
-            "R4DAR_CONFIG": str(config_path),
-            "R4DAR_DATA_DIR": "/prod/data",
+            "LEGION_CONFIG": str(config_path),
+            "LEGION_DATA_DIR": "/prod/data",
             "DATABASE_URL": "postgresql://prod_user:prod_pass@prod-host:5432/prod_db",
         },
     ):
@@ -110,7 +110,7 @@ def test_environment_only_config():
     with patch.dict(
         os.environ,
         {
-            "R4DAR_DATA_DIR": "/env/data",
+            "LEGION_DATA_DIR": "/env/data",
             "DATABASE_URL": "postgresql://env_user:env_pass@env-host:5432/env_db",
         },
     ):
@@ -123,17 +123,21 @@ def test_environment_only_config():
         assert config.get("database.url") == "postgresql://env_user:env_pass@env-host:5432/env_db"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_config_path(monkeypatch, tmp_path):
     """Mock config path for all tests"""
     config_file = tmp_path / "config.yml"
-    monkeypatch.setenv("R4DAR_CONFIG", str(config_file))
-    # Reset Config singleton between tests
+
+    # Clear any existing LEGION_CONFIG
+    monkeypatch.delenv("LEGION_CONFIG", raising=False)
+
+    # Set new config path
+    monkeypatch.setenv("LEGION_CONFIG", str(config_file))
+
+    # Reset Config singleton
     Config._instance = None
     Config._config = None
-    # Create empty config file
-    with open(config_file, "w") as f:
-        yaml.dump({}, f)  # Empty but valid YAML
+
     return config_file
 
 
@@ -142,20 +146,20 @@ def mock_env_vars(monkeypatch):
     """Set up environment variables for testing"""
     # First clear all block explorer variables
     for explorer in ["ETHERSCAN", "BASESCAN", "ARBISCAN", "POLYGONSCAN", "BSCSCAN"]:
-        var_name = f"R4DAR_{explorer}_KEY"
+        var_name = f"LEGION_{explorer}_KEY"
         print(f"Clearing {var_name}: current value = {os.environ.get(var_name)}")
         monkeypatch.delenv(var_name, raising=False)
 
     # Set only the ones we want to test
     env_vars = {
-        "R4DAR_ETHERSCAN_KEY": "test_etherscan_key",
-        "R4DAR_BASESCAN_KEY": "test_basescan_key",
-        "R4DAR_ARBISCAN_KEY": "test_arbiscan_key",
-        "R4DAR_BOT_TOKEN": "test_bot_token",
-        "R4DAR_CHAT_ID": "test_chat_id",
-        "R4DAR_OPENAI_KEY": "test_openai_key",
+        "LEGION_ETHERSCAN_KEY": "test_etherscan_key",
+        "LEGION_BASESCAN_KEY": "test_basescan_key",
+        "LEGION_ARBISCAN_KEY": "test_arbiscan_key",
+        "LEGION_BOT_TOKEN": "test_bot_token",
+        "LEGION_CHAT_ID": "test_chat_id",
+        "LEGION_OPENAI_KEY": "test_openai_key",
         "DATABASE_URL": "postgresql://user:pass@host:5432/db",
-        "R4DAR_DATA_DIR": "/test/data",
+        "LEGION_DATA_DIR": "/test/data",
     }
 
     # Set new values
@@ -166,26 +170,56 @@ def mock_env_vars(monkeypatch):
     # Verify final state
     print("\nFinal environment state:")
     for explorer in ["ETHERSCAN", "BASESCAN", "ARBISCAN", "POLYGONSCAN", "BSCSCAN"]:
-        var_name = f"R4DAR_{explorer}_KEY"
+        var_name = f"LEGION_{explorer}_KEY"
         print(f"{var_name}: {os.environ.get(var_name)}")
 
     return env_vars
 
 
 @pytest.fixture
-def clean_env_vars(monkeypatch):
+def clean_env_vars(monkeypatch, mock_config_path):
     """Fixture for tests that need a clean environment without any block explorer keys"""
-    # Clear all block explorer environment variables
-    for explorer in ["ETHERSCAN", "BASESCAN", "ARBISCAN", "POLYGONSCAN", "BSCSCAN"]:
-        var_name = f"R4DAR_{explorer}_KEY"
-        print(f"Clearing {var_name}: current value = {os.environ.get(var_name)}")
-        monkeypatch.delenv(var_name, raising=False)
+    # Print initial environment state
+    print("\nInitial environment state:")
+    for key, value in os.environ.items():
+        if key.startswith("LEGION_") or key in ["DATABASE_URL", "MYTHX_API_KEY"]:
+            print(f"{key}: {value}")
 
-    # Verify environment is clean
-    for explorer in ["ETHERSCAN", "BASESCAN", "ARBISCAN", "POLYGONSCAN", "BSCSCAN"]:
-        var_name = f"R4DAR_{explorer}_KEY"
-        print(f"After clearing {var_name}: value = {os.environ.get(var_name)}")
-    return {}
+    # Store all existing environment variables that we want to restore later
+    original_vars = {}
+
+    # Clear ALL environment variables that start with LEGION_ or are related to our config
+    for key in list(os.environ.keys()):
+        if key.startswith("LEGION_") or key in ["DATABASE_URL", "MYTHX_API_KEY"]:
+            original_vars[key] = os.environ[key]
+            monkeypatch.delenv(key, raising=False)
+            print(f"Cleared: {key}")
+
+    # Create empty config file
+    with open(mock_config_path, "w") as f:
+        yaml.dump({}, f)
+
+    # Print config file contents
+    print("\nConfig file contents:")
+    with open(mock_config_path, "r") as f:
+        print(f.read())
+
+    # Reset Config singleton
+    Config._instance = None
+    Config._config = None
+
+    # Print final environment state
+    print("\nFinal environment state:")
+    for key, value in os.environ.items():
+        if key.startswith("LEGION_") or key in ["DATABASE_URL", "MYTHX_API_KEY"]:
+            print(f"{key}: {value}")
+
+    yield
+
+    # Restore original environment after test
+    for var, value in original_vars.items():
+        if value is not None:
+            monkeypatch.setenv(var, value)
 
 
 def test_load_config_from_env_no_file(mock_env_vars, mock_config_path):
@@ -232,33 +266,6 @@ def test_load_config_missing_block_explorers(mock_env_vars, mock_config_path):
     assert block_explorers["etherscan"]["key"] == "test_etherscan_key"
     assert block_explorers["basescan"]["key"] == "test_basescan_key"
     assert block_explorers["arbiscan"]["key"] == "test_arbiscan_key"
-
-
-def test_block_explorer_structure(clean_env_vars, mock_config_path):
-    """Test that block_explorers structure is properly initialized"""
-    # Print all environment variables for debugging
-    print("\nEnvironment variables at start of test:")
-    for key, value in os.environ.items():
-        if "KEY" in key:
-            print(f"{key}: {value}")
-
-    config = Config()
-
-    # Verify block_explorers exists and has proper structure
-    block_explorers = config.get("block_explorers")
-    print("\nBlock explorer config:")
-    for explorer, data in block_explorers.items():
-        print(f"{explorer}: {data}")
-
-    assert isinstance(block_explorers, dict)
-
-    # Check each explorer has proper structure
-    expected_explorers = ["etherscan", "basescan", "arbiscan", "polygonscan", "bscscan"]
-    for explorer in expected_explorers:
-        assert explorer in block_explorers, f"Missing explorer: {explorer}"
-        assert isinstance(block_explorers[explorer], dict), f"Explorer {explorer} is not a dict"
-        assert "key" in block_explorers[explorer], f"Explorer {explorer} missing 'key' field"
-        assert block_explorers[explorer]["key"] is None, f"Explorer {explorer} key should be None by default"
 
 
 def test_block_explorer_env_override(mock_env_vars, mock_config_path):

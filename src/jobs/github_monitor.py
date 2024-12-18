@@ -44,7 +44,7 @@ class GithubMonitorJob(Job, DBSessionMixin):
     async def initialize(self) -> None:
         """Initialize the API session"""
         # Set up API session with or without token
-        headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "R4dar-Security-Bot"}
+        headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "Legion-Security-Bot"}
         if self.api_token:
             headers["Authorization"] = f"Bearer {self.api_token}"
             self.logger.debug("GitHub API token configured")

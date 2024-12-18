@@ -1,5 +1,5 @@
 # Data directory for storing downloaded files (required)
-data_dir: "~/.r4dar/data"
+data_dir: "~/.legion/data"
 extensions_dir: "./extensions"
 active_extensions: []
 
@@ -7,8 +7,8 @@ active_extensions: []
 database:
   host: localhost
   port: 5432
-  name: r4dar_db
-  user: r4dar
+  name: legion_db
+  user: legion
   password: your_password_here
 
 # Block explorer API keys (optional but recommended)

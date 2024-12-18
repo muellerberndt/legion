@@ -14,7 +14,7 @@ async def get_headers():
         dict: Headers including auth token if configured
     """
     config = Config()
-    headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "R4dar-Security-Bot"}
+    headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "Legion-Security-Bot"}
 
     # Add auth token if configured
     if github_config := config.get("github", {}):

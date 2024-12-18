@@ -1,4 +1,4 @@
-r4dar Framework License
+Legion Framework License
 =======================
 This software is licensed under the Apache License, Version 2.0, with additional terms outlined below regarding commercial use. By using this software, you agree to these terms.
 
@@ -209,21 +209,21 @@ limitations under the License.
 
 ---
 
-Additional Terms for r4dar Framework
-====================================
-The following additional terms apply to the use of the r4dar framework:
+Additional Terms for Legion Framework
+=====================================
+The following additional terms apply to the use of the Legion framework:
 
 1. **Permitted Activities**  
-   The r4dar framework may be freely used for security research and bug hunting activities, including those generating commercial rewards (e.g., bug bounty programs or audit contests). These activities do not require prior approval or a commercial agreement.
+   The Legion framework may be freely used for security research and bug hunting activities, including those generating commercial rewards (e.g., bug bounty programs or audit contests). These activities do not require prior approval or a commercial agreement.
 
 2. **Extensions**  
-   Extensions and add-ons built on top of r4dar may be created and sold independently, provided they do not package or redistribute the core framework for commercial purposes without a separate commercial license.
+   Extensions and add-ons built on top of Legion may be created and sold independently, provided they do not package or redistribute the core framework for commercial purposes without a separate commercial license.
 
 3. **Commercial Use Restriction**  
-   The r4dar framework may not be used as a whole or substantial portion of it as part of a commercial product or service without prior written consent from Bernhard Mueller.
+   The Legion framework may not be used as a whole or substantial portion of it as part of a commercial product or service without prior written consent from Bernhard Mueller.
 
 4. **Agreement for Commercial Use**  
-   Any entity wishing to use r4dar for purposes beyond those described in section 3 (e.g., integrating r4dar into commercial software or services) must enter into a commercial licensing agreement with Bernhard Mueller.  
+   Any entity wishing to use Legion for purposes beyond those described in section 3 (e.g., integrating Legion into commercial software or services) must enter into a commercial licensing agreement with Bernhard Mueller.  
    - For inquiries regarding commercial licensing, please contact:  
      **Bernhard Mueller**  
      **Telegram**: https://t.me/berndtzl

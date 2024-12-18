@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide provides detailed instructions for setting up R4dar on your system.
+This guide provides detailed instructions for setting up Legion on your system.
 
 ## Prerequisites
 
@@ -48,9 +48,9 @@ sudo systemctl start postgresql
 psql postgres
 
 # Create database and user
-CREATE USER r4dar WITH PASSWORD 'your-password';
-CREATE DATABASE r4dar_db OWNER r4dar;
-\c r4dar_db
+CREATE USER legion WITH PASSWORD 'your-password';
+CREATE DATABASE legion_db OWNER legion;
+\c legion_db
 
 # Enable vector extension
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -59,8 +59,8 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE ACCESS METHOD vector_l2_ops USING ivfflat;
 
 # Grant privileges
-GRANT ALL PRIVILEGES ON DATABASE r4dar_db TO r4dar;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO r4dar;
+GRANT ALL PRIVILEGES ON DATABASE legion_db TO legion;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO legion;
 \q
 ```
 
@@ -68,7 +68,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO r4dar;
 
 ```bash
 # Connect to the database
-psql r4dar_db
+psql legion_db
 
 # Check if vector extension is enabled
 \dx vector
@@ -80,13 +80,13 @@ SELECT '[1,2,3]'::vector;
 \q
 ```
 
-## R4dar Installation
+## Legion Installation
 
 First, clone the repository:
 
 ```bash
-git clone git@github.com:muellerberndt/r4dar.git
-cd r4dar
+git clone git@github.com:muellerberndt/legion.git
+cd legion
 ```
 
 ### Local Installation
@@ -94,8 +94,8 @@ cd r4dar
 1. Create a Python virtual environment:
 
 ```bash
-pyenv virtualenv 3.12 r4dar
-pyenv activate r4dar
+pyenv virtualenv 3.12 legion
+pyenv activate legion
 ```
 
 2. Clone the repository and install requirements:
@@ -122,12 +122,12 @@ cp config.example.yml config.yml
 5. Start the service:
 
 ```bash
-r4dar --log-level INFO server start
+legion --log-level INFO server start
 ```
 
 ### Deploying to the cloud
 
-The easiest way to deploy R4dar to the cloud is to use a service like [Fly.io](https://fly.io).
+The easiest way to deploy Legion to the cloud is to use a service like [Fly.io](https://fly.io).
 
 1. Install the [Fly.io CLI](https://fly.io/docs/hands-on/install-flyctl/)
 
@@ -140,7 +140,7 @@ fly auth signup
 3. Create your fly.toml configuration:
 
 ```toml
-app = "your-r4dar-app-name"
+app = "your-legion-app-name"
 primary_region = "lax"
 
 [build]
@@ -149,15 +149,15 @@ primary_region = "lax"
 [env]
   PORT = '8080'
   PYTHON_VERSION = '3.11'
-  R4DAR_DATA_DIR = '/data'
-  R4DAR_CONFIG = '/data/config.yml'
-  R4DAR_WATCHERS = "immunefi,github"
-  R4DAR_EXTENSIONS = "examples/proxy_implementation_upgrade_handler"
-  R4DAR_EXTENSIONS_DIR = "extensions"
+  LEGION_DATA_DIR = '/data'
+  LEGION_CONFIG = '/data/config.yml'
+  LEGION_WATCHERS = "immunefi,github"
+  LEGION_EXTENSIONS = "examples/proxy_implementation_upgrade_handler"
+  LEGION_EXTENSIONS_DIR = "extensions"
   PYTHONUNBUFFERED = "1"
 
 [mounts]
-  source = 'r4dar_data'
+  source = 'legion_data'
   destination = '/data'
   initial_size = '10gb'
 
@@ -179,20 +179,20 @@ primary_region = "lax"
 4. Set the environment variables:
 
 ```bash
-fly secrets set R4DAR_BOT_TOKEN="your-telegram-bot-token"
-fly secrets set R4DAR_CHAT_ID="your-telegram-chat-id"
+fly secrets set LEGION_BOT_TOKEN="your-telegram-bot-token"
+fly secrets set LEGION_CHAT_ID="your-telegram-chat-id"
 fly secrets set OPEN_AI_KEY="your-openai-api-key"
-fly secrets set R4DAR_ARBISCAN_KEY="your-arbiscan-api-key"
-fly secrets set R4DAR_BASESCAN_KEY="your-basescan-api-key"
-fly secrets set R4DAR_GITHUB_TOKEN="your-github-token"
-fly secrets set R4DAR_QUICKNODE_KEY="your-quicknode-api-key"
+fly secrets set LEGION_ARBISCAN_KEY="your-arbiscan-api-key"
+fly secrets set LEGION_BASESCAN_KEY="your-basescan-api-key"
+fly secrets set LEGION_GITHUB_TOKEN="your-github-token"
+fly secrets set LEGION_QUICKNODE_KEY="your-quicknode-api-key"
 # Add any additional API keys as needed
 ```
 
 5. Create and attach a persistent volume:
 
 ```bash
-fly volumes create r4dar_data --size 10 --region lax
+fly volumes create legion_data --size 10 --region lax
 fly volumes list
 ```
 
