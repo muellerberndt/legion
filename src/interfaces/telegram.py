@@ -48,7 +48,7 @@ class TelegramInterface(Interface):
 
         formatter = formatters.get(result.type, str)
         formatted = formatter(result)
-        
+
         # Remove any special characters that could cause Telegram parsing issues
         formatted = formatted.replace("`", "").replace("*", "").replace("_", "")
         return formatted
@@ -152,6 +152,7 @@ class TelegramInterface(Interface):
 
                 # Create update callback
                 chat_id = str(update.message.chat_id)
+
                 async def update_callback(message: str):
                     await self._send_update(chat_id, message)
 
@@ -160,7 +161,7 @@ class TelegramInterface(Interface):
 
                 # Execute the action with the arguments and update callback
                 if isinstance(args, dict):
-                    args['_update_callback'] = update_callback
+                    args["_update_callback"] = update_callback
                     result = await action_handler(**args)
                 else:
                     result = await action_handler(*args, _update_callback=update_callback)
@@ -282,12 +283,12 @@ class TelegramInterface(Interface):
 
         try:
             # Check if it's a direct command
-            if text.startswith('/'):
+            if text.startswith("/"):
                 command, args_str = self.command_parser.parse_command(text)
                 if command == "start":
                     await self._handle_start_command(update, context)
                     return
-                    
+
                 if command in self.action_registry.get_actions():
                     # Execute command directly through action registry
                     action = self.action_registry.get_action(command)
@@ -504,7 +505,7 @@ class TelegramInterface(Interface):
 
         try:
             # Check if it's a command
-            if text.startswith('/'):
+            if text.startswith("/"):
                 command, args_str = self.command_parser.parse_command(text)
                 result = await self._handle_command(command, args_str, chat_id)
                 if result:
@@ -527,7 +528,7 @@ class TelegramInterface(Interface):
                 raise ValueError(f"Unknown command: {command}")
 
             handler, spec = action
-            
+
             # Parse and validate arguments
             args = self.command_parser.parse_arguments(args_str, spec)
             self.command_parser.validate_arguments(args, spec)

@@ -56,4 +56,3 @@ class AutobotJob(Job):
     async def stop_handler(self) -> None:
         """Handle cleanup when stopping the job"""
         # No special cleanup needed for autobot jobs
-        pass

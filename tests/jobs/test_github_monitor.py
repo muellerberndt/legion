@@ -1,11 +1,9 @@
 import pytest
 import asyncio
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, AsyncMock
 from datetime import datetime, timezone, timedelta
 from src.jobs.github_monitor import GithubMonitorJob
 from src.handlers.base import HandlerTrigger
-from src.util.logging import Logger
-from src.models.github import GitHubRepoState
 
 
 class MockDBSession:

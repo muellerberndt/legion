@@ -3,11 +3,7 @@ from unittest.mock import Mock, patch, mock_open
 from src.jobs.file_search import FileSearchJob
 from src.util.logging import LogConfig
 from src.models.base import Asset
-from src.jobs.base import JobStatus
-from src.config.config import Config
 import os
-import re
-from unittest.mock import AsyncMock
 
 
 @pytest.fixture

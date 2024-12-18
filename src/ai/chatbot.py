@@ -1,15 +1,12 @@
 """Chatbot implementation using the new chat_completion function"""
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 import json
 from src.config.config import Config
 from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
 from src.ai.llm import chat_completion
 from src.util.command_parser import CommandParser
-import telegram
-import tempfile
-import os
 from datetime import datetime
 import re
 
@@ -97,7 +94,7 @@ class Chatbot:
         """Format response text to be safe for Telegram"""
         # Remove any special characters that could cause parsing issues
         text = text.replace("`", "").replace("*", "").replace("_", "")
-        
+
         # For JSON responses, format them cleanly
         if text.startswith("{") and text.endswith("}"):
             try:
@@ -163,7 +160,7 @@ class Chatbot:
                     r"[Jj]ob_id: ([a-f0-9-]+)",
                     r"[Ss]tarted.*[Jj]ob.*?([a-f0-9-]+)",
                 ]
-                
+
                 for pattern in job_patterns:
                     match = re.search(pattern, result)
                     if match:
@@ -305,10 +302,7 @@ Available commands and their parameters:"""
             self._add_to_history("user", message)
 
             # Initialize state
-            state = {
-                "task": {"prompt": message, "timestamp": datetime.utcnow().isoformat()},
-                "status": "started"
-            }
+            state = {"task": {"prompt": message, "timestamp": datetime.utcnow().isoformat()}, "status": "started"}
 
             # Check if this is a direct command invocation
             if message.startswith("/"):
@@ -360,23 +354,23 @@ Available commands and their parameters:"""
                         # Remove any special characters from thought
                         thought = plan["thought"].replace("`", "").replace("'", "").replace('"', "")
                         step_info.append(f"Thinking: {thought}")
-                    if plan['command'].strip():
+                    if plan["command"].strip():
                         # Extract command name and parameters
-                        cmd_parts = plan['command'].split(maxsplit=1)
+                        cmd_parts = plan["command"].split(maxsplit=1)
                         cmd_name = cmd_parts[0]
                         cmd_params = cmd_parts[1] if len(cmd_parts) > 1 else ""
-                        
+
                         # Try to parse and format JSON parameters if present
                         try:
-                            if cmd_params.strip().startswith('{'):
+                            if cmd_params.strip().startswith("{"):
                                 params_obj = json.loads(cmd_params)
                                 # Format JSON without special characters
-                                cmd_params = json.dumps(params_obj, separators=(',',':'), ensure_ascii=True)
-                        except:
+                                cmd_params = json.dumps(params_obj, separators=(",", ":"), ensure_ascii=True)
+                        except Exception:
                             # If JSON parsing fails, just use the original string
                             # Remove any special characters
                             cmd_params = cmd_params.replace("`", "").replace("'", "").replace('"', "")
-                            
+
                         step_info.append(f"Running: {cmd_name} {cmd_params}")
                     if step_info:
                         await update_callback("\n".join(step_info))
@@ -413,4 +407,3 @@ Available commands and their parameters:"""
         except Exception as e:
             self.logger.error(f"Error processing message: {str(e)}")
             return self._format_response(f"Error processing message: {str(e)}")
-

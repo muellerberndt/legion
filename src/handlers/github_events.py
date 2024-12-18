@@ -261,7 +261,6 @@ class GitHubEventJob(Job, DBSessionMixin):
 
     async def stop_handler(self) -> None:
         """Nothing to clean up for this job"""
-        pass
 
 
 class GitHubEventHandler(Handler):

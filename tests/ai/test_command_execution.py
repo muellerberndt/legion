@@ -4,7 +4,6 @@ from src.ai.chatbot import Chatbot
 from src.ai.autobot import Autobot
 from src.actions.registry import ActionRegistry
 from src.actions.base import ActionSpec, ActionArgument
-import json
 
 
 @pytest.fixture

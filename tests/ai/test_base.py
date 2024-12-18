@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch, AsyncMock, create_autospec, MagicMock
 from src.ai.base import BaseAgent
 from src.actions.registry import ActionRegistry
-from src.actions.base import ActionSpec, ActionArgument, BaseAction
+from src.actions.base import ActionSpec, ActionArgument
 import json
 
 

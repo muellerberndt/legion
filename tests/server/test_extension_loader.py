@@ -1,11 +1,10 @@
 import sys
 import pytest
-from unittest.mock import Mock, patch, AsyncMock, ANY
+from unittest.mock import Mock, patch, ANY
 from src.server.extension_loader import ExtensionLoader
 from src.actions.base import BaseAction, ActionSpec
 from src.handlers.base import Handler
 from src.webhooks.handlers import WebhookHandler
-import importlib.util
 
 
 class MockAction(BaseAction):

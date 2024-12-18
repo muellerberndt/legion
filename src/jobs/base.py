@@ -93,7 +93,6 @@ class Job(DBSessionMixin, ABC):
     @abstractmethod
     async def start(self) -> None:
         """Start the job. Must be implemented by subclasses."""
-        pass
 
     @abstractmethod
     async def stop_handler(self) -> None:
@@ -105,7 +104,6 @@ class Job(DBSessionMixin, ABC):
         - Closing network connections
         - Releasing resources
         """
-        pass
 
     async def stop(self) -> None:
         """Stop the job and perform cleanup.

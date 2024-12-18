@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime
 from src.jobs.scheduler import Scheduler, ScheduledAction
 from src.actions.registry import ActionRegistry
 

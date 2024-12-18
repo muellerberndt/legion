@@ -4,9 +4,6 @@ from typing import Optional
 from src.config.config import Config
 from src.util.logging import Logger
 from src.services.notification_service import NotificationService
-import os
-import tempfile
-from datetime import datetime
 
 
 class TelegramService(NotificationService):
@@ -47,25 +44,19 @@ class TelegramService(NotificationService):
 
             # Split message if it's too long
             if len(message) > self.MAX_MESSAGE_LENGTH:
-                chunks = [message[i:i + self.MAX_MESSAGE_LENGTH] for i in range(0, len(message), self.MAX_MESSAGE_LENGTH)]
+                chunks = [message[i : i + self.MAX_MESSAGE_LENGTH] for i in range(0, len(message), self.MAX_MESSAGE_LENGTH)]
                 for chunk in chunks:
-                    await self.bot.send_message(
-                        chat_id=target_chat,
-                        text=chunk,
-                        parse_mode=telegram.constants.ParseMode.MARKDOWN
-                    )
+                    await self.bot.send_message(chat_id=target_chat, text=chunk)
             else:
-                await self.bot.send_message(
-                    chat_id=target_chat,
-                    text=message,
-                    parse_mode=telegram.constants.ParseMode.MARKDOWN
-                )
+                await self.bot.send_message(chat_id=target_chat, text=message)
 
         except Exception as e:
             self.logger.error(f"Failed to send Telegram message: {e}")
             raise
 
-    async def send_file(self, file_path: str, caption: Optional[str] = None, filename: Optional[str] = None, chat_id: Optional[str] = None) -> None:
+    async def send_file(
+        self, file_path: str, caption: Optional[str] = None, filename: Optional[str] = None, chat_id: Optional[str] = None
+    ) -> None:
         """Send a file through Telegram"""
         try:
             target_chat = chat_id or self.chat_id
@@ -73,13 +64,8 @@ class TelegramService(NotificationService):
                 raise ValueError("No chat ID configured")
 
             # Open and send the file
-            with open(file_path, 'rb') as f:
-                await self.bot.send_document(
-                    chat_id=target_chat,
-                    document=f,
-                    filename=filename,
-                    caption=caption
-                )
+            with open(file_path, "rb") as f:
+                await self.bot.send_document(chat_id=target_chat, document=f, filename=filename, caption=caption)
 
         except Exception as e:
             self.logger.error(f"Failed to send file via Telegram: {e}")

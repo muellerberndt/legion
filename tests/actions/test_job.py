@@ -3,7 +3,6 @@ from unittest.mock import Mock, patch
 from datetime import datetime
 from src.actions.job import ListJobsAction
 from src.jobs.manager import JobManager
-from src.actions.base import BaseAction
 
 
 @pytest.mark.asyncio

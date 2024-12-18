@@ -1,7 +1,7 @@
 """Tests for the scheduler action"""
 
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, patch
 from datetime import datetime
 from src.actions.scheduler import SchedulerAction
 from src.jobs.scheduler import Scheduler

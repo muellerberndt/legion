@@ -1,10 +1,8 @@
 import pytest
-from unittest.mock import Mock, patch, call, MagicMock
+from unittest.mock import patch, MagicMock
 from src.jobs.embed import EmbedJob
-from src.util.logging import LogConfig
 from src.models.base import Asset
 from src.jobs.base import JobStatus
-from sqlalchemy.orm import Session
 
 
 def create_mock_asset(i):
