@@ -18,6 +18,7 @@ class ExtensionLoader:
         self.logger = Logger("ExtensionLoader")
         self.config = Config()
         self.action_registry = ActionRegistry()
+        self.action_registry.initialize()
         self.handler_registry = HandlerRegistry()
 
     def load_extensions(self) -> None:
@@ -62,8 +63,10 @@ class ExtensionLoader:
     def _load_module(self, file_path: str) -> None:
         """Load a Python module from file"""
         try:
-            # Get module name from file path
-            module_name = os.path.splitext(os.path.basename(file_path))[0]
+            # Get relative path from extensions directory
+            rel_path = os.path.relpath(file_path, self.config.get("extensions_dir", "./extensions"))
+            # Convert path to module name (e.g., examples/simple_semgrep.py -> examples.simple_semgrep)
+            module_name = f"extensions.{os.path.splitext(rel_path)[0].replace(os.sep, '.')}"
 
             # Load module
             spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -71,9 +74,22 @@ class ExtensionLoader:
                 raise ImportError(f"Failed to load spec for {file_path}")
 
             module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module  # Add to sys.modules with correct name
             spec.loader.exec_module(module)
 
             self.logger.info(f"Loaded module: {module_name}")
+
+            # Add debug logging
+            for item_name in dir(module):
+                item = getattr(module, item_name)
+                if isinstance(item, type):
+                    self.logger.debug(f"Found class {item_name} in module {module_name}")
+                    if issubclass(item, BaseAction):
+                        self.logger.debug(f"Found action class {item_name}")
+                        if hasattr(item, "spec"):
+                            self.logger.debug(f"Action {item_name} has spec: {item.spec}")
+                        else:
+                            self.logger.debug(f"Action {item_name} has no spec!")
 
         except Exception as e:
             self.logger.error(f"Failed to load module {file_path}: {str(e)}")
@@ -93,9 +109,14 @@ class ExtensionLoader:
                 for item_name in dir(module):
                     item = getattr(module, item_name)
                     if isinstance(item, type):
+                        self.logger.debug(f"Found class {item_name}")
                         if issubclass(item, BaseAction) and item != BaseAction:
-                            self.action_registry.register_action(item.spec.name, item)
-                            self.logger.info(f"Registered action: {item.spec.name}")
+                            self.logger.debug(f"Registering action {item_name}")
+                            if hasattr(item, "spec"):
+                                self.action_registry.register_action(item.spec.name, item)
+                                self.logger.info(f"Registered action: {item.spec.name}")
+                            else:
+                                self.logger.warning(f"Action {item_name} has no spec!")
                         elif issubclass(item, Handler) and item != Handler:
                             self.handler_registry.register_handler(item)
                             self.logger.info(f"Registered handler: {item.__name__}")

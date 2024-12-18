@@ -100,11 +100,11 @@ class Chatbot:
                 formatted = json.dumps(data, indent=2)
                 html += "<pre class='json'>"
                 # Add basic syntax highlighting
-                formatted = formatted.replace('"', '&quot;')
+                formatted = formatted.replace('"', "&quot;")
                 formatted = re.sub(r'(".*?"):', r'<span class="key">\1</span>:', formatted)
                 formatted = re.sub(r': "(.+?)"', r': <span class="string">&quot;\1&quot;</span>', formatted)
-                formatted = re.sub(r': (\d+)', r': <span class="number">\1</span>', formatted)
-                formatted = re.sub(r': (true|false)', r': <span class="boolean">\1</span>', formatted)
+                formatted = re.sub(r": (\d+)", r': <span class="number">\1</span>', formatted)
+                formatted = re.sub(r": (true|false)", r': <span class="boolean">\1</span>', formatted)
                 html += formatted
                 html += "</pre>"
             except json.JSONDecodeError:

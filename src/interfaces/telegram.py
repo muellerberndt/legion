@@ -363,23 +363,21 @@ class TelegramInterface(Interface):
         try:
             # Truncate content if needed
             truncated, full_content = self._truncate_content(content)
-            
+
             # Send truncated message
             await self.app.bot.send_message(chat_id=session_id, text=truncated)
-            
+
             # If content was truncated, send full version as HTML
             if full_content:
                 html_content = self._format_as_html(full_content)
-                
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.html', encoding='utf-8') as f:
+
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".html", encoding="utf-8") as f:
                     f.write(html_content)
                     f.flush()
-                    
+
                     # Send the HTML file
                     await self.app.bot.send_document(
-                        chat_id=session_id,
-                        document=open(f.name, 'rb'),
-                        caption="Full response (formatted as HTML)"
+                        chat_id=session_id, document=open(f.name, "rb"), caption="Full response (formatted as HTML)"
                     )
 
         except Exception as e:
@@ -388,7 +386,7 @@ class TelegramInterface(Interface):
             try:
                 error_msg = f"Error sending message: {str(e)}"
                 await self.app.bot.send_message(chat_id=session_id, text=error_msg)
-            except:
+            except Exception:
                 self.logger.error("Failed to send error message")
 
     async def stop(self) -> None:
@@ -547,8 +545,7 @@ class TelegramInterface(Interface):
             else:
                 # For non-command messages, use the agent
                 agent = self._get_or_create_agent(chat_id)
-                await agent.process_message(text, 
-                    update_callback=lambda msg: self.send_message(msg, chat_id))
+                await agent.process_message(text, update_callback=lambda msg: self.send_message(msg, chat_id))
         except Exception as e:
             error_msg = f"Error processing message: {str(e)}"
             self.logger.error(error_msg)
@@ -615,11 +612,11 @@ class TelegramInterface(Interface):
                 formatted = json.dumps(data, indent=2)
                 html += "<pre class='json'>"
                 # Add basic syntax highlighting
-                formatted = formatted.replace('"', '&quot;')
+                formatted = formatted.replace('"', "&quot;")
                 formatted = re.sub(r'(".*?"):', r'<span class="key">\1</span>:', formatted)
                 formatted = re.sub(r': "(.+?)"', r': <span class="string">&quot;\1&quot;</span>', formatted)
-                formatted = re.sub(r': (\d+)', r': <span class="number">\1</span>', formatted)
-                formatted = re.sub(r': (true|false)', r': <span class="boolean">\1</span>', formatted)
+                formatted = re.sub(r": (\d+)", r': <span class="number">\1</span>', formatted)
+                formatted = re.sub(r": (true|false)", r': <span class="boolean">\1</span>', formatted)
                 html += formatted
                 html += "</pre>"
             except json.JSONDecodeError:
@@ -666,22 +663,22 @@ class TelegramInterface(Interface):
                             return truncated, content
             except json.JSONDecodeError:
                 pass
-        
+
         # For list-like content (multiple lines starting with numbers or bullets)
         if "\n" in content and any(line.strip().startswith(("- ", "* ", "1.", "2.")) for line in content.splitlines()):
             lines = content.splitlines()
             truncated_lines = []
             total_lines = len(lines)
-            
+
             for line in lines[:10]:  # Keep first 10 items
                 truncated_lines.append(line)
-            
+
             truncated = "\n".join(truncated_lines)
             truncated += f"\n\n... (truncated, showing 10 of {total_lines} items)"
-            
+
             if len(truncated) <= self.MAX_MESSAGE_LENGTH:
                 return truncated, content
 
         # Default truncation
-        truncated = content[:self.MAX_MESSAGE_LENGTH - 100] + "...\n(truncated, see full content in the HTML file)"
+        truncated = content[: self.MAX_MESSAGE_LENGTH - 100] + "...\n(truncated, see full content in the HTML file)"
         return truncated, content
