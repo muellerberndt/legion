@@ -2,7 +2,7 @@
 
 ![Tests](https://github.com/muellerberndt/Legion/actions/workflows/tests.yml/badge.svg)
 
-Legion is an AI-driven framework that automates web3 bug hunting workflows using an army of autonomous agents. Agents can be spawned on demand and react to on-chain and off-chain events. They can perform arbitrary tasks, such as assessing the relevance of code revisions and upgrades, prioritizing targets based on EV, evaluating recent evetns, searching bounty and contest code for potential bugs, running analysis tools, or whatever else the security researcher desires. 
+Legion is an AI-driven framework that automates web3 bug hunting workflows using an army of autonomous agents. Agents can be spawned on demand and react to on-chain and off-chain events. They can perform arbitrary tasks, such as assessing the relevance of code revisions and upgrades, prioritizing targets based on EV, evaluating recent events, searching bounty and contest code for potential bugs, running analysis tools, or whatever else the security researcher desires. 
 
 The Legion framework is designed to be [extensible](docs/customization.md) so users can keep their bug hunting alpha private. The base framework contains the following features:
 
