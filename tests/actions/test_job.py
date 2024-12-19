@@ -7,48 +7,65 @@ from src.jobs.manager import JobManager
 
 @pytest.mark.asyncio
 async def test_list_jobs_action():
-    """Test listing jobs in list format"""
-    # Create a mock instance
-    manager_instance = Mock()
-    manager_instance.list_jobs = Mock()
-
-    # Create the action instance
+    """Test listing jobs"""
     action = ListJobsAction()
-    action.logger = Mock()
 
-    # Test with no jobs
-    with patch.object(JobManager, "_instance", manager_instance):
-        manager_instance.list_jobs.return_value = []
+    # Test empty list
+    with patch("src.jobs.manager.JobManager.list_jobs") as mock_list:
+        mock_list.return_value = []
         result = await action.execute()
-        assert "No jobs found." in str(result)
+        assert "No jobs found" in str(result)
 
-        # Test with running jobs
-        now = datetime.utcnow()
-        jobs = [
-            {"id": "job1", "type": "indexer", "status": "running", "started_at": now.isoformat(), "completed_at": None},
+    # Test with jobs
+    with patch("src.jobs.manager.JobManager.list_jobs") as mock_list:
+        mock_list.return_value = [
             {
-                "id": "job2",
-                "type": "sync",
-                "status": "completed",
-                "started_at": now.isoformat(),
-                "completed_at": now.isoformat(),
-            },
+                "id": "test-1",
+                "type": "test",
+                "status": "RUNNING",
+                "started_at": "2024-01-01T00:00:00",
+                "completed_at": None,
+                "success": None,
+                "message": "Test job",
+                "outputs": ["Output 1"],
+                "data": None,
+            }
         ]
-        manager_instance.list_jobs.return_value = jobs
 
         result = await action.execute()
         result_str = str(result)
-        # Check list format
-        assert "🔹 Job job1" in result_str
-        assert "Type: indexer" in result_str
-        assert "Status: running" in result_str
-        assert now.isoformat() in result_str
-        assert "🔹 Job job2" in result_str
-        assert "Type: sync" in result_str
-        assert "Status: completed" in result_str
-        assert "Completed:" in result_str  # Only completed jobs show completion time
+        assert "test-1" in result_str
+        assert "RUNNING" in result_str
+        assert "Test job" in result_str
 
-        # Test error handling
-        manager_instance.list_jobs.side_effect = Exception("Test error")
+    # Test with status filter
+    with patch("src.jobs.manager.JobManager.list_jobs") as mock_list:
+        mock_list.return_value = [
+            {
+                "id": "test-2",
+                "type": "test",
+                "status": "COMPLETED",
+                "started_at": "2024-01-01T00:00:00",
+                "completed_at": "2024-01-01T00:01:00",
+                "success": True,
+                "message": "Completed job",
+                "outputs": ["Output 1"],
+                "data": None,
+            }
+        ]
+
+        result = await action.execute("completed")
+        result_str = str(result)
+        assert "test-2" in result_str
+        assert "COMPLETED ✓" in result_str
+        assert "Completed job" in result_str
+
+    # Test invalid status
+    result = await action.execute("invalid_status")
+    assert "Invalid status filter" in str(result)
+
+    # Test error handling
+    with patch("src.jobs.manager.JobManager.list_jobs") as mock_list:
+        mock_list.side_effect = Exception("Test error")
         result = await action.execute()
-        assert "Failed to list jobs: Test error" in str(result)
+        assert "Failed to list jobs" in str(result)

@@ -3,7 +3,6 @@ from sqlalchemy import select, and_, text
 from sqlalchemy.sql import Select
 from src.models.base import Asset, Project, Base
 from src.util.logging import Logger
-from src.models.event_log import EventLog
 import json
 
 
@@ -41,7 +40,7 @@ class QueryBuilder:
     """
 
     # Define allowed tables and their models
-    ALLOWED_TABLES = {"projects": Project, "assets": Asset, "event_logs": EventLog}
+    ALLOWED_TABLES = {"projects": Project, "assets": Asset}
 
     # Define allowed SQL functions
     ALLOWED_FUNCTIONS = {

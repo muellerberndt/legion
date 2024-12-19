@@ -6,13 +6,16 @@ from datetime import datetime
 from src.actions.status import StatusAction
 from src.jobs.scheduler import Scheduler
 from src.jobs.manager import JobManager
+from unittest.mock import AsyncMock
 
 
 @pytest.fixture
 def mock_job_manager():
     """Create mock job manager with test jobs"""
     manager = Mock(spec=JobManager)
-    manager.list_jobs.return_value = [
+
+    # Create a list of jobs that will be returned
+    jobs = [
         {
             "id": "test-job-1",
             "type": "test",
@@ -22,6 +25,7 @@ def mock_job_manager():
             "completed_at": None,
             "success": None,
             "message": None,
+            "outputs": [],
         },
         {
             "id": "test-job-2",
@@ -32,8 +36,18 @@ def mock_job_manager():
             "completed_at": datetime.utcnow().isoformat(),
             "success": True,
             "message": "Success",
+            "outputs": [],
         },
     ]
+
+    # Create an async mock that returns the jobs list
+    list_jobs_mock = AsyncMock()
+    list_jobs_mock.return_value = jobs
+    manager.list_jobs = list_jobs_mock
+
+    # Create get_instance class method
+    manager.get_instance = AsyncMock(return_value=manager)
+
     return manager
 
 
@@ -74,16 +88,19 @@ async def test_status_running_jobs(mock_job_manager, mock_scheduler, mock_webhoo
         action = StatusAction()
         result = await action.execute()
 
-        assert "🏃 Running Jobs:" in result
-        assert "test-job-1" in result
-        assert "test" in result
-        assert "running" in result
+        result_str = str(result)
+        assert "🏃 Running Jobs:" in result_str
+        assert "test-job-1" in result_str
+        assert "test" in result_str
+        assert "running" in result_str
 
 
 @pytest.mark.asyncio
 async def test_status_no_running_jobs(mock_job_manager, mock_scheduler, mock_webhook_server):
     """Test status when no jobs are running"""
+    # Update the mock to return an empty list
     mock_job_manager.list_jobs.return_value = []
+
     with (
         patch("src.jobs.manager.JobManager.get_instance", return_value=mock_job_manager),
         patch("src.jobs.scheduler.Scheduler.get_instance", return_value=mock_scheduler),
@@ -92,7 +109,9 @@ async def test_status_no_running_jobs(mock_job_manager, mock_scheduler, mock_web
         action = StatusAction()
         result = await action.execute()
 
-        assert "No jobs currently running" in result
+        result_str = str(result)
+        assert "🏃 Running Jobs:" in result_str
+        assert "No jobs currently running" in result_str
 
 
 @pytest.mark.asyncio
@@ -160,7 +179,9 @@ async def test_status_webhook_server_not_running(mock_job_manager, mock_schedule
 @pytest.mark.asyncio
 async def test_status_error_handling(mock_job_manager, mock_scheduler, mock_webhook_server):
     """Test error handling in status action"""
+    # Update the mock to raise an exception
     mock_job_manager.list_jobs.side_effect = Exception("Test error")
+
     with (
         patch("src.jobs.manager.JobManager.get_instance", return_value=mock_job_manager),
         patch("src.jobs.scheduler.Scheduler.get_instance", return_value=mock_scheduler),
@@ -169,4 +190,6 @@ async def test_status_error_handling(mock_job_manager, mock_scheduler, mock_webh
         action = StatusAction()
         result = await action.execute()
 
-        assert "Error getting jobs: Test error" in result
+        result_str = str(result)
+        assert "🏃 Running Jobs:" in result_str
+        assert "Error getting jobs: Test error" in result_str

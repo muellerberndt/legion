@@ -28,12 +28,13 @@ class StatusAction(BaseAction):
         try:
             lines = []
 
+            # Add running jobs section
+            lines.append("🏃 Running Jobs:")
             try:
                 # Get job status
                 job_manager = await JobManager.get_instance()
-                jobs = job_manager.list_jobs()
+                jobs = await job_manager.list_jobs()
 
-                lines.append("🏃 Running Jobs:")
                 if jobs:
                     for job in jobs:
                         lines.append(f"• {job['id']} ({job['type']}, status: {job['status']})")

@@ -1,7 +1,6 @@
 import pytest
 from src.backend.query_builder import QueryBuilder
 from src.models.base import Asset, Project
-from src.models.event_log import EventLog
 from sqlalchemy.sql.selectable import Select
 
 
@@ -13,10 +12,6 @@ def test_from_table():
     qb = QueryBuilder()
     qb.from_table("projects")
     assert qb._table == Project
-
-    qb = QueryBuilder()
-    qb.from_table("event_logs")
-    assert qb._table == EventLog
 
     with pytest.raises(ValueError, match="Access to table .* is not allowed"):
         qb.from_table("invalid")

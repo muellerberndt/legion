@@ -2,9 +2,7 @@ from typing import Dict, List, Type
 import asyncio
 from src.handlers.base import Handler, HandlerTrigger
 from src.util.logging import Logger
-from src.models.event_log import EventLog
 from src.backend.database import DBSessionMixin
-import uuid
 
 
 class EventBus(DBSessionMixin):
@@ -67,32 +65,5 @@ class EventBus(DBSessionMixin):
             result = await handler.handle()
             self.logger.debug(f"Handler execution completed: {handler.__class__.__name__}, result: {result}")
 
-            # Create event log
-            log = EventLog(
-                id=str(uuid.uuid4()),
-                handler_name=handler.__class__.__name__,
-                trigger=trigger.name,
-                result={"success": result.success, "data": result.data},
-            )
-
-            self.logger.info(f"Saving event log to database: {log}")
-
-            # Use proper async context manager
-            async with self.get_async_session() as session:
-                session.add(log)
-                await session.commit()
-
         except Exception as e:
             self.logger.error(f"Handler execution failed: {str(e)}")
-            # Log error result
-            log = EventLog(
-                id=str(uuid.uuid4()),
-                handler_name=handler.__class__.__name__,
-                trigger=trigger.name,
-                result={"success": False, "error": str(e)},
-            )
-
-            # Use proper async context manager for error case too
-            async with self.get_async_session() as session:
-                session.add(log)
-                await session.commit()

@@ -2,58 +2,74 @@ from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.manager import JobManager
 from src.util.logging import Logger
 from src.actions.result import ActionResult
+from src.jobs.base import JobStatus
 
 
 class ListJobsAction(BaseAction):
-    """Action to list running jobs"""
+    """Action that lists jobs"""
 
     spec = ActionSpec(
         name="list_jobs",
-        description="List all running jobs",
-        help_text="""List all currently running jobs in the system.
-
-Usage:
-/list_jobs
-
-Shows information about:
-- Job IDs
-- Job types
-- Current status
-- Start times (if available)
-
-Example:
-/list_jobs  # Show all running jobs""",
-        agent_hint="Use this command to see what jobs are currently running in the system and monitor their status.",
-        arguments=[],
+        description="List jobs with optional status filter",
+        help_text="List jobs. Use 'running' (default), 'completed', or 'all' as argument",
+        arguments=[
+            ActionArgument(name="status", description="Job status to filter by (running/completed/all)", required=False)
+        ],
+        agent_hint="Use this to check the status of jobs",
     )
 
     def __init__(self):
+        super().__init__()
         self.logger = Logger("ListJobsAction")
+        self.job_manager = JobManager()
 
     async def execute(self, *args, **kwargs) -> ActionResult:
         """Execute the list jobs action"""
         try:
-            job_manager = JobManager()
-            jobs = job_manager.list_jobs()
+            # Get status filter from args
+            status_filter = args[0] if args else "running"
+
+            # Validate and convert status argument
+            status = None
+            if status_filter.lower() == "running":
+                status = JobStatus.RUNNING
+            elif status_filter.lower() == "completed":
+                status = JobStatus.COMPLETED  # This will include failed and cancelled
+            elif status_filter.lower() == "all":
+                status = None
+            else:
+                return ActionResult.error("Invalid status filter. Use 'running', 'completed', or 'all'")
+
+            # Get jobs with filter
+            jobs = await self.job_manager.list_jobs(status=status)
 
             if not jobs:
-                return ActionResult.text("No jobs found.")
+                return ActionResult.text("No jobs found")
 
-            # Format as list
-            lines = []
+            # Format job entries
+            job_entries = []
             for job in jobs:
-                lines.append(f"🔹 Job {job['id']}")
-                lines.append(f"  Type: {job['type']}")
-                lines.append(f"  Status: {job['status']}")
-                lines.append(f"  Started: {job['started_at'] or 'Not started'}")
-                if job["completed_at"]:
-                    lines.append(f"  Completed: {job['completed_at']}")
-                lines.append("")  # Empty line between jobs
+                # Create status indicator
+                status_str = job["status"]
+                if job["success"] is not None:
+                    status_str += " ✓" if job["success"] else " ✗"
 
-            return ActionResult.text("\n".join(lines))
+                # Format job entry
+                entry = f"{job['id']} ({job['type']}) - {status_str}"
+                # Add message if available and not too long
+                if job["message"]:
+                    message = job["message"]
+                    if len(message) > 50:
+                        message = message[:47] + "..."
+                    entry += f" - {message}"
+
+                job_entries.append(entry)
+
+            # Return list result with metadata
+            return ActionResult.list(job_entries, metadata={"title": f"📋 Jobs ({status_filter})", "count": len(jobs)})
 
         except Exception as e:
-            self.logger.error(f"Failed to list jobs: {str(e)}")
+            self.logger.error(f"Error listing jobs: {str(e)}")
             return ActionResult.error(f"Failed to list jobs: {str(e)}")
 
 

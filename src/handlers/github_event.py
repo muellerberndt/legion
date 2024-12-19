@@ -281,10 +281,6 @@ class GitHubEventHandler(Handler):
     async def handle(self) -> HandlerResult:
         """Handle a GitHub event"""
         try:
-            self.logger.debug("Starting handler")
-            self.logger.debug(f"Trigger type: {type(self.trigger)}")
-            self.logger.debug(f"Trigger value: {self.trigger}")
-            self.logger.debug(f"Context: {self.context}")
 
             if not self.context:
                 self.logger.error("No context provided")
