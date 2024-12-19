@@ -265,7 +265,15 @@ class Chatbot:
                 {"role": "system", "content": self.system_prompt},
                 {
                     "role": "system",
-                    "content": """Plan and execute tasks using the available commands.
+                    "content": """
+
+Legion is an AI-driven framework that automates web3 bug hunting workflows.
+It collects and correlates data from bug bounty programs, audit contests, and on-chain and off-chain sources.
+User requests, event triggers, and scheduled tasks spawn agents that execute commands to perform tasks.
+As the Legion chatbot, you are the interface between the user and the framework.
+You execute commands on behalf of the user so they can focus on planning and thinking.
+
+Plan and execute tasks using the available commands.
 
 Your response MUST be a valid JSON object with these fields:
 {
