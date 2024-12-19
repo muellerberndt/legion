@@ -2,16 +2,19 @@
 
 ![Tests](https://github.com/muellerberndt/Legion/actions/workflows/tests.yml/badge.svg)
 
-Legion is an AI-driven framework that automates web3 bug hunting workflows using an army of autonomous agents. Agents can be spawned on demand and react to on-chain and off-chain events. They can perform arbitrary tasks, such as assessing the relevance of code revisions and upgrades, prioritizing targets based on EV, evaluating recent events, searching bounty and contest code for potential bugs, running analysis tools, or whatever else the security researcher desires. 
+Legion is an AI-driven framework that automates web3 bug hunting workflows using an army of autonomous agents. Agents can be spawned on demand and react to on-chain and off-chain events. They can perform arbitrary tasks, such as assessing code revisions and upgrades, prioritizing targets based on EV, evaluating on-chain and off-chain events, searching code for potential bugs, or whatever else the security researcher desires. 
 
-The Legion framework is designed to be [extensible](docs/customization.md) so users can keep their bug hunting alpha private. The base framework contains the following features:
+To get value out of Legion, you need to add your own "alpha" in the form of custom actions, event handlers and agent prompts. This can be done using [extensions](docs/customization.md).
+
+The base framework contains the following features:
 
 - Telegram chatbot interface
-- Auto-sync data from contests and bounty programs (atm only Immunefi)
-- Search bounty data, files and repos (including vector search)
-- Auto-review of PRs and commits in bounty repos
-- Notifications on scope changes, asset revision diffs
-- Example extensions for auto-reviewing proxy upgrades & semgrep scans
+- Launch agents on demand or schedule them to run at specific times
+- Auto-track data from contests and bounty programs (atm only Immunefi)
+- Search bounty data, files and repos (including regex & vector search)
+- Auto-review of PRs and commits in Github repos in scope
+- Auto-review of proxy upgrages in scope (see [example extension](extensions/examples/proxy_upgrade_review.py))
+- Simple semgrep scanning (see [example extension](extensions/examples/simple_semgrep.py))
 
 ## Running Legion
 
@@ -28,8 +31,9 @@ You can then talk to the bot via Telegram.
 ## Documentation
 
 - [Installation Guide](docs/installation.md) - Detailed setup instructions
-- [Development Guide](docs/development.md) - Development setup and guidelines
+- [User Guide](docs/user_guide.md) - How to use Legion
 - [Customization Guide](docs/customization.md) - How to extend Legion
+- [Development Guide](docs/development.md) - Development setup and guidelines
 
 ## Contributing
 
