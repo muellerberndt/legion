@@ -109,17 +109,19 @@ class ExtensionLoader:
                 for item_name in dir(module):
                     item = getattr(module, item_name)
                     if isinstance(item, type):
-                        self.logger.debug(f"Found class {item_name}")
-                        if issubclass(item, BaseAction) and item != BaseAction:
-                            self.logger.debug(f"Registering action {item_name}")
+                        self.logger.debug(f"Found class {item_name} in module {module_name}")
+                        if issubclass(item, Handler) and item != Handler:
+                            self.logger.debug(f"Found handler class {item_name}")
+                            self.logger.debug(f"Triggers: {item.get_triggers()}")
+                            self.handler_registry.register_handler(item)
+                            self.logger.info(f"Registered handler: {item.__name__}")
+                        elif issubclass(item, BaseAction) and item != BaseAction:
+                            self.logger.debug(f"Found action class {item_name}")
                             if hasattr(item, "spec"):
                                 self.action_registry.register_action(item.spec.name, item)
                                 self.logger.info(f"Registered action: {item.spec.name}")
                             else:
-                                self.logger.warning(f"Action {item_name} has no spec!")
-                        elif issubclass(item, Handler) and item != Handler:
-                            self.handler_registry.register_handler(item)
-                            self.logger.info(f"Registered handler: {item.__name__}")
+                                self.logger.debug(f"Action {item_name} has no spec!")
                         elif issubclass(item, WebhookHandler) and item != WebhookHandler:
                             webhook_server = await WebhookServer.get_instance()
                             webhook_server.register_handler(f"/{item_name.lower()}", item())

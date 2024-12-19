@@ -2,6 +2,8 @@
 # flake8: noqa: E402
 import pytest
 from unittest.mock import patch, Mock, AsyncMock, MagicMock
+import os
+import json
 
 # Create test config
 TEST_CONFIG = {
@@ -128,3 +130,31 @@ def event_bus():
     from src.backend.event_bus import EventBus
 
     return EventBus()
+
+
+"""Shared test fixtures"""
+
+
+@pytest.fixture
+def quicknode_alert():
+    """Load sample QuickNode alert data"""
+    testdata_dir = os.path.join(os.path.dirname(__file__), "testdata")
+    with open(os.path.join(testdata_dir, "quicknode-alert.json")) as f:
+        return json.load(f)
+
+
+@pytest.fixture
+async def aiohttp_client_cleanup(aiohttp_client):
+    """Fixture that ensures proper cleanup of aiohttp client"""
+    clients = []
+
+    async def _make_client(*args, **kwargs):
+        client = await aiohttp_client(*args, **kwargs)
+        clients.append(client)
+        return client
+
+    yield _make_client
+
+    # Cleanup all clients
+    for client in clients:
+        await client.close()

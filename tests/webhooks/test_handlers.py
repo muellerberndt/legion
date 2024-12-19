@@ -1,4 +1,4 @@
-"""Tests for webhook handlers"""
+"""Unit tests for webhook handlers"""
 
 import pytest
 from aiohttp import web
@@ -22,66 +22,43 @@ def quicknode_handler(mock_handler_registry):
 
 
 @pytest.mark.asyncio
-async def test_quicknode_handler_valid_payload(quicknode_handler):
-    """Test handling a valid Quicknode webhook payload"""
-    # Create test request with payload
-    test_payload = {
-        "payload": [
-            {
-                "eventId": "test-event-123",
-                "blockNumber": "0x123",
-                "transactionHash": "0xabc...",
-            }
-        ]
-    }
-
-    async def mock_json():
-        return test_payload
-
+async def test_quicknode_handler_valid_payload(quicknode_handler, quicknode_alert):
+    """Test QuickNode handler logic with valid payload"""
     request = Mock()
-    request.json = mock_json
+    request.json = AsyncMock(return_value=quicknode_alert)
 
-    # Mock web.Response
-    mock_response = Mock(spec=web.Response)
-    mock_response.status = 200
-    mock_response.text = AsyncMock(return_value="OK")
+    response = await quicknode_handler.handle(request)
+    assert response.status == 200
 
-    with patch("aiohttp.web.Response", return_value=mock_response):
-        # Handle request
-        response = await quicknode_handler.handle(request)
-
-        # Verify response
-        assert response.status == 200
-        assert await response.text() == "OK"
-
-        # Verify event was triggered
-        quicknode_handler.handler_registry.trigger_event.assert_called_once_with(
-            HandlerTrigger.BLOCKCHAIN_EVENT, {"source": "quicknode", "payload": test_payload["payload"][0]}
-        )
+    # Verify event was triggered with correct data
+    quicknode_handler.handler_registry.trigger_event.assert_called_once()
+    call_args = quicknode_handler.handler_registry.trigger_event.call_args[0]
+    assert call_args[0] == HandlerTrigger.BLOCKCHAIN_EVENT
+    assert call_args[1]["source"] == "quicknode"
+    assert call_args[1]["payload"] == quicknode_alert["payload"][0]
 
 
 @pytest.mark.asyncio
-async def test_quicknode_handler_invalid_payload(quicknode_handler):
-    """Test handling an invalid Quicknode webhook payload"""
+async def test_quicknode_handler_validation(quicknode_handler):
+    """Test QuickNode handler payload validation"""
+    test_cases = [
+        ({"type": "invalid"}, "Invalid payload format"),
+        ({"payload": None}, "Invalid payload format"),
+        ({"payload": [{}]}, "Missing required logs"),
+    ]
 
-    async def mock_json():
-        raise ValueError("Invalid JSON")
+    for payload, expected_error in test_cases:
+        request = Mock()
+        request.json = AsyncMock(return_value=payload)
 
-    request = Mock()
-    request.json = mock_json
+        # Mock web.Response
+        mock_response = Mock(spec=web.Response)
+        mock_response.status = 400
+        mock_response.text = AsyncMock(return_value=expected_error)
 
-    # Mock web.Response
-    mock_response = Mock(spec=web.Response)
-    mock_response.status = 500
-    mock_response.text = AsyncMock(return_value="Invalid JSON")
-
-    with patch("aiohttp.web.Response", return_value=mock_response):
-        # Handle request
-        response = await quicknode_handler.handle(request)
-
-        # Verify error response
-        assert response.status == 500
-        assert await response.text() == "Invalid JSON"
-
-        # Verify no event was triggered
-        quicknode_handler.handler_registry.trigger_event.assert_not_called()
+        with patch("aiohttp.web.Response", return_value=mock_response):
+            response = await quicknode_handler.handle(request)
+            assert response.status == 400
+            response_text = await response.text()
+            assert expected_error in response_text
+            quicknode_handler.handler_registry.trigger_event.assert_not_called()

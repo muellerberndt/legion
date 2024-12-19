@@ -20,3 +20,4 @@ telegram
 python-telegram-bot
 jsonschema
 sentence-transformers>=2.2.0
+pytest-aiohttp

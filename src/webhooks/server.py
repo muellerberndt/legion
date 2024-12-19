@@ -62,7 +62,19 @@ class WebhookServer:
         await self.runner.setup()
         site = web.TCPSite(self.runner, "0.0.0.0", self.port)
         await site.start()
+
+        # Add helpful setup instructions
         self.logger.info(f"Webhook server listening on port {self.port}")
+        self.logger.info("To expose webhooks to the internet:")
+        self.logger.info("1. Install ngrok: brew install ngrok")
+        self.logger.info(f"2. Run: ngrok http {self.port}")
+        self.logger.info("3. Copy the https:// URL from ngrok output")
+
+        # Log registered webhook paths
+        if self.handlers:
+            self.logger.info("\nRegistered webhook paths:")
+            for path in self.handlers.keys():
+                self.logger.info(f"  {path}")
 
     async def stop(self) -> None:
         """Stop the webhook server"""

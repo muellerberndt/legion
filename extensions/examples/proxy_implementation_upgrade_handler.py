@@ -2,11 +2,8 @@ from src.handlers.base import Handler, HandlerTrigger, HandlerResult
 from src.services.telegram import TelegramService
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
-from src.util.etherscan import EVMExplorer, fetch_verified_sources
+from src.util.etherscan import EVMExplorer
 from sqlalchemy import text
-from typing import Dict, Any, Optional
-import traceback
-import os
 from src.jobs.autobot import AutobotJob
 from src.jobs.manager import JobManager
 from src.config.config import Config
@@ -46,10 +43,7 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
                 topics = log.get("topics", [])
                 self.logger.info(f"Processing log with {len(topics)} topics", extra_data={"topics": topics})
 
-                # We should extract the contract address from the log here
-                # But for the sake of testing this example, we'll use a known address from an Immunefi bounty
-
-                if len(topics) >= 2 and topics[0] == "0x5c60da1bfc44b1d9d98cb2ef4f38f1f918db61f20e5392ae39893172435edaba":
+                if len(topics) >= 2 and topics[0] == "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b":
                     contract_address = log.get("address")
                     # Extract implementation address from first argument
                     implementation_address = "0x" + topics[1][-40:]  # Take last 20 bytes for address
@@ -87,4 +81,4 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
         except Exception as e:
             error_msg = f"Error handling proxy implementation upgrade event: {str(e)}"
             self.logger.error(error_msg)
-            return HandlerResult(success=False, error=error_msg)
+            return HandlerResult(success=False, data={"error": error_msg})  # Put error in data dict instead

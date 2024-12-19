@@ -4,7 +4,6 @@ from src.jobs.base import Job, JobResult
 from src.util.logging import Logger
 from src.jobs.manager import JobManager
 from src.models.base import Asset
-from src.backend.database import Session
 import json
 import os
 import pathlib
