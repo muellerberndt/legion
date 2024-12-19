@@ -3,6 +3,7 @@ from src.jobs.manager import JobManager
 from src.util.logging import Logger
 from src.actions.result import ActionResult
 from src.jobs.base import JobStatus
+from src.models.job import JobRecord
 
 
 class ListJobsAction(BaseAction):
@@ -114,33 +115,52 @@ Examples:
                     return ActionResult.text("No completed jobs found.")
                 job_id = job_record.id
 
-            # Get the job
+            # First try to get running job from memory
             job = job_manager.get_job(job_id)
-            if not job:
-                return ActionResult.error(f"Job {job_id} not found")
+            if job:
+                # Build job info structure for running job
+                job_info = {
+                    "id": job_id,
+                    "type": job.type,
+                    "status": job.status,
+                    "started_at": job.started_at.isoformat() if job.started_at else None,
+                    "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+                }
 
-            # Build job info structure
-            job_info = {
-                "id": job_id,
-                "type": job.type,
-                "status": job.status,
-                "started_at": job.started_at.isoformat() if job.started_at else None,
-                "completed_at": job.completed_at.isoformat() if job.completed_at else None,
-            }
+                # Add result info if available
+                if job.result:
+                    job_info.update(
+                        {
+                            "success": job.result.success,
+                            "message": job.result.message,
+                            "error": job.result.error,
+                            "outputs": job.result.outputs,
+                            "data": job.result.data,
+                        }
+                    )
 
-            # Add result info if available
-            if job.result:
-                job_info.update(
-                    {
-                        "success": job.result.success,
-                        "message": job.result.message,
-                        "error": job.result.error,
-                        "outputs": job.result.outputs,
-                        "data": job.result.data,
-                    }
-                )
+                return ActionResult.tree(job_info)
 
-            return ActionResult.tree(job_info)
+            # If not in memory, try to get from database
+            with job_manager.get_session() as session:
+                job_record = session.query(JobRecord).filter_by(id=job_id).first()
+                if not job_record:
+                    return ActionResult.error(f"Job {job_id} not found")
+
+                # Build job info structure from database record
+                job_info = {
+                    "id": job_record.id,
+                    "type": job_record.type,
+                    "status": job_record.status,
+                    "started_at": job_record.started_at.isoformat() if job_record.started_at else None,
+                    "completed_at": job_record.completed_at.isoformat() if job_record.completed_at else None,
+                    "success": job_record.success,
+                    "message": job_record.message,
+                    "outputs": job_record.outputs,
+                    "data": job_record.data,
+                }
+
+                return ActionResult.tree(job_info)
 
         except Exception as e:
             self.logger.error(f"Failed to get job result: {str(e)}")

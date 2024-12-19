@@ -222,17 +222,31 @@ class Chatbot:
             if command == "autobot":
                 return result
 
-            # Check if this is a job result
-            if isinstance(result, str):
-                # Look for job ID patterns
+            # Only check for job IDs in job start notifications
+            if isinstance(result, str) and command != "job":
+                # Look for job ID patterns - only match when a job is explicitly started/created
                 job_patterns = [
-                    r"[Jj]ob (?:ID: )?([a-f0-9-]+)",
-                    r"[Jj]ob_id: ([a-f0-9-]+)",
-                    r"[Ss]tarted.*[Jj]ob.*?([a-f0-9-]+)",
+                    r"^[Ss]tarted(?:\s+a)?(?:\s+new)?\s+job(?:\s+with)?(?:\s+ID)?(?:\s*:\s*|\s+)([a-f0-9-]+)",
+                    r"^[Cc]reated(?:\s+(?:a|new))?\s+job(?:\s+(?:with\s+)?ID)?(?:\s*:\s*|\s+)([a-f0-9-]+)",
+                    r"^[Jj]ob(?:\s+has\s+been)?(?:\s+successfully)?\s+(?:created|started)(?:\s+with)?(?:\s+ID)?(?:\s*:\s*|\s+)([a-f0-9-]+)",
+                    r"^[Nn]ew\s+job(?:\s+(?:created|started))?(?:\s+with)?(?:\s+ID)?(?:\s*:\s*|\s+)([a-f0-9-]+)",
                 ]
 
+                # Also match simpler formats
+                if not any(re.search(pattern, result.strip()) for pattern in job_patterns):
+                    simple_patterns = [
+                        r"^[Cc]reated\s+new\s+job\s+ID:\s*([a-f0-9-]+)",
+                        r"^[Cc]reated\s+job\s+ID:\s*([a-f0-9-]+)",
+                    ]
+                    for pattern in simple_patterns:
+                        match = re.search(pattern, result.strip())
+                        if match:
+                            job_id = match.group(1)
+                            return f"Started job {job_id}\nUse /job {job_id} to check results"
+
+                # Try the complex patterns
                 for pattern in job_patterns:
-                    match = re.search(pattern, result)
+                    match = re.search(pattern, result.strip())
                     if match:
                         job_id = match.group(1)
                         return f"Started job {job_id}\nUse /job {job_id} to check results"
@@ -449,9 +463,13 @@ Available commands and their parameters:"""
                             # Remove any special characters
                             cmd_params = cmd_params.replace("`", "").replace("'", "").replace('"', "")
 
+                        # Initialize _last_command_msg if not exists
+                        if not hasattr(self, "_last_command_msg"):
+                            self._last_command_msg = None
+
                         # Only show command if it's different from the last one
-                        command_msg = f"🛠️ Running: {cmd_name} {cmd_params}"
-                        if not hasattr(self, "_last_command_msg") or self._last_command_msg != command_msg:
+                        command_msg = f"��️ Running: {cmd_name} {cmd_params}"
+                        if self._last_command_msg != command_msg:
                             step_info.append(command_msg)
                             self._last_command_msg = command_msg
 
@@ -474,12 +492,28 @@ Available commands and their parameters:"""
 
                     # For final steps after a command, use the output as the formatted result
                     if plan["is_final"]:
-                        state["result"] = plan["output"]
+                        # If there's a planned output, use it (formatting case)
+                        # Otherwise use the raw result
+                        formatted_result = plan["output"] if plan["output"] else result
+                        state["result"] = formatted_result
                         state["status"] = "completed"
-                        self._add_to_history("assistant", plan["output"])
-                        return self._format_response(plan["output"])
+                        self._add_to_history("assistant", formatted_result)
+                        return self._format_response(formatted_result)
 
-                    # For non-final steps, continue to next step
+                    # For non-final steps, only return immediately if:
+                    # 1. We have a result AND
+                    # 2. No output is planned AND
+                    # 3. No further commands are needed (based on the plan's thought)
+                    if (
+                        result
+                        and not plan["output"]
+                        and not any(cmd in plan["thought"].lower() for cmd in ["next", "then", "after", "chain", "follow"])
+                    ):
+                        formatted_result = self._format_response(result)
+                        self._add_to_history("assistant", formatted_result)
+                        return formatted_result
+
+                    # Continue to next step
                     step_count += 1
 
                 except Exception as e:
