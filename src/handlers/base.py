@@ -54,11 +54,11 @@ class Handler(ABC):
         """Get list of triggers this handler listens for"""
 
     @abstractmethod
-    async def handle(self) -> Optional[HandlerResult]:
+    async def handle(self) -> HandlerResult:
         """Handle an event
 
         Returns:
-            Optional[HandlerResult]: Result of the handler execution, if any
+            HandlerResult: Result of the handler execution
         """
 
     def set_context(self, context: Dict[str, Any], trigger: HandlerTrigger = None) -> None:

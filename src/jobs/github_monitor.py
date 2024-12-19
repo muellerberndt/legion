@@ -208,7 +208,8 @@ class GithubMonitorJob(Job, DBSessionMixin):
         self.logger.debug(f"Current state: {repo}")
 
         # Use interval * 2 for the cutoff time
-        cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=self.interval * 2)
+        # cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=self.interval * 2)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(seconds=86400)  # 1 day
 
         # Ensure cutoff time is timezone-aware
         if cutoff_time.tzinfo is None:

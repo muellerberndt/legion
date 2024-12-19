@@ -44,7 +44,9 @@ class EventBus(DBSessionMixin):
                 self.logger.debug(f"Creating handler instance for {handler_class.__name__}")
                 handler = handler_class()
                 handler.set_context(context, trigger)
-                handler_tasks.append(self._execute_handler(handler, trigger))
+                # Create coroutine and add to tasks
+                task = asyncio.create_task(self._execute_handler(handler, trigger))
+                handler_tasks.append(task)
             except Exception as e:
                 self.logger.error(
                     f"Handler {handler_class.__name__} failed: {str(e)}",
@@ -53,27 +55,31 @@ class EventBus(DBSessionMixin):
 
         # Wait for all handlers to complete
         if handler_tasks:
-            await asyncio.gather(*handler_tasks, return_exceptions=True)
+            try:
+                await asyncio.gather(*handler_tasks)
+            except Exception as e:
+                self.logger.error(f"Error in handler execution: {str(e)}")
 
     async def _execute_handler(self, handler: Handler, trigger: HandlerTrigger) -> None:
         """Execute a handler and log the result"""
         try:
+            self.logger.debug(f"Starting handler execution: {handler.__class__.__name__}")
             result = await handler.handle()
+            self.logger.debug(f"Handler execution completed: {handler.__class__.__name__}, result: {result}")
 
             # Create event log
             log = EventLog(
                 id=str(uuid.uuid4()),
                 handler_name=handler.__class__.__name__,
                 trigger=trigger.name,
-                result={"success": result.success if result else True, "data": result.data if result else None},
+                result={"success": result.success, "data": result.data},
             )
-
-            # Save to database - Use async session
 
             self.logger.info(f"Saving event log to database: {log}")
 
+            # Use proper async context manager
             async with self.get_async_session() as session:
-                await session.add(log)
+                session.add(log)
                 await session.commit()
 
         except Exception as e:
@@ -85,6 +91,8 @@ class EventBus(DBSessionMixin):
                 trigger=trigger.name,
                 result={"success": False, "error": str(e)},
             )
+
+            # Use proper async context manager for error case too
             async with self.get_async_session() as session:
-                await session.add(log)
+                session.add(log)
                 await session.commit()
