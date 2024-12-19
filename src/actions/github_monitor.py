@@ -2,6 +2,7 @@
 
 from src.actions.base import BaseAction, ActionSpec
 from src.jobs.github_monitor import GithubMonitorJob
+from src.config.config import Config
 
 
 class GithubMonitorAction(BaseAction):
@@ -31,7 +32,14 @@ The job performs a single synchronization run and then completes.""",
         # Import JobManager here to avoid circular imports
         from src.jobs.manager import JobManager
 
-        job = GithubMonitorJob()
+        # Get GitHub token from config
+        config = Config()
+        github_token = config.get("github.api_token")
+        if not github_token:
+            return "Error: GitHub API token not configured. Please set LEGION_GITHUB_TOKEN in config."
+
+        # Pass token to job
+        job = GithubMonitorJob(github_token=github_token)
         job_manager = JobManager()
         job_id = await job_manager.submit_job(job)
 

@@ -68,8 +68,11 @@ class EventBus(DBSessionMixin):
                 result={"success": result.success if result else True, "data": result.data if result else None},
             )
 
-            # Save to database
-            async with self.get_session() as session:
+            # Save to database - Use async session
+
+            self.logger.info(f"Saving event log to database: {log}")
+
+            async with self.get_async_session() as session:
                 await session.add(log)
                 await session.commit()
 
@@ -82,6 +85,6 @@ class EventBus(DBSessionMixin):
                 trigger=trigger.name,
                 result={"success": False, "error": str(e)},
             )
-            async with self.get_session() as session:
+            async with self.get_async_session() as session:
                 await session.add(log)
                 await session.commit()
