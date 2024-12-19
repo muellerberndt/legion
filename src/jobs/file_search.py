@@ -7,6 +7,7 @@ from typing import List, Dict
 from src.models.base import Asset
 import asyncio
 from src.config.config import Config
+from src.models import Project
 
 
 def is_binary_file(file_path: str) -> bool:
@@ -58,15 +59,20 @@ class FileSearchJob(Job, DBSessionMixin):
         ".lockb",  # Lock files
     }
 
-    def __init__(self, regex_pattern: str):
-        """Initialize the file search job"""
+    def __init__(self, regex_pattern: str, project_ids: List[int] = None):
+        """Initialize the file search job
+
+        Args:
+            regex_pattern: Regular expression pattern to search for
+            project_ids: Optional list of project IDs to filter by
+        """
         # Initialize base Job class
         super().__init__(job_type="file_search")
         DBSessionMixin.__init__(self)
         self.logger = Logger("FileSearchJob")
 
-        # Store pattern in config and compile it
-        self.config = {"pattern": regex_pattern}
+        # Store pattern and project IDs in config
+        self.config = {"pattern": regex_pattern, "project_ids": project_ids}
         self.pattern = re.compile(regex_pattern, re.IGNORECASE | re.MULTILINE)
 
         # Get allowed extensions from config
@@ -75,6 +81,8 @@ class FileSearchJob(Job, DBSessionMixin):
             config.get("file_search.allowed_extensions", [".sol", ".cairo", ".rs", ".vy", ".fe", ".move", ".yul"])
         )
         self.logger.info(f"Using allowed extensions: {self.allowed_extensions}")
+        if project_ids:
+            self.logger.info(f"Filtering by project IDs: {project_ids}")
 
     def _should_skip_file(self, file_path: str) -> bool:
         """Check if we should skip this file"""
@@ -148,6 +156,8 @@ class FileSearchJob(Job, DBSessionMixin):
         try:
             # Get search parameters
             pattern = self.config.get("pattern")
+            project_ids = self.config.get("project_ids")
+
             if not pattern:
                 await self.fail("No search pattern provided")
                 return
@@ -156,9 +166,15 @@ class FileSearchJob(Job, DBSessionMixin):
             results = []
             total_matches = 0
 
-            # Get all assets from database
+            # Get assets from database, filtered by project IDs if specified
             with self.get_session() as session:
-                assets = session.query(Asset).all()
+                query = session.query(Asset)
+
+                # Apply project filter if project IDs are specified
+                if project_ids:
+                    query = query.join(Asset.projects).filter(Project.id.in_(project_ids))
+
+                assets = query.all()
                 self.logger.info(f"Searching {len(assets)} assets")
 
                 # Search each asset
@@ -171,12 +187,15 @@ class FileSearchJob(Job, DBSessionMixin):
                     try:
                         asset_matches = await self._search_directory_async(asset.local_path, self.pattern)
                         if asset_matches:
+                            # Get project names for this asset
+                            project_names = [p.name for p in asset.projects]
                             results.append(
                                 {
                                     "asset": {
                                         "id": asset.id,
                                         "source_url": asset.source_url,
                                         "asset_type": asset.asset_type,
+                                        "projects": project_names,
                                     },
                                     "matches": asset_matches,
                                 }
@@ -201,6 +220,7 @@ class FileSearchJob(Job, DBSessionMixin):
                     for match in file_match["matches"]:
                         output = (
                             f"Match in {asset['source_url']} ({asset['asset_type']}):\n"
+                            f"Projects: {', '.join(asset['projects'])}\n"
                             f"Source: {asset['source_url']}\n"
                             f"File: {file_path}\n"
                             f"Match: {match['match']}\n"
