@@ -4,6 +4,7 @@ from src.jobs.base import Job, JobResult
 from src.util.logging import Logger
 from src.jobs.manager import JobManager
 from src.models.base import Asset
+from src.backend.database import DBSessionMixin
 import json
 import os
 import pathlib
@@ -92,7 +93,7 @@ class SemgrepJob(Job):
         pass
 
 
-class SemgrepAction(BaseAction):
+class SemgrepAction(BaseAction, DBSessionMixin):
     """Action that runs a semgrep scan on a specified asset"""
 
     spec = ActionSpec(
@@ -105,6 +106,7 @@ class SemgrepAction(BaseAction):
 
     def __init__(self):
         super().__init__()
+        DBSessionMixin.__init__(self)
         self.logger = Logger("SemgrepAction")
         self.job_manager = JobManager()
 
@@ -115,7 +117,7 @@ class SemgrepAction(BaseAction):
             asset_id = args[0]
 
             # Get asset from database
-            with Session() as session:
+            with self.get_session() as session:
                 asset = session.query(Asset).filter(Asset.id == asset_id).first()
                 if not asset:
                     return ActionResult.error(f"Asset not found: {asset_id}")
