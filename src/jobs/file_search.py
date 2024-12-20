@@ -187,15 +187,15 @@ class FileSearchJob(Job, DBSessionMixin):
                     try:
                         asset_matches = await self._search_directory_async(asset.local_path, self.pattern)
                         if asset_matches:
-                            # Get project names for this asset
-                            project_names = [p.name for p in asset.projects]
+                            # Get project name for this asset
+                            project_name = asset.projects[0].name if asset.projects else None
                             results.append(
                                 {
                                     "asset": {
                                         "id": asset.id,
                                         "source_url": asset.source_url,
                                         "asset_type": asset.asset_type,
-                                        "projects": project_names,
+                                        "projects": project_name,
                                     },
                                     "matches": asset_matches,
                                 }
@@ -212,20 +212,12 @@ class FileSearchJob(Job, DBSessionMixin):
                 data={"results": results},
             )
 
-            # Add outputs for each match
+            # Keep outputs concise so not to overload the agent's context
             for asset_result in results:
                 asset = asset_result["asset"]
                 for file_match in asset_result["matches"]:
-                    file_path = file_match["file_path"]
                     for match in file_match["matches"]:
-                        output = (
-                            f"Match in {asset['source_url']} ({asset['asset_type']}):\n"
-                            f"Projects: {', '.join(asset['projects'])}\n"
-                            f"Source: {asset['source_url']}\n"
-                            f"File: {file_path}\n"
-                            f"Match: {match['match']}\n"
-                            f"Context: {match['context']}\n"
-                        )
+                        output = f"Match in {asset['id']} ({asset['asset_type']}) - " f"Project: {asset['projects']}"
                         result.add_output(output)
 
             # Complete the job with results

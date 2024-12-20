@@ -68,6 +68,7 @@ Examples:
                 lines = ["Available Commands:"]
 
                 for name, (_, spec) in sorted(self.registry.get_actions().items()):
+                    self.logger.info(f"Command: {name}, Description: {spec.description}")
                     lines.append(f"  • /{name}: {spec.description}")
 
                 lines.append("\nUse /help <command> for detailed information about a specific command.")

@@ -53,8 +53,6 @@ class TelegramInterface(Interface):
         formatter = formatters.get(result.type, str)
         formatted = formatter(result)
 
-        # Remove any special characters that could cause Telegram parsing issues
-        formatted = formatted.replace("`", "").replace("*", "").replace("_", "")
         return formatted
 
     def _format_text_result(self, result: ActionResult) -> str:

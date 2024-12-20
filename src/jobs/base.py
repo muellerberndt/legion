@@ -120,7 +120,7 @@ class Job(DBSessionMixin, ABC):
         self.status = JobStatus.COMPLETED
         self.result = result
         self._store_in_db()
-        await self._notify_status(f"Completed - {result.message}")
+        await self._notify_status(f"Completed - {result.message}\n\n{result.get_output()}")
 
     async def fail(self, error: str) -> None:
         """Mark job as failed with error"""

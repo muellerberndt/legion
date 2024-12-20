@@ -64,7 +64,7 @@ Examples:
             msg = f"File search started with job ID: {job_id}"
             if project_ids:
                 msg += f"\nSearching in projects: {', '.join(str(pid) for pid in project_ids)}"
-            msg += "\nUse 'job {job_id}' to check results."
+            msg += f"\nUse 'job {job_id}' to check results."
 
             return ActionResult.text(msg)
 

@@ -74,7 +74,7 @@ class QuicknodeWebhookHandler(WebhookHandler):
             return web.Response(text="OK")
 
         except json.JSONDecodeError:
-            self.logger.error("Invalid JSON payload", extra_data={"payload": payload})
+            self.logger.error("Invalid JSON payload", extra_data={"request": request.text})
             return web.Response(text="Invalid JSON payload", status=400)
         except Exception as e:
             self.logger.error(f"Error handling Quicknode webhook: {str(e)}")
