@@ -89,10 +89,10 @@ async def test_status_running_jobs(mock_job_manager, mock_scheduler, mock_webhoo
         result = await action.execute()
 
         result_str = str(result)
-        assert "🏃 Running Jobs:" in result_str
-        assert "test-job-1" in result_str
-        assert "test" in result_str
-        assert "running" in result_str
+        assert "📊 Job Statistics:" in result_str
+        assert "• Running: 1" in result_str
+        assert "• Completed: 1" in result_str
+        assert "• Cancelled: 0" in result_str
 
 
 @pytest.mark.asyncio
@@ -110,8 +110,10 @@ async def test_status_no_running_jobs(mock_job_manager, mock_scheduler, mock_web
         result = await action.execute()
 
         result_str = str(result)
-        assert "🏃 Running Jobs:" in result_str
-        assert "No jobs currently running" in result_str
+        assert "📊 Job Statistics:" in result_str
+        assert "• Running: 0" in result_str
+        assert "• Completed: 0" in result_str
+        assert "• Cancelled: 0" in result_str
 
 
 @pytest.mark.asyncio
@@ -126,9 +128,9 @@ async def test_status_scheduled_actions(mock_job_manager, mock_scheduler, mock_w
         result = await action.execute()
 
         assert "📅 Scheduled Actions:" in result
-        assert "test_action" in result
-        assert "test_command" in result
-        assert "60 minutes" in result
+        assert "✅ test_action" in result
+        assert "• Command: test_command" in result
+        assert "• Interval: 60 minutes" in result
 
 
 @pytest.mark.asyncio
@@ -143,7 +145,7 @@ async def test_status_no_scheduled_actions(mock_job_manager, mock_scheduler, moc
         action = StatusAction()
         result = await action.execute()
 
-        assert "No scheduled actions configured" in result
+        assert "• No scheduled actions configured" in result
 
 
 @pytest.mark.asyncio
@@ -158,7 +160,7 @@ async def test_status_webhook_server(mock_job_manager, mock_scheduler, mock_webh
         result = await action.execute()
 
         assert "🌐 Webhook Server:" in result
-        assert "Running on port 8080" in result
+        assert "• Running on port 8080" in result
 
 
 @pytest.mark.asyncio
@@ -173,7 +175,7 @@ async def test_status_webhook_server_not_running(mock_job_manager, mock_schedule
         action = StatusAction()
         result = await action.execute()
 
-        assert "Not running" in result
+        assert "• Not running" in result
 
 
 @pytest.mark.asyncio
@@ -191,5 +193,5 @@ async def test_status_error_handling(mock_job_manager, mock_scheduler, mock_webh
         result = await action.execute()
 
         result_str = str(result)
-        assert "🏃 Running Jobs:" in result_str
-        assert "Error getting jobs: Test error" in result_str
+        assert "📊 Job Statistics:" in result_str
+        assert "• Error getting job statistics: Test error" in result_str

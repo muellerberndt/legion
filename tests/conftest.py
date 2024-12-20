@@ -58,7 +58,7 @@ mock_db.async_session.return_value.__aexit__ = Mock(return_value=None)
 
 # Mock engine inspection results
 mock_inspector = Mock()
-mock_inspector.get_table_names.return_value = ["projects", "assets", "event_logs"]
+mock_inspector.get_table_names.return_value = ["projects", "assets"]
 mock_inspector.get_columns.return_value = [
     {"name": "id", "type": "INTEGER", "nullable": False},
     {"name": "name", "type": "VARCHAR", "nullable": True},

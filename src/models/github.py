@@ -15,7 +15,7 @@ class GitHubRepoState(Base):
     repo_url = Column(String, primary_key=True)  # Normalized repo URL
     last_commit_sha = Column(String)  # Last processed commit SHA
     last_pr_number = Column(Integer)  # Last processed PR number
-    last_check = Column(DateTime)  # Last time we checked this repo
+    last_check = Column(DateTime, default=datetime.utcnow)  # Last time we checked this repo
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

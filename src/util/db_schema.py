@@ -2,7 +2,7 @@ from sqlalchemy import inspect
 from src.backend.database import db
 
 # Define allowed tables
-ALLOWED_TABLES = {"projects", "assets", "event_logs"}
+ALLOWED_TABLES = {"projects", "assets"}
 
 
 def get_table_schema() -> str:
@@ -64,8 +64,6 @@ keywords: tags that describe the project e.g. "Solidity"
 
     examples = """
 - List projects: db_query '{"from": "projects", "order_by": [{"field": "id", "direction": "desc"}], "limit": 10}'
-- Search events: db_query '{"from": "event_logs", "order_by": [{"field": "created_at", "direction": "desc"}], "limit": 10}'
-- Filter by multiple conditions: db_query '{"from": "event_logs", "where": [{"field": "handler_name", "op": "=", "value": "ProjectEventHandler"},{"field": "created_at", "op": ">", "value": "2024-01-01"}], "limit": 10}'
 """
 
     return f"""Database Schema:
