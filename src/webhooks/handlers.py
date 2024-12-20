@@ -32,6 +32,7 @@ class QuicknodeWebhookHandler(WebhookHandler):
 
             # Validate basic payload structure
             if not isinstance(payload, dict) or "payload" not in payload:
+                self.logger.error("Invalid payload format: missing 'payload' field", extra_data={"payload": payload})
                 return web.Response(text="Invalid payload format: missing 'payload' field", status=400)
 
             # Extract events from payload
@@ -42,21 +43,26 @@ class QuicknodeWebhookHandler(WebhookHandler):
             # Validate each event
             for event in events:
                 if not isinstance(event, dict):
+                    self.logger.error("Invalid event format: must be a dictionary", extra_data={"event": event})
                     return web.Response(text="Invalid event format: must be a dictionary", status=400)
 
                 # Check for required fields
                 if "logs" not in event:
+                    self.logger.error("Missing required logs field in event", extra_data={"event": event})
                     return web.Response(text="Missing required logs field in event", status=400)
 
                 logs = event.get("logs", [])
                 if not isinstance(logs, list) or not logs:
+                    self.logger.error("Invalid or empty logs array", extra_data={"event": event})
                     return web.Response(text="Invalid or empty logs array", status=400)
 
                 # Validate log structure (for proxy implementation upgrades)
                 for log in logs:
                     if not isinstance(log, dict):
+                        self.logger.error("Invalid log format", extra_data={"log": log})
                         return web.Response(text="Invalid log format", status=400)
                     if "topics" not in log or not isinstance(log["topics"], list):
+                        self.logger.error("Missing or invalid topics in log", extra_data={"log": log})
                         return web.Response(text="Missing or invalid topics in log", status=400)
 
             # If validation passes, trigger events
@@ -68,6 +74,7 @@ class QuicknodeWebhookHandler(WebhookHandler):
             return web.Response(text="OK")
 
         except json.JSONDecodeError:
+            self.logger.error("Invalid JSON payload", extra_data={"payload": payload})
             return web.Response(text="Invalid JSON payload", status=400)
         except Exception as e:
             self.logger.error(f"Error handling Quicknode webhook: {str(e)}")
