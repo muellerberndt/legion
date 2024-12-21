@@ -11,7 +11,7 @@ class MockWebhookHandler(WebhookHandler):
     """Mock handler for testing"""
 
     async def handle(self, request: web.Request) -> web.Response:
-        return web.Response(text="Mock handler response", status=200)
+        return web.Response(body=b"Mock handler response", status=200)
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ async def test_handle_webhook(webhook_server):
 
     # Verify response
     assert response.status == 200
-    assert await response.text() == "Mock handler response"
+    assert response.body == b"Mock handler response"
 
 
 @pytest.mark.asyncio
@@ -70,7 +70,7 @@ async def test_handle_webhook_not_found(webhook_server):
     response = await webhook_server._handle_webhook(request)
 
     assert response.status == 404
-    assert await response.text() == "No handler registered for path: /webhooks/nonexistent"
+    assert response.body == b"No handler registered for path: /webhooks/nonexistent"
 
 
 @pytest.mark.asyncio
