@@ -2,7 +2,7 @@
 
 import pytest
 from aiohttp import web
-from unittest.mock import Mock, AsyncMock, patch, create_autospec
+from unittest.mock import Mock, AsyncMock, patch
 from src.webhooks.server import WebhookServer
 from src.webhooks.handlers import WebhookHandler
 
@@ -11,11 +11,7 @@ class MockWebhookHandler(WebhookHandler):
     """Mock handler for testing"""
 
     async def handle(self, request: web.Request) -> web.Response:
-        # Create a proper response without using spec
-        mock_response = Mock(spec=web.Response)
-        mock_response.status = 200
-        mock_response.text = AsyncMock(return_value="Mock handler response")
-        return mock_response
+        return web.Response(text="Mock handler response", status=200)
 
 
 @pytest.fixture
@@ -57,18 +53,12 @@ async def test_handle_webhook(webhook_server):
     request = Mock()
     request.path = "/webhooks/test"
 
-    # Create mock response without using spec
-    mock_response = Mock()
-    mock_response.status = 200
-    mock_response.text = AsyncMock(return_value="Mock handler response")
+    # Handle request
+    response = await webhook_server._handle_webhook(request)
 
-    with patch("aiohttp.web.Response", return_value=mock_response):
-        # Handle request
-        response = await webhook_server._handle_webhook(request)
-
-        # Verify response
-        assert response.status == 200
-        assert await response.text() == "Mock handler response"
+    # Verify response
+    assert response.status == 200
+    assert await response.text() == "Mock handler response"
 
 
 @pytest.mark.asyncio
@@ -77,16 +67,10 @@ async def test_handle_webhook_not_found(webhook_server):
     request = Mock()
     request.path = "/webhooks/nonexistent"
 
-    # Mock web.Response
-    mock_response = Mock(spec=web.Response)
-    mock_response.status = 404
-    mock_response.text = AsyncMock(return_value="No handler registered for path: /webhooks/nonexistent")
+    response = await webhook_server._handle_webhook(request)
 
-    with patch("aiohttp.web.Response", return_value=mock_response):
-        response = await webhook_server._handle_webhook(request)
-
-        assert response.status == 404
-        assert await response.text() == "No handler registered for path: /webhooks/nonexistent"
+    assert response.status == 404
+    assert await response.text() == "No handler registered for path: /webhooks/nonexistent"
 
 
 @pytest.mark.asyncio
