@@ -1,10 +1,42 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import UserDefinedType
 from src.backend.database import Base
 import enum
 from datetime import datetime
 import os
 import json
+
+
+# Add custom VECTOR type for pgvector
+class VECTOR(UserDefinedType):
+    def __init__(self, dimensions):
+        self.dimensions = dimensions
+
+    def get_col_spec(self):
+        return f"vector({self.dimensions})"
+
+    def bind_processor(self, dialect):
+        def process(value):
+            if value is None:
+                return None
+            if isinstance(value, (list, tuple)):
+                if len(value) != self.dimensions:
+                    raise ValueError(f"Vector must have exactly {self.dimensions} dimensions")
+                # Let PostgreSQL handle the array-to-vector cast
+                return value
+            return value
+
+        return process
+
+    def result_processor(self, dialect, coltype):
+        def process(value):
+            if value is None:
+                return None
+            # pgvector returns the data as a native array
+            return value
+
+        return process
 
 
 class AssetType(str, enum.Enum):
@@ -62,7 +94,7 @@ class Asset(Base):
     extra_data = Column(JSON)  # Additional metadata including asset-specific URLs
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    embedding = Column(String)  # Store as string, let Postgres handle vector conversion
+    embedding = Column(VECTOR(384))
 
     # Many-to-one relationship
     project = relationship("Project", back_populates="assets")

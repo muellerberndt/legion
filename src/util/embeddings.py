@@ -1,11 +1,10 @@
 from sentence_transformers import SentenceTransformer
 from src.models.base import Asset
 from typing import List, Dict
-import os
 import numpy as np
 import logging
 from sqlalchemy import text
-from sqlalchemy.orm import Session, object_session
+from sqlalchemy.orm import Session
 
 
 class EmbeddingGenerator:
@@ -92,46 +91,20 @@ def update_embedding_raw(session: Session, asset_id: str, embedding: List[float]
         raise
 
 
-async def update_asset_embedding(asset: Asset) -> None:
-    """Update embedding for an asset"""
+async def update_asset_embedding(asset: Asset) -> List[float]:
+    """Generate embedding for an asset"""
+    logger = logging.getLogger()
+    logger.info(f"Generating embedding for asset {asset.id}")
+
     try:
-        # Get session from asset
-        session = object_session(asset)
-        if session is None:
-            raise ValueError("Asset is not attached to a session")
+        # Generate embedding
+        text = asset.generate_embedding_text()
+        if not text:  # Add check for empty text
+            raise ValueError("No text content available for embedding")
 
-        # Generate text representation
-        if asset.asset_type == "deployed_contract":
-            # For deployed contracts, process each file separately
-            files = []
-            if os.path.isdir(asset.local_path):
-                for root, _, filenames in os.walk(asset.local_path):
-                    for filename in sorted(filenames):
-                        if not filename.endswith(".sol"):  # Only process Solidity files
-                            continue
-                        file_path = os.path.join(root, filename)
-                        try:
-                            with open(file_path, "r", encoding="utf-8") as f:
-                                content = f.read()
-                                files.append({"name": filename, "content": content})
-                        except UnicodeDecodeError:
-                            # Skip binary files
-                            continue
-
-            if files:
-                embedding = await generate_file_embeddings(files)
-                update_embedding_raw(session, asset.id, embedding)
-
-        else:
-            # For single files or repos, use the combined text
-            text = asset.generate_embedding_text()
-            if text:
-                # Add context markers for better semantic understanding
-                text = f"[TYPE] {asset.asset_type} [CONTENT] {text}"
-                embedding = await generate_embedding(text)
-                update_embedding_raw(session, asset.id, embedding)
+        embedding = await generate_embedding(text)
+        return embedding
 
     except Exception as e:
-        logging.error(f"Failed to update embedding for asset {asset.id}: {str(e)}")
-        # Re-raise all errors to let the job handle them
+        logger.error(f"Failed to generate embedding for asset {asset.id}: {str(e)}")
         raise

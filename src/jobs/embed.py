@@ -5,7 +5,7 @@ from src.backend.database import DBSessionMixin
 from src.models.base import Asset
 from src.util.embeddings import update_asset_embedding
 from src.util.logging import Logger
-from sqlalchemy import select
+from sqlalchemy import select, text
 from datetime import datetime
 
 
@@ -40,13 +40,28 @@ class EmbedJob(Job, DBSessionMixin):
                 for i, asset in enumerate(assets):
                     try:
                         self.logger.info(f"Processing asset {asset.id} ({i+1}/{total})")
-                        await update_asset_embedding(asset)
+                        embedding = await update_asset_embedding(asset)
+
+                        # Format the embedding array properly for PostgreSQL
+                        embedding_str = ",".join(str(x) for x in embedding)
+
+                        # Update embedding using native PostgreSQL array casting
+                        update_query = text(
+                            """
+                            UPDATE assets
+                            SET embedding = array[%s]::vector(384)
+                            WHERE id = :id
+                            """
+                            % embedding_str  # Directly interpolate the array values
+                        )
+                        session.execute(update_query, {"id": asset.id})
+
                         self.processed += 1
                         current_batch.append(asset.id)
 
                         # Only commit on full batch or last asset
                         should_commit = len(current_batch) >= self.BATCH_SIZE or i == total - 1
-                        if should_commit and current_batch:  # Only commit if we have assets to commit
+                        if should_commit and current_batch:
                             self.logger.info(f"Committing batch of {len(current_batch)} assets: {current_batch}")
                             try:
                                 session.commit()
@@ -56,25 +71,23 @@ class EmbedJob(Job, DBSessionMixin):
                             except Exception as e:
                                 self.logger.error(f"Failed to commit batch: {str(e)}")
                                 session.rollback()
-                                raise  # Re-raise the commit error
+                                raise
 
                     except Exception as e:
                         self.failed += 1
                         self.logger.error(f"Failed to generate embedding for asset {asset.id}: {str(e)}")
                         if "Database error" in str(e):
                             session.rollback()
-                            raise  # Re-raise database errors immediately
-                        # For non-database errors, continue with next asset
-                        session.rollback()  # Rollback any changes from the failed asset
+                            raise
+                        session.rollback()
 
             # Create result with success/failure stats
             result = JobResult(
-                success=self.failed == 0,  # Only successful if no failures
+                success=self.failed == 0,
                 message=f"Generated embeddings for {self.processed} assets ({self.failed} failed)",
                 data={"processed": self.processed, "failed": self.failed, "commits": self._commit_count},
             )
 
-            # Add detailed output
             if self.failed > 0:
                 result.add_output(f"⚠️ {self.failed} assets failed to process")
             result.add_output(f"✅ Successfully processed {self.processed} assets")

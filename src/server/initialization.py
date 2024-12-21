@@ -12,7 +12,7 @@ class Initializer(DBSessionMixin):
         self.logger = Logger("Initializer")
 
     async def init_db(self) -> str:
-        """Initialize database schema"""
+        """Initialize database schema and required extensions"""
         try:
             if db.is_initialized():
                 return "Database already initialized"
@@ -27,6 +27,26 @@ class Initializer(DBSessionMixin):
                     self.logger.error("Vector extension is not available in the database")
                     raise RuntimeError("Vector extension is not available. Please install it first: CREATE EXTENSION vector;")
 
+                # Create vector extension if not exists
+                session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+
+                # Create array to vector conversion function if not exists
+                session.execute(
+                    text(
+                        """
+                        CREATE OR REPLACE FUNCTION array_to_vector(arr float8[])
+                        RETURNS vector
+                        LANGUAGE SQL
+                        IMMUTABLE
+                        PARALLEL SAFE
+                        AS $$
+                            SELECT arr::vector;
+                        $$;
+                        """
+                    )
+                )
+                session.commit()
+
             # Create tables for both sync and async engines
             Base.metadata.create_all(db.get_engine())
             async with db.get_async_engine().begin() as conn:
@@ -37,11 +57,11 @@ class Initializer(DBSessionMixin):
                 session.execute(
                     text(
                         """
-                    CREATE INDEX IF NOT EXISTS asset_embedding_idx
-                    ON assets
-                    USING ivfflat (embedding vector_l2_ops)
-                    WITH (lists = 100);
-                """
+                        CREATE INDEX IF NOT EXISTS asset_embedding_idx
+                        ON assets
+                        USING ivfflat (embedding vector_l2_ops)
+                        WITH (lists = 100);
+                        """
                     )
                 )
                 session.commit()
@@ -68,28 +88,3 @@ class Initializer(DBSessionMixin):
             error_msg = f"Initial sync failed: {str(e)}"
             self.logger.error(error_msg)
             raise
-
-    def initialize_database():
-        """Initialize database with required extensions and functions"""
-
-        with db.get_session() as session:
-            # Create vector extension if not exists
-            session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-
-            # Create array to vector conversion function if not exists
-            session.execute(
-                text(
-                    """
-                CREATE OR REPLACE FUNCTION array_to_vector(arr float8[])
-                RETURNS vector
-                LANGUAGE SQL
-                IMMUTABLE
-                PARALLEL SAFE
-                AS $$
-                    SELECT arr::vector;
-                $$;
-            """
-                )
-            )
-
-            session.commit()
