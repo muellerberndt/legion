@@ -85,7 +85,7 @@ def load_config(config_path: str, test_mode: bool = False) -> Dict[str, Any]:
                     # Update nested dictionaries instead of replacing them
                     for key, value in loaded.items():
                         if isinstance(value, dict) and key in config and isinstance(config[key], dict):
-                            config[key].update(value)
+                            config[key].update(value or {})  # Handle None values
                         else:
                             config[key] = value
             except yaml.YAMLError:
@@ -94,11 +94,26 @@ def load_config(config_path: str, test_mode: bool = False) -> Dict[str, Any]:
                     # Update nested dictionaries instead of replacing them
                     for key, value in loaded.items():
                         if isinstance(value, dict) and key in config and isinstance(config[key], dict):
-                            config[key].update(value)
+                            config[key].update(value or {})  # Handle None values
                         else:
                             config[key] = value
                 except json.JSONDecodeError as e:
                     raise ValueError(f"Failed to parse config file as YAML or JSON: {e}")
+
+    # Ensure block_explorers structure exists
+    if "block_explorers" not in config:
+        config["block_explorers"] = {}
+    elif config["block_explorers"] is None:  # Handle None value
+        config["block_explorers"] = {}
+
+    # Ensure all block explorer entries exist with proper structure
+    for explorer in ["etherscan", "basescan", "arbiscan", "polygonscan", "bscscan"]:
+        if explorer not in config["block_explorers"] or config["block_explorers"][explorer] is None:
+            config["block_explorers"][explorer] = {"key": None}
+        elif not isinstance(config["block_explorers"][explorer], dict):
+            config["block_explorers"][explorer] = {"key": None}
+        elif "key" not in config["block_explorers"][explorer]:
+            config["block_explorers"][explorer]["key"] = None
 
     # Load from environment variables
     logger.info("Loading environment variables...")
@@ -129,30 +144,11 @@ def load_config(config_path: str, test_mode: bool = False) -> Dict[str, Any]:
 
             # Ensure all parent paths exist
             for part in path_parts:
-                if not isinstance(current, dict):
-                    current = {}
-                if part not in current:
+                if part not in current or current[part] is None:  # Handle None values
                     current[part] = {}
                 current = current[part]
 
-            # Ensure the final container is a dictionary if needed
-            if path_parts:  # Only if we're dealing with a nested path
-                if not isinstance(current, dict):
-                    current = {}
-
             current[final_key] = value
-
-    # Ensure block_explorers structure is complete
-    if "block_explorers" not in config:
-        config["block_explorers"] = {}
-
-    for explorer in ["etherscan", "basescan", "arbiscan", "polygonscan", "bscscan"]:
-        if explorer not in config["block_explorers"]:
-            config["block_explorers"][explorer] = {"key": None}
-        elif not isinstance(config["block_explorers"][explorer], dict):
-            config["block_explorers"][explorer] = {"key": None}
-        elif "key" not in config["block_explorers"][explorer]:
-            config["block_explorers"][explorer]["key"] = None
 
     # Log final block explorer configuration
     logger.info("Final block explorer configuration:")
