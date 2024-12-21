@@ -469,13 +469,20 @@ class JobManager(DBSessionMixin):
     async def _notify_completion(self, job) -> None:
         """Send notification about job completion"""
         try:
+            status_emoji = {JobStatus.COMPLETED.value: "✅", JobStatus.FAILED.value: "❌", JobStatus.CANCELLED.value: "⚠️"}.get(
+                job.status.value, "ℹ️"
+            )
+
+            message = f"{status_emoji} Job {job.id} ({job.type}) {job.status.value}.\nUse /job_result {job.id} to view results"
+
             await self.notifier.notify_completion(
                 job_id=job.id,
                 job_type=job.type,
                 status=job.status.value,
-                message=job.result.message if job.result else None,
-                outputs=job.result.outputs if job.result else None,
-                data=job.result.data if job.result else None,
+                message=message,
+                # Don't include outputs/data in notification
+                outputs=None,
+                data=None,
                 started_at=job.started_at,
                 completed_at=job.completed_at,
             )
@@ -507,33 +514,22 @@ class JobManager(DBSessionMixin):
                     self.logger.info(f"Job {job_id} status: {job_record.status}")
                     last_status = job_record.status
 
-                if job_record.status == JobStatus.FAILED.value:
+                # Check job completion status
+                if job_record.status in [JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value]:
+                    self.logger.info(f"Job {job_id} completed with status: {job_record.status}")
                     return {
-                        "success": False,
-                        "error": job_record.message or "Job failed",
-                        "data": job_record.data,
-                        "outputs": job_record.outputs,
-                    }
-                elif job_record.status == JobStatus.CANCELLED.value:
-                    return {
-                        "success": False,
-                        "error": "Job was cancelled",
-                        "data": job_record.data,
-                        "outputs": job_record.outputs,
-                    }
-                elif job_record.status == JobStatus.COMPLETED.value:
-                    return {
-                        "success": job_record.success,
+                        "success": job_record.success if job_record.status == JobStatus.COMPLETED.value else False,
                         "message": job_record.message,
+                        "error": job_record.message if job_record.status != JobStatus.COMPLETED.value else None,
                         "data": job_record.data,
-                        "outputs": job_record.outputs,
+                        "outputs": job_record.outputs or [],
                     }
 
-                # For running jobs, include any available outputs
-                elif job_record.outputs:
+                # For running jobs, log progress
+                if job_record.outputs:
                     self.logger.info(f"Job {job_id} has {len(job_record.outputs)} outputs while running")
 
-            # Wait before checking again
-            await asyncio.sleep(2)  # Increased wait time to reduce DB load
+                # Wait before checking again
+                await asyncio.sleep(2)
 
         raise TimeoutError(f"Timeout waiting for job {job_id}")

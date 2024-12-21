@@ -46,9 +46,7 @@ Example:
             job_manager = JobManager()
             job_id = await job_manager.submit_job(job)
 
-            return ActionResult.text(
-                f"Started embedding generation job with ID: {job_id}\nUse /job {job_id} to check progress."
-            )
+            return ActionResult.job(job_id)
 
         except Exception as e:
             self.logger.error(f"Failed to start embedding job: {str(e)}")

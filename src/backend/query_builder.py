@@ -42,11 +42,12 @@ class QueryBuilder:
     # Define allowed tables and their models
     ALLOWED_TABLES = {"projects": Project, "assets": Asset}
 
-    # Define allowed SQL functions
+    # Define allowed SQL functions with their exact formats
     ALLOWED_FUNCTIONS = {
-        "random": "random()",  # PostgreSQL random() function
-        "count": "count(*)",  # Count function
-        "now": "now()",  # Current timestamp
+        "count(*) as count": "COUNT(*) as count",
+        "count(*) as total": "COUNT(*) as total",
+        "count(*) as total_projects": "COUNT(*) as total_projects",
+        "count(*)": "COUNT(*)",  # Default format without alias
     }
 
     def __init__(self):
@@ -202,21 +203,26 @@ class QueryBuilder:
         return self
 
     def select(self, *fields: str) -> "QueryBuilder":
-        """Add fields to select
-
-        Args:
-            fields: Field names to select, e.g. "assets.id", "projects.name", or just "id" for base table fields
-        """
+        """Add fields to SELECT clause"""
         if not self._table:
             raise ValueError("No table selected. Call from_table() first.")
 
         for field in fields:
-            # If field doesn't contain a dot, assume it's from the base table
+            field = field.lower().strip()
+
+            # Check if it's an allowed SQL function
+            if any(field.startswith(func.lower()) for func in self.ALLOWED_FUNCTIONS):
+                # Find the matching function format
+                for allowed_func, safe_format in self.ALLOWED_FUNCTIONS.items():
+                    if field.lower() == allowed_func.lower():
+                        self._selected_fields.add(text(safe_format))
+                        break
+                continue
+
+            # Handle normal fields (existing code)
             if "." not in field:
-                # Get base table name
                 base_table_name = self._table.__tablename__
                 qualified_field = f"{base_table_name}.{field}"
-                self.logger.debug(f"Qualifying field {field} as {qualified_field}")
                 field = qualified_field
 
             try:
@@ -224,14 +230,12 @@ class QueryBuilder:
             except ValueError:
                 raise ValueError(f"Invalid field format: {field}. Use format 'table.field' or just 'field' for base table")
 
-            # Get the table model
             table = self._get_model_for_table(table_name)
-
-            # Verify field exists
             if not hasattr(table, field_name):
                 raise ValueError(f"Field {field_name} does not exist in {table.__name__}")
 
-            self._selected_fields.add(getattr(table, field_name))
+            field_obj = getattr(table, field_name)
+            self._selected_fields.add(field_obj)
 
         return self
 

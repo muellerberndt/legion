@@ -7,7 +7,6 @@ from typing import List, Dict
 from src.models.base import Asset
 import asyncio
 from src.config.config import Config
-from src.models import Project
 
 
 def is_binary_file(file_path: str) -> bool:
@@ -172,7 +171,7 @@ class FileSearchJob(Job, DBSessionMixin):
 
                 # Apply project filter if project IDs are specified
                 if project_ids:
-                    query = query.join(Asset.projects).filter(Project.id.in_(project_ids))
+                    query = query.filter(Asset.project_id.in_(project_ids))
 
                 assets = query.all()
                 self.logger.info(f"Searching {len(assets)} assets")
@@ -187,15 +186,13 @@ class FileSearchJob(Job, DBSessionMixin):
                     try:
                         asset_matches = await self._search_directory_async(asset.local_path, self.pattern)
                         if asset_matches:
-                            # Get project name for this asset
-                            project_name = asset.projects[0].name if asset.projects else None
                             results.append(
                                 {
                                     "asset": {
                                         "id": asset.id,
                                         "source_url": asset.source_url,
                                         "asset_type": asset.asset_type,
-                                        "projects": project_name,
+                                        "project": asset.project.name if asset.project else None,
                                     },
                                     "matches": asset_matches,
                                 }
@@ -212,13 +209,29 @@ class FileSearchJob(Job, DBSessionMixin):
                 data={"results": results},
             )
 
-            # Keep outputs concise so not to overload the agent's context
-            for asset_result in results:
-                asset = asset_result["asset"]
-                for file_match in asset_result["matches"]:
-                    for match in file_match["matches"]:
-                        output = f"Match in {asset['id']} ({asset['asset_type']}) - " f"Project: {asset['projects']}"
-                        result.add_output(output)
+            # Format results as a table
+            if results:
+                # Add table header
+                result.add_output("\nMatches found:")
+                result.add_output("| Asset ID | Identifier | Project | Type |")
+                result.add_output("|----------|------------|---------|------|")
+
+                # Add unique assets to the table (no duplicates)
+                seen_assets = set()
+                for asset_result in results:
+                    asset = asset_result["asset"]
+                    asset_key = (asset["id"], asset["source_url"])
+
+                    if asset_key not in seen_assets:
+                        seen_assets.add(asset_key)
+                        identifier = asset["source_url"] or "N/A"
+                        # Truncate long identifiers
+                        if len(identifier) > 40:
+                            identifier = identifier[:37] + "..."
+
+                        result.add_output(
+                            f"| {asset['id']} | {identifier} | {asset['project'] or 'N/A'} | {asset['asset_type']} |"
+                        )
 
             # Complete the job with results
             await self.complete(result)

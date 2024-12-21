@@ -42,6 +42,11 @@ class TelegramInterface(Interface):
         if result.content is None:
             return "No results available."
 
+        # Handle job results
+        if result.type == ResultType.JOB:
+            # Format job launch message with command on new line
+            return f"Started job {result.job_id}\n\nUse /job {result.job_id} to check status"
+
         # Dispatch to appropriate formatter based on type
         formatters = {
             ResultType.TEXT: self._format_text_result,

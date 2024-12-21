@@ -60,13 +60,7 @@ Examples:
             job_manager = JobManager()
             job_id = await job_manager.submit_job(job)
 
-            # Return job ID for tracking
-            msg = f"File search started with job ID: {job_id}"
-            if project_ids:
-                msg += f"\nSearching in projects: {', '.join(str(pid) for pid in project_ids)}"
-            msg += f"\nUse 'job {job_id}' to check results."
-
-            return ActionResult.text(msg)
+            return ActionResult.job(job_id=job_id, metadata={"pattern": regex, "project_ids": project_ids})
 
         except Exception as e:
             self.logger.error(f"Failed to start file search: {str(e)}")

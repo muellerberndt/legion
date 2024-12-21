@@ -1,6 +1,8 @@
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.indexer import IndexerJob
+from src.jobs.manager import JobManager
 from src.actions.decorators import no_autobot
+from src.actions.result import ActionResult
 
 
 @no_autobot
@@ -41,11 +43,8 @@ Examples:
         """Initialize the action"""
         self.initialize_mode = initialize_mode
 
-    async def execute(self, *args, **kwargs) -> str:
+    async def execute(self, *args, **kwargs) -> ActionResult:
         """Execute the sync action"""
-        # Import JobManager here to avoid circular imports
-        from src.jobs.manager import JobManager
-
         # Check if mode is provided
         mode = args[0] if args else "normal"
         if mode == "silent":
@@ -55,6 +54,6 @@ Examples:
         job_manager = JobManager()
         job_id = await job_manager.submit_job(job)
 
-        if mode == "silent":
-            return f"Started silent Immunefi sync (Job ID: {job_id})"
-        return f"Started Immunefi sync (Job ID: {job_id})"
+        return ActionResult.job(
+            job_id=job_id, metadata={"platform": "immunefi", "mode": mode, "initialize_mode": self.initialize_mode}
+        )

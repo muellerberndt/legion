@@ -14,76 +14,39 @@ class ResultType(Enum):
     TREE = "tree"  # Tree/hierarchical data
     JSON = "json"  # JSON data
     ERROR = "error"  # Error message
+    JOB = "job"  # Async job launched
 
 
 @dataclass
 class ActionResult:
-    """Result of an action execution"""
+    """Result from an action execution"""
 
     type: ResultType
-    content: Any  # The actual result content
-    metadata: Optional[Dict[str, Any]] = None  # Additional metadata about the result
-    error: Optional[str] = None  # Error message for error results
+    content: str
+    job_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
 
     def __str__(self) -> str:
         """String representation of the result"""
         if self.type == ResultType.ERROR:
-            return f"Error: {self.error or self.content}"
-        elif self.type == ResultType.TEXT:
-            return str(self.content)
-        elif self.type == ResultType.LIST:
-            if not self.content:
-                return "No items found."
-            return "\n".join(f"• {str(item)}" for item in self.content)
-        elif self.type == ResultType.TABLE:
-            if not isinstance(self.content, dict) or "headers" not in self.content or "rows" not in self.content:
-                return str(self.content)
-            headers = self.content["headers"]
-            rows = self.content["rows"]
-            if not rows:
-                return "No data found."
-            lines = []
-            # Format table
-            widths = [len(str(h)) for h in headers]
-            for row in rows:
-                for i, cell in enumerate(row):
-                    widths[i] = max(widths[i], len(str(cell)))
-            header_line = " | ".join(str(h).ljust(w) for h, w in zip(headers, widths))
-            lines.append(header_line)
-            lines.append("-" * len(header_line))
-            for row in rows:
-                lines.append(" | ".join(str(cell).ljust(w) for cell, w in zip(row, widths)))
-            return "\n".join(lines)
-        elif self.type == ResultType.TREE:
+            return f"Error: {self.content}"
+        elif self.type == ResultType.JOB:
+            return f"Started job {self.job_id}\nUse /job {self.job_id} to check results"
+        return self.content
 
-            def format_tree(data: Dict[str, Any], level: int = 0) -> List[str]:
-                lines = []
-                indent = "  " * level
-                for key, value in data.items():
-                    if isinstance(value, dict):
-                        lines.append(f"{indent}{key}:")
-                        lines.extend(format_tree(value, level + 1))
-                    elif isinstance(value, list):
-                        lines.append(f"{indent}{key}:")
-                        for item in value:
-                            if isinstance(item, dict):
-                                lines.extend(format_tree(item, level + 1))
-                            else:
-                                lines.append(f"{indent}  • {str(item)}")
-                    else:
-                        # Convert enum values to their string value
-                        if hasattr(value, "value"):
-                            value = value.value
-                        lines.append(f"{indent}{key}: {str(value)}")
-                return lines
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            "type": self.type.value,  # Convert enum to string
+            "content": self.content,
+            "job_id": self.job_id,
+            "metadata": self.metadata,
+        }
 
-            return "\n".join(format_tree(self.content))
-        elif self.type == ResultType.JSON:
-            import json
-
-            return json.dumps(self.content, indent=2)
-        else:
-            return str(self.content)
+    def __json__(self) -> Dict[str, Any]:
+        """JSON serialization support"""
+        return self.to_dict()
 
     def __contains__(self, item: str) -> bool:
         """Support 'in' operator by checking if the string is in the string representation"""
@@ -122,3 +85,8 @@ class ActionResult:
     def error(message: str, metadata: Optional[Dict[str, Any]] = None) -> "ActionResult":  # noqa: F811
         """Create an error result"""
         return ActionResult(type=ResultType.ERROR, content=message, error=message, metadata=metadata)
+
+    @staticmethod
+    def job(job_id: str, metadata: Optional[Dict[str, Any]] = None) -> "ActionResult":
+        """Create a job result"""
+        return ActionResult(type=ResultType.JOB, content=f"Started job {job_id}", job_id=job_id, metadata=metadata)

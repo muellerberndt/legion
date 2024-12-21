@@ -1,7 +1,8 @@
-from typing import Dict, Type, Optional, Tuple, Callable, List
+from typing import Dict, Type, Optional, Tuple, Callable, List, Any
 from src.actions.base import BaseAction, ActionSpec
 from src.util.logging import Logger
 from src.actions.builtin import get_builtin_actions
+from src.actions.result import ActionResult
 
 
 class ActionRegistry:
@@ -41,7 +42,7 @@ class ActionRegistry:
     def create_handler(self, action_class: Type[BaseAction]) -> Callable:
         """Create handler for an action class"""
 
-        async def handler(*args, **kwargs) -> str:
+        async def handler(*args, **kwargs) -> Any:
             try:
                 action = action_class()
 
@@ -57,7 +58,12 @@ class ActionRegistry:
                     result = await action.execute(*args)
                 else:
                     result = await action.execute(**kwargs)
+
+                # Preserve ActionResult objects, convert others to string
+                if isinstance(result, ActionResult):
+                    return result
                 return str(result)
+
             except Exception as e:
                 self.logger.error(f"Action failed: {str(e)}")
                 raise

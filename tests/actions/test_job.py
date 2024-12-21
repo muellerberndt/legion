@@ -5,6 +5,7 @@ from src.actions.job import ListJobsAction, GetJobResultAction
 from src.jobs.manager import JobManager
 from src.jobs.base import JobStatus, Job, JobResult
 from src.models.job import JobRecord
+from src.actions.result import ActionResult, ResultType
 
 
 @pytest.mark.asyncio
@@ -16,7 +17,8 @@ async def test_list_jobs_action():
     with patch("src.jobs.manager.JobManager.list_jobs") as mock_list:
         mock_list.return_value = []
         result = await action.execute()
-        assert "No jobs found" in str(result)
+        assert isinstance(result, ActionResult)
+        assert "No jobs found" in result.content
 
     # Test with jobs
     with patch("src.jobs.manager.JobManager.list_jobs") as mock_list:
@@ -35,10 +37,12 @@ async def test_list_jobs_action():
         ]
 
         result = await action.execute()
-        result_str = str(result)
-        assert "test-1" in result_str
-        assert "RUNNING" in result_str
-        assert "Test job" in result_str
+        assert isinstance(result, ActionResult)
+        assert result.type == ResultType.LIST
+        assert isinstance(result.content, list)
+        assert len(result.content) == 1
+        assert all(isinstance(item, str) for item in result.content)
+        assert any("test-1" in item and "RUNNING" in item and "Test job" in item for item in result.content)
 
     # Test with status filter
     with patch("src.jobs.manager.JobManager.list_jobs") as mock_list:
@@ -57,10 +61,11 @@ async def test_list_jobs_action():
         ]
 
         result = await action.execute("completed")
-        result_str = str(result)
-        assert "test-2" in result_str
-        assert "COMPLETED ✓" in result_str
-        assert "Completed job" in result_str
+        assert isinstance(result, ActionResult)
+        assert result.type == ResultType.LIST
+        assert isinstance(result.content, list)
+        assert len(result.content) == 1
+        assert any("test-2" in item and "COMPLETED" in item and "Completed job" in item for item in result.content)
 
     # Test invalid status
     result = await action.execute("invalid_status")
@@ -82,7 +87,8 @@ async def test_get_job_result_action():
     with patch("src.jobs.manager.JobManager.get_most_recent_finished_job") as mock_get_recent:
         mock_get_recent.return_value = None
         result = await action.execute()
-        assert "No completed jobs found" in str(result)
+        assert isinstance(result, ActionResult)
+        assert "No completed jobs found" in result.content
 
     # Test getting running job from memory
     mock_job = Mock(spec=Job)
@@ -102,10 +108,13 @@ async def test_get_job_result_action():
         mock_get_job.return_value = mock_job
         mock_get_recent.return_value = None
         result = await action.execute("test-job-1")
-        result_str = str(result)
-        assert "test-job-1" in result_str
-        assert any(status in result_str for status in ["RUNNING", "running"])
-        assert "Running test job" in result_str
+        assert isinstance(result, ActionResult)
+        assert result.type == ResultType.TREE
+        assert isinstance(result.content, dict)
+        assert result.content["id"] == "test-job-1"
+        assert result.content["status"] == "RUNNING"
+        assert result.content["error"] == "Running test job"
+        assert result.content["data"] == {"key": "value"}
 
     # Test getting completed job from database
     mock_record = Mock(spec=JobRecord)
@@ -132,10 +141,14 @@ async def test_get_job_result_action():
         mock_get_recent.return_value = None
         mock_get_session.return_value.__enter__.return_value = mock_session_instance
         result = await action.execute("test-job-2")
-        result_str = str(result)
-        assert "test-job-2" in result_str
-        assert any(status in result_str.upper() for status in ["COMPLETED", "RUNNING"])
-        assert "Completed test job" in result_str
+        assert isinstance(result, ActionResult)
+        assert result.type == ResultType.TREE
+        assert isinstance(result.content, dict)
+        assert result.content["id"] == "test-job-2"
+        assert result.content["status"] == "COMPLETED"
+        assert result.content["message"] == "Completed test job"
+        assert result.content["outputs"] == ["Output 1", "Output 2"]
+        assert result.content["data"] == {"key": "value"}
 
     # Test job not found
     with (

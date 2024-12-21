@@ -2,6 +2,8 @@
 
 from src.actions.base import BaseAction, ActionSpec
 from src.jobs.github_monitor import GithubMonitorJob
+from src.jobs.manager import JobManager
+from src.actions.result import ActionResult
 
 
 class GithubMonitorAction(BaseAction):
@@ -26,14 +28,15 @@ The job performs a single synchronization run and then completes.""",
         arguments=[],
     )
 
-    async def execute(self, *args, **kwargs) -> str:
+    async def execute(self, *args, **kwargs) -> ActionResult:
         """Execute the GitHub monitor action"""
-        # Import JobManager here to avoid circular imports
-        from src.jobs.manager import JobManager
+        try:
+            # Create and submit job (token is loaded from config in the job)
+            job = GithubMonitorJob()
+            job_manager = JobManager()
+            job_id = await job_manager.submit_job(job)
 
-        # Create and submit job (token is loaded from config in the job)
-        job = GithubMonitorJob()
-        job_manager = JobManager()
-        job_id = await job_manager.submit_job(job)
+            return ActionResult.job(job_id)
 
-        return f"Started GitHub repository synchronization (Job ID: {job_id})"
+        except Exception as e:
+            return ActionResult.error(f"Failed to start GitHub sync: {str(e)}")

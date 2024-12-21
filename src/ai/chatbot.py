@@ -7,8 +7,9 @@ from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
 from src.ai.llm import chat_completion
 from src.util.command_parser import CommandParser
-from datetime import datetime
 import re
+from src.actions.result import ActionResult, ResultType
+from src.jobs.manager import JobManager
 
 
 class Chatbot:
@@ -181,75 +182,33 @@ class Chatbot:
             # Remove oldest messages but keep system message
             self.history = [self.history[0]] + self.history[-(self.max_history) :]
 
-    async def execute_command(self, command: str, param_str: str, update_callback=None) -> str:
-        """Execute a registered command"""
-        # Remove preceding slash
-        command = command.lstrip("/")
-
-        # Handle empty command case for conclusion
-        if not command:
-            return "Command completed successfully"
-
-        if command not in self.commands:
-            raise ValueError(f"Unknown command: {command}")
-
-        self.logger.info(f"Executing command: {command} with params: {param_str}")
-
-        # Get command spec and handler
-        action = self.action_registry.get_action(command)
-        if not action:
-            raise ValueError(f"Action not found for command: {command}")
-        handler, spec = action
-
+    async def execute_command(self, command: str, args_str: str, update_callback=None) -> Any:
+        """Execute a command with the given arguments"""
         try:
-            # Parse and validate arguments
-            if isinstance(param_str, list):
-                # If we already have a list of parameters, use them directly
-                args = param_str
-            else:
-                # Parse arguments
-                args = self.command_parser.parse_arguments(param_str, spec)
+            # Get the action handler
+            action = self.action_registry.get_action(command)
+            if not action:
+                raise ValueError(f"Unknown command: {command}")
 
+            handler, spec = action
+
+            # Parse and validate arguments
+            args = self.command_parser.parse_arguments(args_str, spec)
             self.command_parser.validate_arguments(args, spec)
 
-            # Execute the command
-            if isinstance(args, dict):
-                result = await handler(**args)
-            else:
-                result = await handler(*args)
+            # Execute the command with update callback
+            result = await handler(*args, _update_callback=update_callback)
 
-            # For autobot command, return the result directly without error checking
-            if command == "autobot":
-                return result
-
-            # Only check for job IDs in job start notifications
-            if isinstance(result, str) and command != "job":
-                # Look for job ID patterns - only match when a job is explicitly started/created
-                job_patterns = [
-                    r"^[Ss]tarted(?:\s+a)?(?:\s+new)?\s+job(?:\s+with)?(?:\s+ID)?(?:\s*:\s*|\s+)([a-f0-9-]+)",
-                    r"^[Cc]reated(?:\s+(?:a|new))?\s+job(?:\s+(?:with\s+)?ID)?(?:\s*:\s*|\s+)([a-f0-9-]+)",
-                    r"^[Jj]ob(?:\s+has\s+been)?(?:\s+successfully)?\s+(?:created|started)(?:\s+with)?(?:\s+ID)?(?:\s*:\s*|\s+)([a-f0-9-]+)",
-                    r"^[Nn]ew\s+job(?:\s+(?:created|started))?(?:\s+with)?(?:\s+ID)?(?:\s*:\s*|\s+)([a-f0-9-]+)",
-                ]
-
-                # Also match simpler formats
-                if not any(re.search(pattern, result.strip()) for pattern in job_patterns):
-                    simple_patterns = [
-                        r"^[Cc]reated\s+new\s+job\s+ID:\s*([a-f0-9-]+)",
-                        r"^[Cc]reated\s+job\s+ID:\s*([a-f0-9-]+)",
-                    ]
-                    for pattern in simple_patterns:
-                        match = re.search(pattern, result.strip())
-                        if match:
-                            job_id = match.group(1)
-                            return f"Started job {job_id}\nUse /job {job_id} to check results"
-
-                # Try the complex patterns
-                for pattern in job_patterns:
-                    match = re.search(pattern, result.strip())
-                    if match:
-                        job_id = match.group(1)
-                        return f"Started job {job_id}\nUse /job {job_id} to check results"
+            # If this is a job result, wait for completion
+            if isinstance(result, ActionResult):
+                if result.type == ResultType.JOB:
+                    self.logger.info(f"Waiting for job {result.job_id} to complete")
+                    job_manager = await JobManager.get_instance()
+                    job_result = await job_manager.wait_for_job_result(result.job_id)
+                    return job_result
+                else:
+                    # For non-job ActionResults, get the content
+                    return result.content if result.content is not None else str(result)
 
             return result
 
@@ -387,35 +346,44 @@ Available commands and their parameters:"""
             raise
 
     async def process_message(self, message: str, update_callback=None) -> str:
-        """Process a user message and return a response"""
+        """Process a message and return a response"""
         try:
-            # Add user message to history
+            # Record user message
             self._add_to_history("user", message)
 
-            # Initialize state
-            state = {"task": {"prompt": message, "timestamp": datetime.utcnow().isoformat()}, "status": "started"}
+            # Initialize state for this message
+            state = {"message": message, "last_result": None, "status": "started", "is_final": False}
 
-            # Check if this is a direct command invocation
+            # Handle commands
             if message.startswith("/"):
                 command, args_str = self.command_parser.parse_command(message)
                 if command in self.commands:
                     try:
-                        # Execute the command directly
-                        result = await self.execute_command(command, args_str)
-                        # For autobot command, don't show error messages
-                        if command == "autobot" and "error" in result.lower():
-                            return ""
-                        result = self._truncate_result(str(result))
-                        formatted_response = self._format_response(result)
-                        self._add_to_history("assistant", formatted_response)
-                        return formatted_response
+                        # Execute the command
+                        result = await self.execute_command(command, args_str, update_callback=update_callback)
+
+                        # Format the result based on type
+                        if isinstance(result, dict):
+                            # For dictionary results, extract relevant data
+                            if "data" in result:
+                                formatted_result = str(result["data"])
+                            elif "message" in result:
+                                formatted_result = str(result["message"])
+                            else:
+                                formatted_result = str(result)
+                        else:
+                            formatted_result = str(result)
+
+                        # Add to history and return
+                        self._add_to_history("assistant", formatted_result)
+                        return self._format_response(formatted_result)
+
                     except Exception as e:
                         error_msg = f"Error executing command: {str(e)}"
                         self.logger.error(error_msg)
-                        # For autobot command, don't show error messages
-                        if command == "autobot":
-                            return ""
-                        return self._format_response(error_msg)
+                        return error_msg
+                else:
+                    return f"Unknown command: {command}"
 
             # For non-command messages, proceed with multi-step execution
             max_steps = 10
@@ -476,7 +444,7 @@ Available commands and their parameters:"""
                             self._last_command_msg = None
 
                         # Only show command if it's different from the last one
-                        command_msg = f"��️ Running: {cmd_name} {cmd_params}"
+                        command_msg = f"🛠️ Running: {cmd_name} {cmd_params}"
                         if self._last_command_msg != command_msg:
                             step_info.append(command_msg)
                             self._last_command_msg = command_msg
@@ -500,8 +468,6 @@ Available commands and their parameters:"""
 
                     # For final steps after a command, use the output as the formatted result
                     if plan["is_final"]:
-                        # If there's a planned output, use it (formatting case)
-                        # Otherwise use the raw result
                         formatted_result = plan["output"] if plan["output"] else result
                         state["result"] = formatted_result
                         state["status"] = "completed"

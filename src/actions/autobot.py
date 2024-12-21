@@ -3,6 +3,7 @@
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.manager import JobManager
 from src.actions.decorators import no_autobot
+from src.actions.result import ActionResult
 
 
 @no_autobot
@@ -17,7 +18,7 @@ class AutobotAction(BaseAction):
         arguments=[ActionArgument(name="prompt", description="The prompt to give to the agent", required=True)],
     )
 
-    async def execute(self, prompt: str, **kwargs) -> str:
+    async def execute(self, prompt: str, **kwargs) -> ActionResult:
         """Execute the autobot action"""
 
         from src.jobs.autobot import AutobotJob
@@ -28,12 +29,7 @@ class AutobotAction(BaseAction):
             job_manager = await JobManager.get_instance()
             job_id = await job_manager.submit_job(job)
 
-            return (
-                f"🤖 Started AI agent with prompt:\n"
-                f"  {prompt}\n\n"
-                f"📋 Job ID: {job_id}\n"
-                f"Use `/job {job_id}` to check results"
-            )
+            return ActionResult.job(job_id=job_id, metadata={"prompt": prompt})
 
         except Exception as e:
-            return f"❌ Failed to start AI agent: {str(e)}"
+            return ActionResult.error(f"Failed to start AI agent: {str(e)}")

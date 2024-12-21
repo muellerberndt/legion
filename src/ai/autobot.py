@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
 from src.ai.llm import chat_completion
-import re
 from src.jobs.manager import JobManager
 from src.util.command_parser import CommandParser
+from src.actions.result import ActionResult, ResultType
 
 
 @dataclass
@@ -45,8 +45,10 @@ class Autobot:
         action_registry: Optional[ActionRegistry] = None,
         custom_prompt: Optional[str] = None,
         command_names: Optional[List[str]] = None,
+        update_callback=None,
     ):
         self.logger = Logger(self.__class__.__name__)
+        self.update_callback = update_callback
 
         # Use provided action registry or create a new one
         self.action_registry = action_registry or ActionRegistry()
@@ -121,40 +123,10 @@ class Autobot:
         job_manager = await JobManager.get_instance()
         return await job_manager.wait_for_job_result(job_id, timeout)
 
-    def _extract_job_id(self, result: str) -> Optional[str]:
-        """Extract job ID from a command result if present.
-
-        Looks for patterns like:
-        - "Started job with ID: abc-123"
-        - "Job ID: abc-123"
-        - "job abc-123"
-
-        Args:
-            result: The command result string
-
-        Returns:
-            The job ID if found, None otherwise
-        """
-        # Common patterns for job IDs
-        patterns = [
-            r"[Jj]ob (?:ID: )?([a-f0-9-]+)",
-            r"[Jj]ob_id: ([a-f0-9-]+)",
-            r"[Ss]tarted.*[Jj]ob.*?([a-f0-9-]+)",
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, result)
-            if match:
-                return match.group(1)
-        return None
-
     async def execute_command(self, command: str, param_str: str) -> Any:
         """Execute a registered command"""
         # Handle empty command case for conclusion
-
-        # Remove preceding slash
         command = command.lstrip("/")
-
         if not command:
             return self.get_execution_summary()
 
@@ -172,34 +144,34 @@ class Autobot:
         try:
             # Parse and validate arguments
             if isinstance(param_str, list):
-                # If we already have a list of parameters, use them directly
                 args = param_str
             else:
-                # Otherwise parse the string into arguments
                 args = self.command_parser.parse_arguments(param_str, spec)
             self.command_parser.validate_arguments(args, spec)
 
-            # Execute the command
+            # Execute the command with update callback
             if isinstance(args, dict):
-                result = await handler(**args)
+                result = await handler(**args, _update_callback=self.update_callback)
             else:
-                result = await handler(*args)
+                result = await handler(*args, _update_callback=self.update_callback)
 
-            # Check for job ID in result
-            if isinstance(result, str):
-                job_id = self._extract_job_id(result)
-                if job_id:
-                    self.logger.info(f"Detected job ID {job_id}, waiting for completion...")
+            # Debug logging
+            self.logger.info(f"Command result type: {type(result)}")
+            if isinstance(result, ActionResult):
+                self.logger.info(f"ActionResult type: {result.type}")
+                if result.type == ResultType.JOB:
+                    self.logger.info(f"Job ID: {result.job_id}")
+
+                    # Wait for job completion
+                    job_manager = await JobManager.get_instance()
                     try:
-                        job_result = await self._wait_for_job(job_id)
-                        if not job_result["success"]:
-                            if "error" in job_result:
-                                raise ValueError(job_result["error"])
-                            raise ValueError("Job failed without specific error message")
-                        return job_result
-                    except (TimeoutError, ValueError) as e:
-                        self.logger.error(f"Error waiting for job: {str(e)}")
-                        raise
+                        job_result = await job_manager.wait_for_job_result(result.job_id)
+                        self.logger.info(f"Job completed with result: {job_result}")
+                        return job_result  # Return job result directly
+                    except TimeoutError:
+                        raise ValueError(f"Timeout waiting for job {result.job_id} to complete")
+                    except Exception as e:
+                        raise ValueError(f"Error waiting for job {result.job_id}: {str(e)}")
 
             return result
 
@@ -221,7 +193,11 @@ class Autobot:
         # Include last result and other important fields without truncation
         for key in ["last_result", "error", "result"]:
             if key in state:
-                prepared_state[key] = state[key]
+                value = state[key]
+                # Convert ActionResult to dict if needed
+                if isinstance(value, ActionResult):
+                    value = value.to_dict()
+                prepared_state[key] = value
 
         return prepared_state
 
@@ -360,7 +336,7 @@ Available commands and their parameters:"""
         """Check if the task is complete based on state"""
         return self.state.get("status") == "completed" or self.state.get("is_final", False) or "result" in self.state
 
-    async def execute_task(self, task: Dict[str, Any]) -> AutobotResult:
+    async def execute_task(self, task: Dict[str, Any], update_callback=None) -> AutobotResult:
         """Execute a task with safety limits and state tracking"""
         self.start_time = time.time()
         self.step_count = 0
@@ -377,8 +353,8 @@ Available commands and their parameters:"""
                     self.state["error"] = error_msg
                     return AutobotResult(success=False, error=error_msg)
 
-                # Execute next step
-                step_result = await self.execute_step()
+                # Execute next step with callback
+                step_result = await self.execute_step(update_callback)
 
                 # Increment step count and check limit
                 self.step_count += 1
@@ -435,7 +411,7 @@ Available commands and their parameters:"""
             self.state["error"] = str(e)
             return AutobotResult(success=False, error=str(e))
 
-    async def execute_step(self) -> AutobotResult:
+    async def execute_step(self, update_callback=None) -> AutobotResult:
         """Execute a single step of the task"""
         try:
             # Plan next step
@@ -470,13 +446,41 @@ Available commands and their parameters:"""
                     )
                     return AutobotResult(success=True, data={"result": plan["output"]})
 
-            # Split command into name and parameters
+            # Show step info via callback
+            if update_callback:
+                step_info = []
+                if plan["thought"]:
+                    # Remove any special characters from thought
+                    thought = plan["thought"].replace("`", "").replace("'", "").replace('"', "")
+                    step_info.append(f"🤔 Thinking: {thought}")
+
+                # Split command into name and parameters
+                cmd_parts = plan["command"].split(maxsplit=1)
+                cmd_name = cmd_parts[0]
+                cmd_params = cmd_parts[1] if len(cmd_parts) > 1 else ""
+
+                # Try to format JSON parameters if present
+                try:
+                    if cmd_params.strip().startswith("{"):
+                        params_obj = json.loads(cmd_params)
+                        cmd_params = json.dumps(params_obj, separators=(",", ":"), ensure_ascii=True)
+                except Exception:
+                    # If JSON parsing fails, just use the original string
+                    cmd_params = cmd_params.replace("`", "").replace("'", "").replace('"', "")
+
+                # Show command
+                step_info.append(f"⚡️ Running: {cmd_name} {cmd_params}")
+
+                if step_info:
+                    await update_callback("\n".join(step_info))
+
+            # Execute the command
             command_parts = plan["command"].split(maxsplit=1)
             command = command_parts[0]
             param_str = command_parts[1] if len(command_parts) > 1 else ""
 
             try:
-                # Execute the command
+                # Execute the command with update callback
                 result = await self.execute_command(command, param_str)
 
                 self.logger.info(f"Command result: {result}")

@@ -120,7 +120,7 @@ class Job(DBSessionMixin, ABC):
         self.status = JobStatus.COMPLETED
         self.result = result
         self._store_in_db()
-        await self._notify_status(f"Completed - {result.message}\n\n{result.get_output()}")
+        await self._notify_status(f"✅ Completed. Use /job {self.id} to view results")
 
     async def fail(self, error: str) -> None:
         """Mark job as failed with error"""
@@ -129,14 +129,14 @@ class Job(DBSessionMixin, ABC):
         self.error = error
         self.result = JobResult(success=False, message=error)
         self._store_in_db()
-        await self._notify_status(f"Failed - {error}")
+        await self._notify_status(f"❌ Failed. Use /job {self.id} for details")
 
     async def cancel(self) -> None:
         """Mark job as cancelled"""
         self.completed_at = datetime.utcnow()
         self.status = JobStatus.CANCELLED
         self._store_in_db()
-        await self._notify_status("Cancelled")
+        await self._notify_status(f"⚠️ Cancelled. Use /job {self.id} for details")
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert job to dictionary"""
