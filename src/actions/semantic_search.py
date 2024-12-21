@@ -63,6 +63,7 @@ Results are ranked by semantic similarity to your query.""",
                         a.asset_type,
                         a.source_url,
                         a.local_path,
+                        a.identifier,
                         a.extra_data,
                         a.created_at,
                         a.updated_at,
@@ -70,8 +71,7 @@ Results are ranked by semantic similarity to your query.""",
                         p.description as project_description,
                         1 / (1 + (a.embedding <-> array[{','.join(map(str, embedding))}]::vector(384))) as similarity
                     FROM assets a
-                    LEFT JOIN project_assets pa ON a.id = pa.asset_id
-                    LEFT JOIN projects p ON pa.project_id = p.id
+                    LEFT JOIN projects p ON a.project_id = p.id
                     WHERE a.embedding IS NOT NULL
                     ORDER BY a.embedding <-> array[{','.join(map(str, embedding))}]::vector(384)
                     LIMIT 10
@@ -87,11 +87,13 @@ Results are ranked by semantic similarity to your query.""",
                     result = {
                         "id": row.id,
                         "asset_type": row.asset_type,
+                        "identifier": row.identifier,  # Added identifier field
                         "url": (
                             row.source_url
                             or extra_data.get("file_url")
                             or extra_data.get("repo_url")
                             or extra_data.get("explorer_url")
+                            or row.identifier  # Fall back to identifier if no other URL available
                         ),
                         "project": row.project_name or "Unknown Project",
                         "description": row.project_description,
@@ -119,7 +121,12 @@ Results are ranked by semantic similarity to your query.""",
                     for i, r in enumerate(results, 1):
                         similarity_pct = int(r["similarity"] * 100)
                         message.extend(
-                            [f"{i}. {r['project']} ({similarity_pct}% match)", f"Type: {r['asset_type']}", f"URL: {r['url']}"]
+                            [
+                                f"{i}. {r['project']} ({similarity_pct}% match)",
+                                f"Type: {r['asset_type']}",
+                                f"URL: {r['url']}",
+                                f"Identifier: {r['identifier']}",  # Added identifier to output
+                            ]
                         )
                         if r.get("files"):
                             message.append(f"Files: {', '.join(r['files'])}")

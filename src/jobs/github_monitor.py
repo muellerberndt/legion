@@ -125,41 +125,23 @@ class GithubMonitorJob(Job, DBSessionMixin):
                 project_count = await session.scalar(project_query)
                 self.logger.info(f"Found {project_count} bounty projects")
 
-                # Check direct GitHub repos first
-                direct_repos_query = text(
-                    """
-                    SELECT DISTINCT a.source_url, a.asset_type
-                    FROM assets a
-                    JOIN project_assets pa ON a.id = pa.asset_id
-                    JOIN projects p ON pa.project_id = p.id
-                    WHERE p.project_type = 'bounty'
-                    AND a.asset_type IN ('github_repo', 'github_file')
-                    LIMIT 5
-                """
-                )
-                direct_result = await session.execute(direct_repos_query)
-                direct_rows = direct_result.all()
-                self.logger.info(f"Sample assets: {[(row.source_url, row.asset_type) for row in direct_rows]}")
-
                 # Now try the full query
                 query = text(
                     """
                     WITH repo_urls AS (
-                        -- Direct repo assets
+                        -- Direct GitHub repo assets
                         SELECT DISTINCT a.source_url
                         FROM assets a
-                        JOIN project_assets pa ON a.id = pa.asset_id
-                        JOIN projects p ON pa.project_id = p.id
+                        JOIN projects p ON a.project_id = p.id
                         WHERE p.project_type = 'bounty'
                         AND a.asset_type = 'github_repo'
 
                         UNION
 
-                        -- Extract repos from file URLs
+                        -- Extract repos from GitHub file URLs
                         SELECT DISTINCT regexp_replace(a.source_url, '/blob/.*$', '')
                         FROM assets a
-                        JOIN project_assets pa ON a.id = pa.asset_id
-                        JOIN projects p ON pa.project_id = p.id
+                        JOIN projects p ON a.project_id = p.id
                         WHERE p.project_type = 'bounty'
                         AND a.asset_type = 'github_file'
                     )
