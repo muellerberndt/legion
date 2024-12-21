@@ -6,6 +6,8 @@ from src.util.logging import Logger
 from src.actions.result import ActionResult
 from src.jobs.base import JobStatus
 from src.config.config import Config
+from src.models.base import Project, Asset
+from src.backend.database import DBSessionMixin
 import os
 
 
@@ -49,6 +51,18 @@ class StatusAction(BaseAction):
                 lines.append(f"• Cancelled: {cancelled}")
             except Exception as e:
                 lines.append(f"• Error getting job statistics: {str(e)}")
+
+            # Add database statistics section
+            lines.append("\n📚 Database Statistics:")
+            try:
+                db = DBSessionMixin()
+                with db.get_session() as session:
+                    project_count = session.query(Project).count()
+                    asset_count = session.query(Asset).count()
+                    lines.append(f"• Projects: {project_count}")
+                    lines.append(f"• Assets: {asset_count}")
+            except Exception as e:
+                lines.append(f"• Error getting database statistics: {str(e)}")
 
             # Add installed extensions section
             lines.append("\n🧩 Installed Extensions:")

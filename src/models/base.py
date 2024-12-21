@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Table, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from src.backend.database import Base
 import enum
@@ -11,22 +11,6 @@ class AssetType(str, enum.Enum):
     GITHUB_REPO = "github_repo"
     GITHUB_FILE = "github_file"
     DEPLOYED_CONTRACT = "deployed_contract"
-
-
-class LogLevel(str, enum.Enum):
-    DEBUG = "DEBUG"
-    INFO = "INFO"
-    WARNING = "WARNING"
-    ERROR = "ERROR"
-
-
-# Association table for project-asset relationship
-project_assets = Table(
-    "project_assets",
-    Base.metadata,
-    Column("project_id", Integer, ForeignKey("projects.id")),
-    Column("asset_id", String, ForeignKey("assets.id")),
-)
 
 
 class Project(Base):
@@ -45,8 +29,8 @@ class Project(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
-    assets = relationship("Asset", secondary=project_assets, back_populates="projects")
+    # One-to-many relationship
+    assets = relationship("Asset", back_populates="project")
 
     def to_dict(self):
         """Convert model to dictionary"""
@@ -69,7 +53,9 @@ class Asset(Base):
 
     __tablename__ = "assets"
 
-    id = Column(String, primary_key=True)  # URL or unique identifier
+    id = Column(Integer, primary_key=True)
+    identifier = Column(String, unique=True)  # URL or unique identifier
+    project_id = Column(Integer, ForeignKey("projects.id"))
     asset_type = Column(String)  # Type of asset (repo, file, contract)
     source_url = Column(String)  # URL to asset source
     local_path = Column(String)  # Path to downloaded content
@@ -78,13 +64,15 @@ class Asset(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     embedding = Column(String)  # Store as string, let Postgres handle vector conversion
 
-    # Relationships
-    projects = relationship("Project", secondary=project_assets, back_populates="assets")
+    # Many-to-one relationship
+    project = relationship("Project", back_populates="assets")
 
     def to_dict(self):
         """Convert model to dictionary"""
         return {
             "id": self.id,
+            "identifier": self.identifier,
+            "project_id": self.project_id,
             "asset_type": self.asset_type,
             "source_url": self.source_url,
             "local_path": self.local_path,
@@ -127,16 +115,3 @@ class Asset(Base):
                 pass
 
         return "\n".join(text_parts)
-
-
-class LogEntry(Base):
-    """Model for storing application logs"""
-
-    __tablename__ = "logs"
-
-    id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    level = Column(String, nullable=False)
-    message = Column(String, nullable=False)
-    source = Column(String)  # Component/module that generated the log
-    extra_data = Column(JSON)  # For additional context/data

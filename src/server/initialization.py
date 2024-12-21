@@ -1,6 +1,6 @@
 from sqlalchemy import text
 from src.backend.database import db, Base, DBSessionMixin
-from src.util.logging import Logger, LogConfig
+from src.util.logging import Logger
 from src.indexers.immunefi import ImmunefiIndexer
 
 
@@ -14,24 +14,26 @@ class Initializer(DBSessionMixin):
     async def init_db(self) -> str:
         """Initialize database schema"""
         try:
-            # Temporarily disable database logging
-            LogConfig.set_db_logging(False)
-
             if db.is_initialized():
-                LogConfig.set_db_logging(True)
                 return "Database already initialized"
+
+            # First check if vector extension is available
+            with self.get_session() as session:
+                result = session.execute(
+                    text("SELECT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector');")
+                ).scalar()
+
+                if not result:
+                    self.logger.error("Vector extension is not available in the database")
+                    raise RuntimeError("Vector extension is not available. Please install it first: CREATE EXTENSION vector;")
 
             # Create tables for both sync and async engines
             Base.metadata.create_all(db.get_engine())
             async with db.get_async_engine().begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
 
-            # Initialize vector support
+            # Initialize vector similarity search index
             with self.get_session() as session:
-                # Create vector extension
-                session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-
-                # Create vector similarity search index
                 session.execute(
                     text(
                         """
@@ -43,9 +45,6 @@ class Initializer(DBSessionMixin):
                     )
                 )
                 session.commit()
-
-            # Re-enable database logging now that tables exist
-            LogConfig.set_db_logging(True)
 
             return "Database initialized successfully"
 

@@ -322,8 +322,8 @@ class ImmunefiIndexer:
         try:
             # Get all assets currently associated with the project
             for asset in project.assets:
-                if asset.id not in current_asset_urls:
-                    self.logger.info(f"Asset {asset.id} no longer in scope for project {project.name}, removing")
+                if asset.identifier not in current_asset_urls:
+                    self.logger.info(f"Asset {asset.identifier} no longer in scope for project {project.name}, removing")
 
                     # Delete local files if they exist
                     if asset.local_path and os.path.exists(asset.local_path):
@@ -332,14 +332,11 @@ class ImmunefiIndexer:
                         else:
                             await self._remove_file(asset.local_path)
 
-                    # Remove asset from project's assets
-                    project.assets.remove(asset)
+                    # Trigger event if not in initialize mode
+                    await self.trigger_event(HandlerTrigger.ASSET_REMOVE, {"asset": asset, "project": project})
 
                     # Delete asset from database
                     self.session.delete(asset)
-
-                    # Trigger event if not in initialize mode
-                    await self.trigger_event(HandlerTrigger.ASSET_REMOVE, {"asset": asset, "project": project})
 
             self.session.commit()
 
@@ -355,7 +352,7 @@ class ImmunefiIndexer:
         """Asynchronously remove a file"""
         await asyncio.to_thread(os.remove, path)
 
-    async def download_assets(self, project_id: str, asset_data):
+    async def download_assets(self, project_id: int, asset_data):
         """Download asset files and create Asset records."""
         if not asset_data:
             return
@@ -378,8 +375,8 @@ class ImmunefiIndexer:
                 parsed_url = urlparse(url)
                 target_dir = os.path.join(base_dir, parsed_url.netloc, parsed_url.path.strip("/"))
 
-                # Check if asset already exists
-                existing_asset = self.session.query(Asset).filter(Asset.id == url).first()
+                # Check if asset already exists using identifier field
+                existing_asset = self.session.query(Asset).filter(Asset.identifier == url).first()
 
                 # If asset exists, check if we need to update based on revision
                 if existing_asset:
@@ -396,7 +393,7 @@ class ImmunefiIndexer:
 
                     # For files that we want to diff, preserve the old content
                     old_path = None
-                    if existing_asset.asset_type == AssetType.GITHUB_FILE and existing_asset.local_path:
+                    if existing_asset.asset_type == AssetType.GITHUB_FILE.value and existing_asset.local_path:
                         self.logger.info("Creating backup of old file")
                         # Create backup of old file
                         old_path = f"{existing_asset.local_path}.old"
@@ -415,7 +412,7 @@ class ImmunefiIndexer:
                     asset_record = existing_asset
                 else:
                     # Create a new asset record
-                    asset_record = Asset(id=url)
+                    asset_record = Asset(identifier=url, project_id=project_id)  # Set project_id directly
 
                 # Update asset metadata
                 asset_record.extra_data = asset_record.extra_data or {}

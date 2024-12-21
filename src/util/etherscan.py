@@ -67,7 +67,7 @@ class EVMExplorer:
                     # Check if API key is configured
                     config_key = config["config_key"]
                     api_key = self.config.get(f"block_explorers.{config_key}.key")
-                    self.logger.info(f"Checking API key for {config_key}: {'present' if api_key else 'missing'}")
+                    self.logger.debug(f"Checking API key for {config_key}: {'present' if api_key else 'missing'}")
                     if api_key:
                         return True, explorer_type
                     else:
@@ -88,7 +88,7 @@ class EVMExplorer:
         config_key = self.EXPLORERS[explorer_type]["config_key"]
         config_path = f"block_explorers.{config_key}.key"
         api_key = self.config.get(config_path)
-        self.logger.info(f"Getting API key for {config_key} from path {config_path}: {'present' if api_key else 'missing'}")
+        self.logger.debug(f"Getting API key for {config_key} from path {config_path}: {'present' if api_key else 'missing'}")
         return api_key if api_key else None
 
 
