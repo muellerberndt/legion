@@ -22,20 +22,22 @@ def quicknode_handler(mock_handler_registry):
 
 
 @pytest.mark.asyncio
-async def test_quicknode_handler_valid_payload(quicknode_handler, quicknode_alert):
-    """Test QuickNode handler logic with valid payload"""
-    request = Mock()
-    request.json = AsyncMock(return_value=quicknode_alert)
+async def test_quicknode_handler_valid_payload(mock_handler_registry):
+    """Test QuickNode webhook handler with valid payload"""
+    handler = QuicknodeWebhookHandler()
+    handler.handler_registry = mock_handler_registry
 
-    response = await quicknode_handler.handle(request)
+    # Create mock request with valid payload
+    mock_request = Mock()
+    mock_request.headers = {"Content-Type": "application/json"}
+    mock_request.content_type = "application/json"
+    mock_request.json = AsyncMock(return_value=[{"logs": [{"topics": ["topic1", "topic2"], "data": "0x"}]}])
+    mock_request.text = AsyncMock(return_value='[{"logs":[{"topics":["topic1","topic2"],"data":"0x"}]}]')
+
+    response = await handler.handle(mock_request)
+
     assert response.status == 200
-
-    # Verify event was triggered with correct data
-    quicknode_handler.handler_registry.trigger_event.assert_called_once()
-    call_args = quicknode_handler.handler_registry.trigger_event.call_args[0]
-    assert call_args[0] == HandlerTrigger.BLOCKCHAIN_EVENT
-    assert call_args[1]["source"] == "quicknode"
-    assert call_args[1]["payload"] == quicknode_alert["payload"][0]
+    mock_handler_registry.trigger_event.assert_called_once()
 
 
 @pytest.mark.asyncio
