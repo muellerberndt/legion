@@ -2,7 +2,7 @@
 
 ![Tests](https://github.com/muellerberndt/Legion/actions/workflows/tests.yml/badge.svg)
 
-Legion is an AI-driven framework that automates Web3 bug hunting workflows using an army of autonomous agents. Agents can be spawned on demand and react to on-chain and off-chain events. They can perform arbitrary tasks, such as assessing code revisions and upgrades, evaluating on-chain and off-chain events, searching code for potential bugs, or whatever else the security researcher desires. 
+Legion is an AI-driven framework that automates Web3 bug hunting workflows. It tracks ongoing bug bounties and contests and launches autonomous agents that can perform arbitrary tasks, such as assessing code revisions and upgrades, evaluating on-chain and off-chain events, searching code for potential bugs, or whatever else the security researcher desires. 
 
 The Legion framework ships with basic functionality. By [extending Legion](docs/customization.md), you can enhance the capabilities of your agents and implement your own "alpha" strategies that you might not be willing to share. Some ideas:
 
@@ -14,11 +14,11 @@ The Legion framework ships with basic functionality. By [extending Legion](docs/
 The base framework contains the following features:
 
 - Telegram chatbot interface
-- Auto-track data from contests and bounty programs (currently only Immunefi)
-- Launch agents on demand or schedule them to run at specific times
+- Auto-sync data and code from Immunefi bounties
 - Search bounty data, files and repos using regex & vector search
 - Auto-review of PRs and commits in GitHub repos in scope
-- Auto-review of proxy upgrades in scope (see [example extension](extensions/examples/proxy_upgrade_review.py))
+- Auto-review of proxy implementation upgrades in scope (see [example extension](extensions/examples/proxy_upgrade_review.py))
+- Launch agents on demand or schedule them to run at specific times
 - Simple semgrep scanning (see [example extension](extensions/examples/simple_semgrep.py))
 
 ## Running Legion
