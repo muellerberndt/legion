@@ -2,7 +2,7 @@
 
 import pytest
 from aiohttp import web
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, patch, create_autospec
 from src.webhooks.server import WebhookServer
 from src.webhooks.handlers import WebhookHandler
 
@@ -11,6 +11,7 @@ class MockWebhookHandler(WebhookHandler):
     """Mock handler for testing"""
 
     async def handle(self, request: web.Request) -> web.Response:
+        # Create a proper response without using spec
         mock_response = Mock(spec=web.Response)
         mock_response.status = 200
         mock_response.text = AsyncMock(return_value="Mock handler response")
