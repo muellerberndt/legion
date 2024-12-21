@@ -1,565 +1,318 @@
 # Customization Guide
 
-This guide explains how to customize and extend its functionality. See [extensions/example](../extensions/examples) for an example extension.
+Legion is designed to be highly extensible through its extension system. At its core, Legion provides a framework where custom functionality can be added through three main concepts: Actions, Jobs, and Handlers. Each of these serves a distinct purpose in the system, and understanding how they work together is key to creating effective extensions.
 
-## Extension System
+## Understanding Actions
 
-Extensions in Legion are stored in the `/extensions` directory. Each extension is expected to be a directory containing Python files.
+Actions form the foundation of Legion's extensibility. An action represents a discrete piece of functionality that can be invoked directly by users through Telegram commands or utilized by AI agents in their decision-making processes. What makes actions particularly powerful is their dual nature - they serve both as user commands and as tools that AI agents can reason about and employ.
 
-```
-/extensions
-    /my-extension
-        my_custom_action.py
-        my_custom_agent.py
-        my_custom_handler.py
-    /another-extension
-        another_extension.py
-```
-
-To enable your extensions, add them to `config.yml`:
-
-```yaml
-extensions_dir: "./extensions"
-active_extensions:
-  - my-extension
-```
-
-## Core concepts
-
-1. **Actions** are the basic building blocks of Legion's functionality. Each action represents a specific command that can be invoked via Telegram or used by agents. Actions can also be scheduled to run at configured intervals.
-2. **Jobs** (a.k.a. asyc actions) implement long-running tasks. They can be managed by users via the bot interface.
-4. **Handlers** react events such as webhooks, scope updates, GitHub events, etc.
-
-## 1. Actions
-
-Actions are the basic building blocks of Legion's functionality. Actions in registered extensions automatically appear in Telegram as commands and are made available to the LLM agents. The more actions you add, the more powerful your agents will be!
-
-### Creating an Action
-
-Actions must inherit from `BaseAction` and implement the `execute` method. Create a new Python file in your extension directory:
+When creating an action, you'll define both its behavior and its interface through the ActionSpec system. The specification tells Legion how the action should be presented to users, what arguments it accepts, and provides crucial hints to AI agents about when and how to use the action. Here's how you might create a new action:
 
 ```python
-# extensions/my-extension/my_custom_action.py
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
+from src.actions.result import ActionResult
 from src.util.logging import Logger
 
-class MyCustomAction(BaseAction):
-    """Custom action implementation"""
+class DataAnalysisAction(BaseAction):
+    """Analyzes data sets and provides statistical insights"""
     
-    # Define the action's specification
     spec = ActionSpec(
-        name="my_action",          # Command name: /my_action
-        description="Performs custom analysis",  # Short description for /help
-        help_text="""Detailed help text explaining usage.
-        
-    Usage:
-    /my_action <argument>
-    
-    This command performs custom analysis on the provided argument.
-    Results are returned as formatted text.
-    
-    Examples:
-    /my_action example
-    /my_action --verbose example""",  # Shown with /help my_action
-        agent_hint="Use this command when you need to perform custom analysis on user input",  # Helps agents decide when to use this command
+        name="analyze",
+        description="Analyze a dataset for patterns and anomalies",
+        help_text="Performs statistical analysis on provided data",
+        agent_hint="Use this when you need to understand patterns in numerical data",
         arguments=[
             ActionArgument(
-                name="arg1",
-                description="First argument",
+                name="dataset",
+                description="Path to the dataset to analyze",
                 required=True
-            ),
-            ActionArgument(
-                name="verbose",
-                description="Enable verbose output",
-                required=False,
-                type=bool,  # Argument type (str, int, bool, etc.)
-                default=False  # Default value for optional arguments
             )
         ]
     )
     
-    def __init__(self):
-        self.logger = Logger("MyCustomAction")
-    
-    async def execute(self, arg1: str, verbose: bool = False) -> str:
-        """Execute the action
-        
-        This method is called when a user invokes the command in Telegram.
-        The return value is sent as a message to the user.
-        """
+    async def execute(self, dataset: str) -> ActionResult:
+        """Execute the analysis"""
         try:
-            # Your action logic here
-            result = f"Processed {arg1}"
-            if verbose:
-                result += " with verbose output"
-            return result
+            # Your analysis logic here
+            results = self._perform_analysis(dataset)
+            
+            # Return results using ActionResult
+            return ActionResult.json(
+                data=results,
+                metadata={"dataset": dataset}
+            )
             
         except Exception as e:
-            self.logger.error(f"Error in action: {str(e)}")
-            return "An error occurred"
+            return ActionResult.error(f"Analysis failed: {str(e)}")
 ```
 
-The action will be automatically discovered and registered when your extension is loaded. No additional registration code is needed.
+The ActionResult system provides a structured way to return data from your actions. Rather than returning raw strings or dictionaries, Legion uses ActionResult objects to maintain consistency and provide rich formatting options. The system supports several result types:
 
-### Action Arguments
+- Text results for simple messages
+- JSON results for structured data
+- Table results for grid-like data
+- Tree results for hierarchical information
+- Error results for failure cases
+- Job results for long-running operations
 
-Arguments define what parameters your action accepts. Each argument is defined using `ActionArgument`:
+Each result type can include metadata to provide additional context about the operation. This metadata is particularly useful for AI agents that might need to understand more about the result's context or make decisions based on the operation's outcome.
+
+When your action needs to perform long-running operations, you'll want to consider using the Job system. Jobs allow actions to initiate background tasks while immediately returning feedback to the user. For example:
 
 ```python
-ActionArgument(
-    name="arg_name",          # Name of the argument
-    description="Description", # Help text for the argument
-    required=True,            # Whether the argument is required
-    type=str,                 # Argument type (str, int, bool, float, etc.)
-    default=None,             # Default value for optional arguments
-    choices=None,             # List of valid values (optional)
-    help_text=None           # Detailed help text (optional)
-)
+async def execute(self, dataset: str) -> ActionResult:
+    """Execute the analysis as a background job"""
+    try:
+        # Create and submit a job
+        job = AnalysisJob(dataset=dataset)
+        job_id = await self.job_manager.submit_job(job)
+        
+        # Return a job result that users can track
+        return ActionResult.job(
+            job_id=job_id,
+            metadata={"dataset": dataset}
+        )
+        
+    except Exception as e:
+        return ActionResult.error(f"Failed to start analysis: {str(e)}")
 ```
 
-Arguments can be:
-- Required positional arguments: `arg1`
-- Optional flag arguments: `--verbose`
-- Optional value arguments: `--limit 10`
+## Understanding Jobs
 
-The argument type determines how the input is parsed:
-- `str`: Text input (default)
-- `int`: Integer numbers
-- `float`: Decimal numbers
-- `bool`: True/False flags
-- `list`: List of values (comma-separated)
+While actions provide immediate responses to commands, many operations in Legion require longer processing times. The Job system addresses this need by providing a framework for background tasks that can run asynchronously while keeping users informed of their progress. Jobs are particularly useful for operations like data analysis, security scans, or blockchain monitoring that might take several seconds or even minutes to complete.
 
-### Action Results
-
-Actions can return results in two ways:
-
-1. Simple string return:
-```python
-return "Operation completed successfully"
-```
-
-2. Using `ActionResult` for more control:
-```python
-from src.actions.result import ActionResult
-
-return ActionResult(
-    content="Operation completed successfully",
-    error=None  # Optional error message
-)
-```
-
-### Built-in Actions
-
-Legion comes with several built-in actions:
-
-- `help` - Display help information about available commands
-- `db_query` - Query the database
-- `embeddings` - Manage embeddings
-- `files` - Search for files
-- `semantic` - Perform semantic search
-- `jobs`, `job`, `stop` - Job management commands
-- `sync` - Synchronize data from external sources
-- `scheduler` - Manage scheduled actions
-- `status` - Show system status
-
-You can find these in `src/actions/` for reference when building your own actions.
-
-### Scheduling Actions
-
-Actions can be configured to run automatically at specified intervals using the scheduler system. Add scheduled actions to your `config.yml`:
-
-```yaml
-scheduled_actions:
-  daily_sync:
-    command: sync  # The action to run
-    interval_minutes: 1440  # Run daily (24 hours * 60 minutes)
-    enabled: true  # Whether this scheduled action is active
-  hourly_embeddings:
-    command: embeddings update
-    interval_minutes: 60  # Run hourly
-    enabled: true
-```
-
-You can manage scheduled actions using the `/scheduler` command:
-- `/scheduler list` - List all scheduled actions and their status
-- `/scheduler enable <action_name>` - Enable a scheduled action
-- `/scheduler disable <action_name>` - Disable a scheduled action
-- `/scheduler status <action_name>` - Get detailed status of a scheduled action
-
-## 2. Jobs
-
-Jobs handle long-running tasks and maintain state. Each job must inherit from the `Job` base class and implement the required abstract methods.
-
-### Creating a Job
+When you create a job, you're defining a self-contained unit of work that can report its progress and manage its own lifecycle. Here's how you might implement a job for analyzing blockchain transactions:
 
 ```python
-from src.jobs.base import Job, JobStatus, JobResult
+from src.jobs.base import Job, JobResult
 from src.util.logging import Logger
 
-class MyCustomJob(Job):
-    """Custom job implementation"""
+class BlockchainAnalysisJob(Job):
+    """Analyzes blockchain transactions for patterns"""
     
-    def __init__(self, job_id: str, config: dict = None):
-        super().__init__(job_id, config)
-        self.logger = Logger("MyCustomJob")
+    def __init__(self, address: str, block_range: int):
+        super().__init__(job_type="blockchain_analysis")
+        self.address = address
+        self.block_range = block_range
+        self.logger = Logger("BlockchainAnalysisJob")
     
     async def start(self) -> None:
-        """Start the job.
-        
-        Required abstract method that must be implemented.
-        This method should:
-        1. Initialize any required resources
-        2. Start the main job processing
-        3. Update job status and store results
-        
-        The job should handle its own state management by calling:
-        - self.complete(JobResult(...)) for successful completion
-        - self.fail(error_message) for failures
-        """
+        """Execute the analysis"""
         try:
-            # Your job logic here
-            result = await self.process_job()
+            # Inform user that analysis is starting
+            result = JobResult(success=True, message="Starting blockchain analysis...")
+            result.add_output(f"Analyzing address {self.address}")
+            result.add_output(f"Block range: {self.block_range}")
             
-            # Store results on success
-            self.complete(JobResult(
+            # Perform the analysis in steps
+            transactions = await self._fetch_transactions()
+            result.add_output(f"Found {len(transactions)} transactions")
+            
+            patterns = await self._analyze_patterns(transactions)
+            result.add_output("Pattern analysis complete")
+            
+            # Complete the job with full results
+            await self.complete(JobResult(
                 success=True,
-                message="Job completed successfully",
-                data=result
+                message="Analysis complete",
+                data={
+                    "address": self.address,
+                    "transactions": len(transactions),
+                    "patterns": patterns
+                }
             ))
             
         except Exception as e:
-            self.logger.error(f"Error in job: {str(e)}")
-            self.fail(str(e))
+            await self.fail(f"Analysis failed: {str(e)}")
     
     async def stop_handler(self) -> None:
-        """Handle cleanup when stopping the job.
-        
-        Required abstract method that must be implemented.
-        This method should handle any job-specific cleanup operations such as:
-        - Stopping external processes (e.g., kill child processes)
-        - Cleaning up temporary files
-        - Closing network connections
-        - Releasing resources
-        - Saving partial results if applicable
-        
-        The base Job class will handle marking the job as cancelled after this handler completes.
-        Raise an exception if cleanup fails.
-        """
-        try:
-            # Your cleanup logic here
-            await self.cleanup_resources()
-            
-        except Exception as e:
-            self.logger.error(f"Error during job cleanup: {str(e)}")
-            raise
-
-### Required Abstract Methods
-
-1. **start()** - Main entry point for job execution
-   - Must be implemented by all job subclasses
-   - Should handle the main job logic
-   - Responsible for state management (complete/fail)
-   - Should be async to support long-running tasks
-
-2. **stop_handler()** - Cleanup handler when job is stopped
-   - Must be implemented by all job subclasses
-   - Called automatically when job is stopped
-   - Should clean up all resources
-   - Must be async to support cleanup operations
-   - Base class handles cancellation state after cleanup
-
-### Job Lifecycle
-
-1. **Creation**: Jobs are created with a unique ID and optional configuration
-   ```python
-   job = MyCustomJob("unique_id", config={"key": "value"})
-   ```
-
-2. **Starting**: The job is submitted to the JobManager which calls `start()`
-   ```python
-   job_id = await job_manager.submit_job(job)
-   ```
-
-3. **Running**: Job performs its main task in `start()`
-   - Updates its status to `RUNNING`
-   - Processes data
-   - Can emit progress updates
-
-4. **Completion**: Job ends in one of three states:
-   - **Success**: Job calls `complete()` with results
-     ```python
-     self.complete(JobResult(success=True, message="Done", data=results))
-     ```
-   - **Failure**: Job calls `fail()` with error
-     ```python
-     self.fail("Operation failed: reason")
-     ```
-   - **Cancellation**: Job is stopped externally
-     1. `stop_handler()` is called for cleanup
-     2. Job is marked as `CANCELLED`
-
-5. **Cleanup**: Resources are released
-   - Automatic cleanup via `stop_handler()` when stopped
-   - Manual cleanup in `start()` after completion
-
-### Job Status
-
-Jobs can be in one of these states:
-- `PENDING`: Initial state after creation
-- `RUNNING`: Job is actively processing
-- `COMPLETED`: Job finished successfully
-- `FAILED`: Job encountered an error
-- `CANCELLED`: Job was stopped before completion
-
-### Job Results
-
-Jobs communicate results through the `JobResult` class:
-
-```python
-self.complete(JobResult(
-    success=True,           # Whether the job succeeded
-    message="Summary msg",  # Short summary message
-    data={"key": "value"}, # Structured result data
-    outputs=["out1", "out2"] # List of text outputs
-))
+        """Clean up resources when job is stopped"""
+        # Cancel any pending blockchain requests
+        # Close network connections
+        # etc.
 ```
 
-### Example: Process Management
+The JobResult system works hand-in-hand with Jobs to provide structured output that can be displayed to users or processed by other components. Unlike ActionResult, which is designed for immediate responses, JobResult is built to accumulate output over time and provide detailed progress information. You can add output lines as your job progresses, and these will be available to users who check the job's status.
 
-For jobs that spawn external processes:
+## Event Handling with Handlers
 
-```python
-class ProcessJob(Job):
-    def __init__(self, job_id: str):
-        super().__init__(job_id)
-        self._processes = []  # Track child processes
-    
-    async def start(self) -> None:
-        try:
-            process = subprocess.Popen(
-                ["long-running-command"],
-                stdout=subprocess.PIPE
-            )
-            self._processes.append(process)
-            
-            # Wait for completion
-            stdout, _ = await process.communicate()
-            
-            self.complete(JobResult(
-                success=True,
-                message="Process completed",
-                data={"output": stdout}
-            ))
-            
-        except Exception as e:
-            self.fail(str(e))
-            
-    async def stop_handler(self) -> None:
-        """Clean up by killing child processes"""
-        for process in self._processes:
-            try:
-                process.kill()
-                await process.wait(timeout=5)
-            except Exception as e:
-                self.logger.error(f"Error killing process {process.pid}: {e}")
-        self._processes.clear()
-```
+The Handler system in Legion provides a way to react to events that occur within the system. While Actions respond to direct commands and Jobs handle long-running tasks, Handlers process events asynchronously as they occur. This makes them perfect for monitoring and responding to system events, blockchain activities, or external webhooks.
 
-### Best Practices
-
-1. **Resource Management**
-   - Track all resources (processes, files, connections)
-   - Clean up resources in `stop_handler`
-   - Use context managers where possible
-
-2. **State Management**
-   - Update job status appropriately
-   - Store results using `complete()`
-   - Handle errors with `fail()`
-
-3. **Error Handling**
-   - Catch and log all exceptions
-   - Clean up resources on failure
-   - Provide meaningful error messages
-
-4. **Progress Updates**
-   - Log important state changes
-   - Store intermediate results if useful
-   - Consider adding progress tracking
-
-5. **Configuration**
-   - Accept configuration via constructor
-   - Validate configuration early
-   - Use sensible defaults
-
-## 3. Handlers
-
-Handlers process events triggered by watchers and other components. They allow you to react to changes in projects, assets, and other system events.
-
-### Creating a Handler
-
-Handlers must inherit from `Handler` and implement the `handle` method. Create a new Python file in your extension directory:
+Handlers are registered to respond to specific triggers, and they can process events in whatever way makes sense for your use case. Here's an example of a handler that monitors for smart contract upgrades:
 
 ```python
-# extensions/my-extension/my_custom_handler.py
 from src.handlers.base import Handler, HandlerTrigger, HandlerResult
 from src.util.logging import Logger
-from typing import List
 
-class MyCustomHandler(Handler):
-    """Custom handler for project events"""
+class ContractUpgradeHandler(Handler):
+    """Monitors and responds to smart contract upgrades"""
     
     def __init__(self):
         super().__init__()
-        self.logger = Logger("MyCustomHandler")
+        self.logger = Logger("ContractUpgradeHandler")
     
     @classmethod
-    def get_triggers(cls) -> List[HandlerTrigger]:
-        """Define which events this handler responds to"""
-        return [
-            HandlerTrigger.PROJECT_UPDATE,
-            HandlerTrigger.NEW_PROJECT
-        ]
+    def get_triggers(cls) -> list[HandlerTrigger]:
+        """Define which events to handle"""
+        return [HandlerTrigger.BLOCKCHAIN_EVENT]
     
     async def handle(self) -> HandlerResult:
-        """Handle the event
-        
-        The event context is available in self.context
-        Returns a HandlerResult indicating success/failure and any relevant data
-        """
+        """Process a contract upgrade event"""
         try:
-            # Get event data from context
-            project = self.context.get('project')
-            if not project:
-                return HandlerResult(success=False, data={"error": "No project in context"})
-                
-            if self.trigger == HandlerTrigger.PROJECT_UPDATE:
-                old_project = self.context.get('old_project')
-                result = await self._handle_project_update(project, old_project)
-            elif self.trigger == HandlerTrigger.NEW_PROJECT:
-                result = await self._handle_new_project(project)
-                
-            return HandlerResult(success=True, data=result)
-                
+            # Extract event data from context
+            event = self.context.get("event")
+            if not self._is_upgrade_event(event):
+                return HandlerResult(success=True)
+            
+            # Process the upgrade
+            old_implementation = self._get_old_implementation(event)
+            new_implementation = self._get_new_implementation(event)
+            
+            # Analyze the changes
+            changes = await self._analyze_implementation_changes(
+                old_implementation, 
+                new_implementation
+            )
+            
+            # Return the analysis results
+            return HandlerResult(
+                success=True,
+                data={
+                    "contract": event.get("address"),
+                    "old_implementation": old_implementation,
+                    "new_implementation": new_implementation,
+                    "changes": changes
+                }
+            )
+            
         except Exception as e:
-            self.logger.error(f"Error in handler: {str(e)}")
-            return HandlerResult(success=False, data={"error": str(e)})
-    
-    async def _handle_project_update(self, project, old_project) -> dict:
-        """Handle project update event"""
-        # Your update logic here
-        return {"status": "updated", "project_id": project.id}
-        
-    async def _handle_new_project(self, project) -> dict:
-        """Handle new project event"""
-        # Your new project logic here
-        return {"status": "created", "project_id": project.id}
-
-### Handler Results
-
-Handlers must return a `HandlerResult` object that indicates the success or failure of the operation and includes any relevant data:
-
-```python
-from src.handlers.base import HandlerResult
-
-# Successful result with data
-return HandlerResult(success=True, data={"status": "completed", "items_processed": 5})
-
-# Failed result with error information
-return HandlerResult(success=False, data={"error": "Failed to process project"})
+            self.logger.error(f"Failed to process upgrade: {str(e)}")
+            return HandlerResult(
+                success=False,
+                data={"error": str(e)}
+            )
 ```
 
-The `HandlerResult` is used by the event bus to:
-1. Track handler execution success/failure
-2. Log handler results in the event log
-3. Provide feedback to other system components
+## Extension Loading and Registration
 
-### Available Triggers
+Legion uses a sophisticated extension loading system that automatically discovers and registers your custom components. Understanding how this system works will help you debug any issues and structure your extensions effectively.
 
-The following event triggers are available:
+### How Extension Loading Works
 
-- `HandlerTrigger.NEW_PROJECT` - Triggered when a new project is added
-- `HandlerTrigger.PROJECT_UPDATE` - Triggered when a project is updated
-- `HandlerTrigger.PROJECT_REMOVE` - Triggered when a project is removed
-- `HandlerTrigger.NEW_ASSET` - Triggered when a new asset is added
-- `HandlerTrigger.ASSET_UPDATE` - Triggered when an asset is updated
-- `HandlerTrigger.ASSET_REMOVE` - Triggered when an asset is removed
-- `HandlerTrigger.GITHUB_PUSH` - Triggered when a GitHub push event is received
-- `HandlerTrigger.GITHUB_PR` - Triggered when a GitHub pull request event is received
-- `HandlerTrigger.BLOCKCHAIN_EVENT` - Triggered when a blockchain event is detected
-
-### Handler Context
-
-The context passed to handlers contains relevant data for the event:
-
-- For project events:
-  - `project`: The Project instance
-  - `old_project`: The previous state (for updates)
-  - `removed`: Boolean flag (for removals)
-  
-- For asset events:
-  - `asset`: The Asset instance
-  - `old_revision`: Previous revision (for updates)
-  - `new_revision`: New revision (for updates)
-  - `old_path`: Path to old version (for file updates)
-  - `new_path`: Path to new version (for file updates)
-
-### Custom Triggers
-
-In addition to the built-in triggers, you can define custom triggers for your handlers:
+When Legion starts up, it scans the configured extensions directory for Python modules. The extension loader follows a specific process to ensure all components are properly discovered and registered:
 
 ```python
-from src.handlers.base import Handler, HandlerTrigger
-
-# Register a custom trigger
-MY_CUSTOM_TRIGGER = HandlerTrigger.register_custom_trigger("MY_CUSTOM_TRIGGER")
-
-class MyCustomHandler(Handler):
-    """Handler for custom events"""
-    
-    @classmethod
-    def get_triggers(cls) -> List[HandlerTrigger]:
-        return [MY_CUSTOM_TRIGGER]
-    
-    async def handle(self) -> None:
-        # Handle the custom event
-        pass
-
-# Emit the custom trigger from your code
-await handler_registry.trigger_event(MY_CUSTOM_TRIGGER, {
-    "data": "Custom event data"
-})
+# In your config.yml
+extensions_dir: "./extensions"
+active_extensions:
+  - my_extension
+  - analysis_tools.blockchain
 ```
 
-Built-in triggers include:
-- `HandlerTrigger.NEW_PROJECT` - New project added
-- `HandlerTrigger.PROJECT_UPDATE` - Project updated
-- `HandlerTrigger.PROJECT_REMOVE` - Project removed
-- `HandlerTrigger.NEW_ASSET` - New asset added
-- `HandlerTrigger.ASSET_UPDATE` - Asset updated
-- `HandlerTrigger.ASSET_REMOVE` - Asset removed
-- `HandlerTrigger.GITHUB_PUSH` - GitHub push event
-- `HandlerTrigger.GITHUB_PR` - GitHub pull request event
-- `HandlerTrigger.BLOCKCHAIN_EVENT` - Blockchain event
+The loader first converts these extension paths into filesystem paths. For example, `analysis_tools.blockchain` would map to `./extensions/analysis_tools/blockchain/`. It then processes each Python file it finds, looking for classes that inherit from Legion's base components.
 
-## Best Practices
+Here's what happens behind the scenes:
 
-1. **Error Handling**
-   - Use try-except blocks in all async methods
-   - Log errors with context
-   - Fail gracefully and notify users when appropriate
+1. The loader imports each Python module it finds
+2. It scans the module for classes that inherit from `BaseAction`, `Handler`, or `WebhookHandler`
+3. For each discovered class:
+   - Actions are registered with the `ActionRegistry`
+   - Handlers are registered with the `HandlerRegistry`
+   - Webhook handlers are registered with the `WebhookServer`
 
-2. **Performance**
-   - Implement proper sleep intervals in watchers
-   - Use async/await for I/O operations
-   - Cache frequently used data
+If you're having trouble with extension loading, you can enable debug logging to see exactly what's happening:
 
-3. **Security**
-   - Validate all input data
-   - Use environment variables for sensitive data
-   - Implement rate limiting for external APIs
+```python
+# In your extension
+from src.util.logging import Logger
 
-4. **Documentation**
-   - Document your extension's purpose and functionality
-   - Include usage examples
-   - List all configuration options
+logger = Logger("MyExtension")
+logger.debug("Loading my extension...")
+```
+
+### Automatic Registration
+
+One of Legion's most powerful features is its automatic registration system. When you create a new action or handler, you don't need to manually register it anywhere. Simply defining the class in a module within your extension directory is enough:
+
+```python
+# extensions/my_extension/actions.py
+from src.actions.base import BaseAction, ActionSpec
+
+class MyCustomAction(BaseAction):
+    """This action will be automatically discovered and registered"""
+    
+    spec = ActionSpec(
+        name="custom",
+        description="My custom action",
+        help_text="Detailed help text",
+        agent_hint="Use this when you need to...",
+        arguments=[]
+    )
+    
+    async def execute(self) -> ActionResult:
+        return ActionResult.text("Hello from custom action!")
+```
+
+The extension loader will find this class, verify it has the required attributes (like `spec` for actions), and register it with the appropriate registry. If something is missing or incorrectly configured, you'll see warning messages in the logs.
+
+### Debugging Extension Issues
+
+If your extension isn't working as expected, there are several places to look:
+
+1. **Extension Loading Logs**: Check if your extension was found and loaded:
+   ```
+   [INFO] ExtensionLoader: Loading extensions from ./extensions: ['my_extension']
+   [DEBUG] ExtensionLoader: Found class MyCustomAction in module extensions.my_extension.actions
+   ```
+
+2. **Component Registration**: Verify your components were registered:
+   ```
+   [INFO] ActionRegistry: Registered action: custom
+   [INFO] HandlerRegistry: Registered handler: MyCustomHandler
+   ```
+
+3. **Runtime Errors**: Look for errors during component execution:
+   ```
+   [ERROR] MyCustomAction: Failed to execute: Invalid argument
+   ```
+
+The most common issues are:
+- Missing or incorrect `spec` attribute on actions
+- Forgetting to implement required methods
+- Import errors due to incorrect module structure
+- Type mismatches in method signatures
+
+### Best Practices for Extensions
+
+When creating extensions, following these practices will help ensure smooth operation:
+
+1. **Module Structure**: Keep your extension's code organized:
+   ```
+   extensions/
+     my_extension/
+       __init__.py      # Can be empty
+       actions.py       # Custom actions
+       handlers.py      # Event handlers
+       jobs.py         # Background jobs
+       utils.py        # Helper functions
+   ```
+
+2. **Error Handling**: Always use try/except blocks and return appropriate results:
+   ```python
+   async def execute(self) -> ActionResult:
+       try:
+           result = await self._do_work()
+           return ActionResult.json(result)
+       except Exception as e:
+           self.logger.error(f"Failed: {str(e)}")
+           return ActionResult.error(str(e))
+   ```
+
+3. **Documentation**: Document your components thoroughly:
+   ```python
+   class DataAnalyzer(BaseAction):
+       """Analyzes data sets for patterns and anomalies.
+       
+       This action processes input data using statistical methods
+       to identify patterns, outliers, and trends
+```

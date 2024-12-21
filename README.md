@@ -18,7 +18,7 @@ The base framework contains the following features:
 - Search bounty data, files and repos using regex & vector search
 - Auto-review of PRs and commits in GitHub repos in scope
 - Auto-review of proxy implementation upgrades in scope (see [example extension](extensions/examples/proxy_upgrade_review.py))
-- Launch agents on demand or schedule them to run at specific times
+- Launch agents on demand or schedule them to run at specific intervals
 - Simple semgrep scanning (see [example extension](extensions/examples/simple_semgrep.py))
 
 ## Running Legion
@@ -36,7 +36,7 @@ You can then talk to the bot via Telegram.
 ## Documentation
 
 - [Installation Guide](docs/installation.md) - Detailed setup instructions
-- [User Guide](docs/user_guide.md) - How to use Legion
+- [User Guide](docs/userguide.md) - How to use Legion
 - [Customization Guide](docs/customization.md) - How to extend Legion
 - [Development Guide](docs/development.md) - Development setup and guidelines
 

@@ -2,8 +2,8 @@
 
 import pytest
 from unittest.mock import patch, AsyncMock, Mock
-from src.webhooks.handlers import HandlerTrigger
-from src.webhooks.server import WebhookServer, QuicknodeWebhookHandler
+from src.webhooks.server import WebhookServer
+from src.webhooks.handlers import QuicknodeWebhookHandler
 
 pytest_plugins = ["pytest_aiohttp"]
 
