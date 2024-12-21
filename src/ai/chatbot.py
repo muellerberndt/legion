@@ -288,10 +288,10 @@ For intermediate steps (is_final=false), you can leave "output" empty.
 
 CRITICAL INSTRUCTIONS:
 1. For complex tasks that require multiple steps or jobs, use the /autobot command to delegate the task.
-2. For tasks involving file searching, analysis, or multiple steps, ALWAYS use the /autobot command.
-3. NEVER truncate your output. Show ALL results completely.
-4. Do not add notes like "(truncated)" or "for brevity".
-5. When formatting lists or results, include ALL items with their complete information.
+2. NEVER truncate your output. Show ALL results completely.
+3. Do not add notes like "(truncated)" or "for brevity".
+4. When formatting lists or results, include ALL items with their complete information.
+5. Try to be efficient, e.g. attempt to use as few database queries as possible.
 
 Example responses:
 

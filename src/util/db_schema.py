@@ -57,13 +57,27 @@ def get_db_query_hint() -> str:
     schema = get_table_schema()
 
     field_descriptions = """
-project_type: "bounty" or "contest"
-project_source: E.g. "immunefi" or "code4rena"
-keywords: tags that describe the project e.g. "Solidity"
+Field Descriptions:
+- project_type: "bounty" or "contest"
+- project_source: E.g. "immunefi" or "code4rena"
+- keywords: Array of tags that describe the project e.g. ["Solidity", "DeFi"]
+- asset_type: Type of asset ("github_repo", "github_file", "deployed_contract")
+- identifier: Unique identifier for the asset (usually the URL)
 """
 
     examples = """
-- List projects: db_query '{"from": "projects", "order_by": [{"field": "id", "direction": "desc"}], "limit": 10}'
+Example Queries:
+- List recent projects:
+  db_query '{"from": "projects", "order_by": [{"field": "created_at", "direction": "desc"}], "limit": 10}'
+
+- Get assets for a specific project:
+  db_query '{"from": "assets", "where": [{"field": "project_id", "op": "=", "value": 123}]}'
+
+- Find projects with specific keywords:
+  db_query '{"from": "projects", "where": [{"field": "keywords", "op": "@>", "value": ["Solidity"]}]}'
+
+- Get GitHub repositories for Immunefi projects:
+  db_query '{"from": "assets", "join": {"table": "projects", "on": {"project_id": "id"}}, "where": [{"field": "projects.project_source", "op": "=", "value": "immunefi"}, {"field": "assets.asset_type", "op": "=", "value": "github_repo"}]}'
 """
 
     return f"""Database Schema:
@@ -73,9 +87,7 @@ keywords: tags that describe the project e.g. "Solidity"
 
 {examples}
 
-First argument must be a JSON string containing the query specification in quotes, e.g.:
-
-db_query '{{"from": "projects", "order_by": [{{"field": "id", "direction": "desc"}}], "limit": 10}}'
+First argument must be a JSON string containing the query specification in quotes.
 
 The following tables are accessible: {', '.join(sorted(ALLOWED_TABLES))}.
 
@@ -83,12 +95,9 @@ Query format:
 - "from": Required. One of: {', '.join(sorted(ALLOWED_TABLES))}
 - "select": Optional. List of column names to return
 - "where": Optional. List of conditions with format: {{"field": "column_name", "op": "operator", "value": "value"}}
-  - Operators: "=", "!=", ">", "<", ">=", "<=", "like", "ilike", "in", "not in", "is null", "is not null"
+  - Operators: "=", "!=", ">", "<", ">=", "<=", "like", "ilike", "in", "not in", "is null", "is not null", "@>" (array contains)
+- "join": Optional. Join specification with format: {{"table": "table_name", "on": {{"field1": "field2"}}}}
 - "order_by": Optional. List of sort specifications with format: {{"field": "column_name", "direction": "asc|desc"}}
 - "limit": Optional. Number of results to return
 - "offset": Optional. Number of results to skip
-
-Note:
-- When joining tables through an association table, you need to join through project_assets first, then to projects.
-- To search in JSON arrays like keywords, use the "@>" operator with an array value: {{"op": "@>", "value": ["Keyword"]}}
 """

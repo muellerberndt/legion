@@ -383,12 +383,24 @@ class QueryBuilder:
         # Example usage:
         query = (QueryBuilder()
             .from_table("assets")
-            .join("projects", {"project_id": "id"})
-            .select("assets.id", "assets.source_url", "projects.name")
-            .where("projects.platform", "=", "github")
+            .join("projects", {"assets.project_id": "projects.id"})
+            .select("assets.id", "assets.identifier", "assets.source_url", "projects.name")
+            .where("projects.project_source", "=", "immunefi")
             .where("assets.asset_type", "=", "github_file")
             .order_by("assets.created_at", "desc")
             .limit(10)
+            .build()
+        )
+
+        # Another example with more complex conditions:
+        query = (QueryBuilder()
+            .from_table("projects")
+            .join("assets", {"id": "project_id"})
+            .select("projects.name", "projects.description", "assets.identifier")
+            .where("projects.project_type", "=", "bounty")
+            .where("assets.asset_type", "=", "deployed_contract")
+            .where("projects.keywords", "?*", "defi")
+            .order_by("projects.created_at", "desc")
             .build()
         )
         """
