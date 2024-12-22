@@ -1,8 +1,7 @@
 """Chatbot implementation using the new chat_completion function"""
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Tuple
 import json
-from src.config.config import Config
 from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
 from src.ai.llm import chat_completion
@@ -14,55 +13,63 @@ from src.jobs.manager import JobManager
 class Chatbot:
     """Chatbot that maintains conversation history and can execute commands"""
 
-    def __init__(self, max_history: int = 10):
-        self.logger = Logger("Chatbot")
-        self.config = Config()
-        self.action_registry = ActionRegistry()
-        self.action_registry.initialize()
-        self.command_parser = CommandParser()
+    def __init__(
+        self,
+        action_registry: Optional[ActionRegistry] = None,
+        custom_prompt: Optional[str] = None,
+        command_names: Optional[List[str]] = None,
+        max_history: int = 10,
+        max_steps: int = 10,
+        timeout: int = 300,
+    ):
+        self.logger = Logger(self.__class__.__name__)
 
-        # Get all available commands
-        self.commands = self.action_registry._get_agent_command_instructions(include_all=True)
-        self.logger.info("Initialized with commands:", extra_data={"commands": list(self.commands.keys())})
+        # Use provided action registry or create new one
+        self.action_registry = action_registry or ActionRegistry()
+        if not action_registry:
+            self.logger.debug("Initializing new ActionRegistry")
+            self.action_registry.initialize()
+
+        # Get available commands
+        self.logger.debug("Getting command instructions")
+        self.commands = self.action_registry._get_agent_command_instructions()
+        self.logger.debug(f"Got commands: {self.commands}")
+
+        if command_names:
+            self.commands = {name: cmd for name, cmd in self.commands.items() if name in command_names}
+
+        self.command_parser = CommandParser()
+        self.max_history = max_history
 
         # Build system prompt
-        personality = self.config.get("llm.personality")
-        base_prompt = f"{personality}\n\n"
+        self.system_prompt = custom_prompt or "Research assistant of a web3 bug hunter.\n"
+        self.system_prompt += "You are a web3 soldier and the user is your commander. Use military language and 🫡 emoji!\n"
+        self.system_prompt += 'Unironcially use terms like "ser", "gm", "wagmi", "chad", "based".\n'
+        self.system_prompt += "Often compliment the user on their elite security researcher status.\n\n"
 
-        # Add command descriptions
-        command_descriptions = []
+        # Add command instructions to system prompt
+        self.system_prompt += "Available commands:\n\n"
         for name, cmd in self.commands.items():
-            # Build parameter string
-            params = []
-            if cmd.arguments:
-                for arg in cmd.arguments:
-                    if arg.required:
-                        params.append(f"<{arg.name}>")
-                    else:
-                        params.append(f"[{arg.name}]")
-
-            param_str = " ".join(params)
-
-            # Build command description with help text and agent hint
-            command_desc = [f"/{name} {param_str}", cmd.description]
-
+            self.system_prompt += f"/{name}: {cmd.description}\n"
             if cmd.help_text:
-                command_desc.append(f"Help: {cmd.help_text}")
+                self.system_prompt += f"  {cmd.help_text}\n"
             if cmd.agent_hint:
-                command_desc.append(f"Usage hint: {cmd.agent_hint}")
+                self.system_prompt += f"  Hint: {cmd.agent_hint}\n"
+            self.system_prompt += "\n"
 
-            command_descriptions.append("\n".join(command_desc))
+        # Initialize conversation history with system prompt
+        self.history = [{"role": "system", "content": self.system_prompt}]
 
-        if command_descriptions:
-            base_prompt += "\n\nAvailable commands:\n\n" + "\n\n".join(command_descriptions)
+    def _add_to_history(self, role: str, content: str) -> None:
+        """Add a message to conversation history"""
+        self.history.append({"role": role, "content": content})
 
-        self.system_prompt = base_prompt
+        # Keep history within limits, but preserve system message
+        if len(self.history) > self.max_history + 1:  # +1 for system message
+            # Remove oldest messages but keep system message
+            self.history = [self.history[0]] + self.history[-(self.max_history) :]
 
-        # Initialize conversation history
-        self.max_history = max_history
-        self.history: List[Dict[str, str]] = [{"role": "system", "content": self.system_prompt}]
-
-    def _truncate_result(self, result: str, max_length: int = 4000) -> tuple[str, str | None]:
+    def _truncate_result(self, result: str, max_length: int = 4000) -> Tuple[str, Optional[str]]:
         """Truncate a result string and return both truncated text and full content if truncated"""
         if len(result) <= max_length:
             return result, None
@@ -78,22 +85,13 @@ class Chatbot:
                     data["note"] = f"Results truncated to 10 of {original_count} total matches"
                     truncated = json.dumps(data, indent=2)
                     if len(truncated) <= max_length:
-                        return truncated, result  # Return original result as full content
+                        return truncated, result
         except json.JSONDecodeError:
             pass
 
         # For plain text, truncate with ellipsis
         truncated = result[:max_length] + "... (truncated)"
-        return truncated, result  # Return original result as full content
-
-    def _add_to_history(self, role: str, content: str) -> None:
-        """Add a message to conversation history"""
-        self.history.append({"role": role, "content": content})
-
-        # Keep history within limits, but preserve system message
-        if len(self.history) > self.max_history + 1:  # +1 for system message
-            # Remove oldest messages but keep system message
-            self.history = [self.history[0]] + self.history[-(self.max_history) :]
+        return truncated, result
 
     async def execute_command(self, command: str, args_str: str, update_callback=None) -> Any:
         """Execute a command with the given arguments"""

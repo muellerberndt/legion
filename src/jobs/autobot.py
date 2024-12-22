@@ -2,8 +2,7 @@
 
 from datetime import datetime
 from src.jobs.base import Job, JobResult
-from src.ai.autobot import Autobot
-from src.actions.registry import ActionRegistry
+from src.ai.chatbot import Chatbot
 
 
 class AutobotJob(Job):
@@ -12,38 +11,27 @@ class AutobotJob(Job):
     def __init__(self, prompt: str):
         super().__init__(job_type="autobot")
         self.prompt = prompt
-
-        # Get the singleton instance of ActionRegistry that's already initialized
-        action_registry = ActionRegistry()
-        action_registry.initialize()
-
-        # Create the Autobot instance
-        self.agent = Autobot(action_registry=action_registry, custom_prompt=self.prompt)
+        self.chatbot = Chatbot(max_history=10)  # Keep some history in case it's needed
 
     async def start(self) -> None:
-        """Start the autobot job"""
+        """Start the job - required by Job base class"""
+        await self.run()
+
+    async def run(self) -> None:
         try:
-            self.started_at = datetime.utcnow()
+            # Use regular chatbot functionality
+            result = await self.chatbot.process_message(self.prompt)
 
-            # Create task for the agent
-            task = {"prompt": self.prompt, "timestamp": self.started_at.isoformat(), "type": "prompt"}
-
-            # Execute the task
-            result = await self.agent.execute_task(task)
-
-            if result.success:
-                message = result.data.get("result", "Task completed successfully")
-                job_result = JobResult(
-                    success=True,
-                    message=message,
-                    data={
-                        "prompt": self.prompt,
-                        "execution_time": (datetime.utcnow() - self.started_at).total_seconds(),
-                    },
-                )
-                await self.complete(job_result)
-            else:
-                await self.fail(result.error or "Task failed without specific error message")
+            # Create job result
+            job_result = JobResult(
+                success=True,
+                data={
+                    "result": result,
+                    "history": self.chatbot.history[1:],  # Skip system prompt
+                    "execution_time": (datetime.utcnow() - self.started_at).total_seconds(),
+                },
+            )
+            await self.complete(job_result)
 
         except Exception as e:
             self.logger.error(f"Autobot job failed: {str(e)}")
