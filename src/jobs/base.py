@@ -65,6 +65,14 @@ class JobResult(DBSessionMixin):
         html.append("</body></html>")
         return "\n".join(html)
 
+    @classmethod
+    def from_record(cls, record: "JobRecord") -> "JobResult":
+        """Create JobResult from database record"""
+        result = cls(success=record.success, message=record.message, data=record.data)
+        if record.outputs:
+            result.outputs = record.outputs
+        return result
+
 
 class Job(DBSessionMixin, ABC):
     """Base class for background jobs"""

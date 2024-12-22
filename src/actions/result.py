@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union, Iterator
 from enum import Enum
+import json
 
 
 class ResultType(Enum):
@@ -29,11 +30,15 @@ class ActionResult:
 
     def __str__(self) -> str:
         """String representation of the result"""
-        if self.type == ResultType.ERROR:
-            return f"Error: {self.content}"
+        if self.type == ResultType.TEXT:
+            return str(self.content)
+        elif self.type == ResultType.TREE:
+            return json.dumps(self.content, indent=2)
         elif self.type == ResultType.JOB:
-            return f"Started job {self.job_id}\nUse /job {self.job_id} to check results"
-        return self.content
+            return f"Job started: {self.job_id}"
+        elif self.type == ResultType.ERROR:
+            return f"Error: {self.error}"
+        return str(self.content)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""

@@ -117,8 +117,9 @@ class Chatbot:
                 self.logger.info(f"Waiting for job {result.job_id} to complete")
                 job_manager = await JobManager.get_instance()
                 job_result = await job_manager.wait_for_job_result(result.job_id)
-                # Create a new ActionResult with the job's data
-                return ActionResult(type=ResultType.TEXT, content=str(job_result))
+                if job_result:
+                    return ActionResult.text(job_result.get_output())
+                return ActionResult.text("No output available")
 
             if not isinstance(result, ActionResult):
                 raise ValueError(f"Action {command} returned {type(result)}, expected ActionResult")
