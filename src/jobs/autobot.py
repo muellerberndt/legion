@@ -25,12 +25,16 @@ class AutobotJob(Job):
             # Create job result
             job_result = JobResult(
                 success=True,
+                message="Autobot completed successfully",
                 data={
-                    "result": result,
-                    "history": self.chatbot.history[1:],  # Skip system prompt
+                    "history": self.chatbot.history[1:],  # Keep history in data for reference
                     "execution_time": (datetime.utcnow() - self.started_at).total_seconds(),
                 },
             )
+
+            # Add the result as an output
+            job_result.add_output(result)
+
             await self.complete(job_result)
 
         except Exception as e:
