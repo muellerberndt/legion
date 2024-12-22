@@ -63,6 +63,8 @@ Field Descriptions:
 - keywords: Array of tags that describe the project e.g. ["Solidity", "DeFi"]
 - asset_type: Type of asset ("github_repo", "github_file", "deployed_contract")
 - identifier: Unique identifier for the asset (usually the URL)
+
+In deployed contracts, the "identifier" field is blockchain explorer URL.
 """
 
     examples = """
@@ -78,6 +80,12 @@ Example Queries:
 
 - Get GitHub repositories for Immunefi projects:
   db_query '{"from": "assets", "join": {"table": "projects", "on": {"project_id": "id"}}, "where": [{"field": "projects.project_source", "op": "=", "value": "immunefi"}, {"field": "assets.asset_type", "op": "=", "value": "github_repo"}]}'
+
+- Check the name of the project that address 0xabcd associated with, if any.
+  db_query '{"from": "projects", "select": ["name"], "join": {"table": "assets", "on": {"id": "project_id"}}, "where": [{"field": "assets.identifier", "op": "like", "value": "%0xabcd%"}]}'
+
+- Get highest bounty:
+  db_query '{"from": "projects", "select": ["cast(extra_data->>'maxBounty' as integer) as max_bounty", "name"], "order_by": [{"field": "cast(extra_data->>'maxBounty' as integer)", "direction": "desc"}], "limit": 1}'
 """
 
     return f"""Database Schema:

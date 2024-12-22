@@ -168,6 +168,7 @@ CRITICAL INSTRUCTIONS:
 8. Track what information you've already gathered in your thought process.
 9. For database queries, try to get all needed information in a single query using JOINs when possible.
 10. If you find yourself wanting to repeat a command, stop and format what you already have.
+11. Always quote command arguments.
 
 RESULT HANDLING INSTRUCTIONS:
 
@@ -189,13 +190,6 @@ User: "Show me the code for asset X"
     "thought": "User wants the raw code, I'll return it directly",
     "command": "get_code 123",
     "output": "",
-    "is_final": false
-}
-// After command executes, return the code directly
-{
-    "thought": "Returning the code directly as requested",
-    "command": "",
-    "output": "<the raw code>",
     "is_final": true
 }
 
@@ -203,7 +197,7 @@ Good (metadata query):
 User: "What's the latest asset?"
 {
     "thought": "Need to query and summarize the asset info",
-    "command": "db_query ...",
+    "command": "db_query '...'",
     "output": "",
     "is_final": false
 }

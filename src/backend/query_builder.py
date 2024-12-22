@@ -267,6 +267,35 @@ class QueryBuilder:
 
         field_obj = getattr(table, field_name)
 
+        # Normalize operator to lowercase
+        operator = operator.lower()
+
+        # Define operator aliases
+        operator_aliases = {
+            "like": "ilike",  # Make LIKE case-insensitive by default
+            "equals": "=",
+            "eq": "=",
+            "neq": "!=",
+            "gt": ">",
+            "lt": "<",
+            "gte": ">=",
+            "lte": "<=",
+            "contains": "ilike",
+            "startswith": "ilike",
+            "endswith": "ilike",
+        }
+
+        # Resolve operator alias
+        operator = operator_aliases.get(operator, operator)
+
+        # Modify value based on operator type
+        if operator == "startswith":
+            value = f"{value}%"
+        elif operator == "endswith":
+            value = f"%{value}"
+        elif operator in ["like", "ilike", "contains"]:
+            value = f"%{value}%"
+
         allowed_operators = {
             "=": lambda f, v: f == v,
             "!=": lambda f, v: f != v,
@@ -274,8 +303,8 @@ class QueryBuilder:
             "<": lambda f, v: f < v,
             ">=": lambda f, v: f >= v,
             "<=": lambda f, v: f <= v,
-            "like": lambda f, v: f.like(f"%{v}%"),
-            "ilike": lambda f, v: f.ilike(f"%{v}%"),
+            "like": lambda f, v: f.ilike(v),  # Changed to ilike
+            "ilike": lambda f, v: f.ilike(v),
             "in": lambda f, v: f.in_(v if isinstance(v, (list, tuple)) else [v]),
             "not in": lambda f, v: ~f.in_(v if isinstance(v, (list, tuple)) else [v]),
             "is null": lambda f, _: f.is_(None),
