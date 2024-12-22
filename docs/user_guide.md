@@ -2,20 +2,14 @@
 
 Welcome to Legion! This guide will help you get started with using Legion's features through its Telegram interface.
 
-## Getting Started
+## Basic Usage
 
-### Checking System Status
+Legion offers two ways to interact with the system:
 
-The first thing you might want to do is check if Legion is running properly. Use the `/status` command to see:
-- Running and completed jobs
-- Database statistics
-- Installed extensions
-- Scheduled actions
-- Webhook server status
+1. "Low level" commands (e.g., `/file_search`, `/db_query`)
+2. Natural language requests to the AI chatbot
 
-```
-/status
-```
+Normally, you'll want to use the chatbot to interact with the database and local files.
 
 ### Getting Help
 
@@ -29,12 +23,6 @@ For detailed help about a specific command:
 /help <command_name>
 ```
 
-## Basic Usage
-
-Legion offers two ways to interact with the system:
-1. Direct commands (e.g., `/status`, `/help`)
-2. Natural language requests to the AI chatbot
-
 ### Using Direct Commands
 
 Commands follow this format:
@@ -46,6 +34,7 @@ For example:
 ```
 /help status     # Get help about the status command
 /immunefi silent # Sync Immunefi data without notifications
+/list_jobs       # List all running jobs
 ```
 
 ### Chatting with the AI
@@ -55,7 +44,8 @@ Instead of remembering commands, you can simply tell Legion what you want to do.
 ```
 "Show me the system status"
 "What commands are available?"
-"Check if there are any new GitHub updates"
+"Search all assets for the string 'stETH', then give me a list of the associated projects"
+
 ```
 
 ## Working with Data
@@ -65,9 +55,8 @@ Instead of remembering commands, you can simply tell Legion what you want to do.
 While Legion has a direct database query system, it's recommended to use natural language queries through the chatbot:
 
 ```
-"Show me all projects with high severity bugs"
-"Find vulnerabilities reported in the last 24 hours"
-"List all smart contract projects using Solidity"
+"Show me 5 projects that have been updated in the last 30 days"
+"List all smart contract projects using Rust"
 ```
 
 The chatbot will translate these requests into proper database queries and format the results nicely for you.

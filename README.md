@@ -31,33 +31,41 @@ To start the server, run:
 ./legion.sh server start --log-level INFO
 ```
 
-You can then talk to the bot via Telegram.
+You can then talk to the bot via Telegram:
 
 ```
-List some bounties with assets that were added or updated recently
+Bernhard, [22 Dec BE 2567 at 21:06:27]:
+Have any assets on Etherscan been added to bounty scopes recently? Or updated? If so please list me the URLs along with the project names.
 
-legion, [22 Dec BE 2567 at 13:52:59]:
-🤔 To fulfill the user's request, I need to query the database for recent bounties and their associated assets. I will join the projects and assets tables to get this information.
+legion, [22 Dec BE 2567 at 21:06:31]:
+🤔 I need to find recently updated or added assets of type 'deployed_contract' and join them with their respective project names.
 
-🛠️ Executing: /db_query '{"from": "projects", "join": {"table": "assets", "on": {"id": "project_id"}}, "where": [{"field": "project_type", "op": "=", "value": "bounty"}], "order_by": [{"field": "assets.updated_at", "direction": "desc"}], "limit": 5}'
+🛠️ Executing: /db_query '{"from": "assets", "join": {"table": "projects", "on": {"project_id": "id"}}, "where": [{"field": "asset_type", "op": "=", "value": "deployed_contract"}], "order_by": [{"field": "assets.updated_at", "direction": "desc"}], "select": ["assets.source_url", "projects.name"], "limit": 10}'
 
-🤔 The user requested a list of recent bounties with assets that were added or updated recently. The previous query returned duplicate results, so I need to summarize and present the unique projects.
+Here are the recently updated deployed contracts on Etherscan along with their project names:
 
-Here are some recent bounties with updated assets:
+1. Project: eBTC
+   URL: https://etherscan.io/address/0xd366e016Ae0677CdCE93472e603b75051E022AD0#code
 
-1. **eBTC**
-   - Description: eBTC is a collateralized crypto asset soft pegged to the price of Bitcoin and built on the Ethereum network. It is based on the Liquity protocol and backed exclusively by Staked Ether (stETH). The protocol is designed with an immutable core with minimized counterparty reliance and governance.
-   - Source: Immunefi
-   - Keywords: Smart Contract, Lending, Defi, Solidity, Managed Triage: Time Saver, Subscription Plan: Essential, ETH, Yield Aggregator
-   - Max Bounty: $100,000
-   - Updated: 2024-12-21
+2. Project: eBTC
+   URL: https://etherscan.io/address/0x6dBDB6D420c110290431E863A1A978AE53F69ebC#code
+
 (...)
+
+Bernhard, [22 Dec BE 2567 at 21:06:57]:
+Thanks! Can you please run semgrep on the first one
+
+legion, [22 Dec BE 2567 at 21:07:00]:
+🤔 The user wants to run a semgrep scan on the first asset. I need to execute the semgrep command using the asset ID of the first URL provided.
+🛠️ Executing: /semgrep 4051
+
+The semgrep scan on the first asset (https://etherscan.io/address/0xd366e016Ae0677CdCE93472e603b75051E022AD0#code) completed successfully with no issues found.
 ```
 
 ## Documentation
 
 - [Installation Guide](docs/installation.md) - Detailed setup instructions
-- [User Guide](docs/userguide.md) - How to use Legion
+- [User Guide](docs/user_guide.md) - How to use Legion
 - [Customization Guide](docs/customization.md) - How to extend Legion
 - [Development Guide](docs/development.md) - Development setup and guidelines
 
