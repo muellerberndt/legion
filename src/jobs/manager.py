@@ -1,8 +1,8 @@
 """Job manager for handling background jobs"""
 
 import asyncio
-from typing import Dict, List, Type, Optional, Any
-from src.jobs.base import Job, JobStatus
+from typing import Dict, List, Type, Optional
+from src.jobs.base import Job, JobStatus, JobResult
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 from src.models.job import JobRecord
@@ -489,47 +489,45 @@ class JobManager(DBSessionMixin):
         except Exception as e:
             self.logger.error(f"Failed to send job completion notification: {e}")
 
-    async def wait_for_job_result(self, job_id: str, timeout: int = 300) -> Dict[str, Any]:
-        """Wait for a job to complete and return its result.
+    async def wait_for_job_result(self, job_id: str, timeout: int = 300) -> Optional[JobResult]:
+        """Wait for a job to complete and return its result
 
         Args:
-            job_id: The ID of the job to wait for
+            job_id: ID of the job to wait for
             timeout: Maximum time to wait in seconds
 
         Returns:
-            The job result data
+            JobResult object if job completed successfully, None if timed out or failed
         """
-        start_time = time.time()
-        last_status = None
+        try:
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                with self.get_session() as session:
+                    job_record = session.query(JobRecord).filter(JobRecord.id == job_id).first()
 
-        while time.time() - start_time < timeout:
-            # Get job from database
-            with self.get_session() as session:
-                job_record = session.query(JobRecord).filter_by(id=job_id).first()
-                if not job_record:
-                    raise ValueError(f"Job {job_id} not found")
+                    if not job_record:
+                        self.logger.error(f"No record found for job {job_id}")
+                        return None
 
-                # Log status changes
-                if job_record.status != last_status:
-                    self.logger.info(f"Job {job_id} status: {job_record.status}")
-                    last_status = job_record.status
+                    if job_record.status in [JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value]:
+                        self.logger.info(f"Job {job_id} status: {job_record.status}")
+                        self.logger.debug(f"Job outputs: {job_record.outputs}")
 
-                # Check job completion status
-                if job_record.status in [JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value]:
-                    self.logger.info(f"Job {job_id} completed with status: {job_record.status}")
-                    return {
-                        "success": job_record.success if job_record.status == JobStatus.COMPLETED.value else False,
-                        "message": job_record.message,
-                        "error": job_record.message if job_record.status != JobStatus.COMPLETED.value else None,
-                        "data": job_record.data,
-                        "outputs": job_record.outputs or [],
-                    }
-
-                # For running jobs, log progress
-                if job_record.outputs:
-                    self.logger.info(f"Job {job_id} has {len(job_record.outputs)} outputs while running")
+                        result = JobResult(
+                            success=job_record.success,
+                            message=job_record.message,
+                            data=job_record.data,
+                            outputs=job_record.outputs or [],
+                        )
+                        self.logger.debug(f"Created JobResult with outputs: {result.outputs}")
+                        return result
 
                 # Wait before checking again
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
 
-        raise TimeoutError(f"Timeout waiting for job {job_id}")
+            self.logger.warning(f"Timeout waiting for job {job_id}")
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error waiting for job {job_id}: {str(e)}")
+            return None

@@ -133,7 +133,6 @@ Examples:
                         {
                             "success": job.result.success,
                             "message": job.result.message,
-                            "error": job.result.error,
                             "outputs": job.result.outputs,
                             # "data": job.result.data,
                         }

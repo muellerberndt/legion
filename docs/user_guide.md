@@ -44,7 +44,8 @@ Instead of remembering commands, you can simply tell Legion what you want to do.
 ```
 "Show me the system status"
 "What commands are available?"
-"Search all assets for the string 'stETH', then give me a list of the associated projects"
+"Search all assets for the string 'using SignatureUtil for bytes', then give me a list of the associated projects"
+"Give me the name of the project that address 0xa0ed89af63367ddc8e1dd6b992f20d1214ccb51c is associated with, if any."
 
 ```
 
@@ -56,10 +57,8 @@ While Legion has a direct database query system, it's recommended to use natural
 
 ```
 "Show me 5 projects that have been updated in the last 30 days"
-"List all smart contract projects using Rust"
+"List all smart contract projects that use Rust and have been updated in the last 30 days"
 ```
-
-The chatbot will translate these requests into proper database queries and format the results nicely for you.
 
 ## Complex Tasks with Autobot
 

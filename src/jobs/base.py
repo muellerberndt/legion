@@ -25,23 +25,34 @@ class JobResult(DBSessionMixin):
     # Maximum length for Telegram messages
     MAX_MESSAGE_LENGTH = 4096
 
-    def __init__(self, success: bool = True, message: str = "", data: Dict = None):
+    def __init__(self, success: bool, message: str = None, data: Dict = None, outputs: List[str] = None):
+        """Initialize a job result
+
+        Args:
+            success: Whether the job completed successfully
+            message: Optional status/result message
+            data: Optional dictionary of result data
+            outputs: Optional list of output strings
+        """
         DBSessionMixin.__init__(self)
         self.success = success
         self.message = message
-        self.error = None if success else message  # Store error message if failed
         self.data = data or {}
-        self.outputs: List[str] = []
+        self.outputs = outputs or []
         self.logger = Logger("JobResult")
 
-    def add_output(self, output: str) -> None:
-        """Add an output line"""
-        self.outputs.append(output)
+    def add_output(self, line: str) -> None:
+        """Add a line to the output"""
+        if self.outputs is None:
+            self.outputs = []
+        self.outputs.append(line)
 
     def get_output(self) -> str:
-        """Get the complete output"""
+        """Get the complete output as a string"""
         if not self.outputs:
-            return self.message or "No output"
+            if self.message:
+                return self.message
+            return "No output available"
 
         return "\n".join(self.outputs)
 

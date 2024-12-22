@@ -113,7 +113,7 @@ async def test_get_job_result_action():
         assert isinstance(result.content, dict)
         assert result.content["id"] == "test-job-1"
         assert result.content["status"] == "RUNNING"
-        assert result.content["error"] == "Running test job"
+        assert result.content["message"] == "Running test job"
 
     # Test getting completed job from database
     mock_record = Mock(spec=JobRecord)
