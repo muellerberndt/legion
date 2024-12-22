@@ -51,9 +51,7 @@ Here are some recent bounties with updated assets:
    - Keywords: Smart Contract, Lending, Defi, Solidity, Managed Triage: Time Saver, Subscription Plan: Essential, ETH, Yield Aggregator
    - Max Bounty: $100,000
    - Updated: 2024-12-21
-
 (...)
-
 ```
 
 ## Documentation

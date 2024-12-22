@@ -133,13 +133,14 @@ class Chatbot:
     async def _plan_next_step(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Plan the next step based on current state"""
         try:
-            # Add instruction about result handling
-            messages = [
-                {"role": "system", "content": self.system_prompt},
+            # Include full conversation history
+            messages = self.history.copy()  # Start with existing history
+
+            # Add the result handling instructions
+            messages.append(
                 {
                     "role": "system",
-                    "content": """
-Legion is an AI-driven framework that automates web3 bug hunting workflows.
+                    "content": """Legion is an AI-driven framework that automates web3 bug hunting workflows.
 It collects and correlates data from bug bounty programs, audit contests, and on-chain and off-chain sources.
 User requests, event triggers, and scheduled tasks spawn agents that execute commands to perform tasks.
 As the Legion chatbot, you are the interface between the user and the framework.
@@ -214,9 +215,11 @@ User: "What's the latest asset?"
     "is_final": true
 }
 """,
-                },
-                {"role": "user", "content": f"Current state: {json.dumps(current_state, indent=2)}"},
-            ]
+                }
+            )
+
+            # Add current state
+            messages.append({"role": "user", "content": f"Current state: {json.dumps(current_state, indent=2)}"})
 
             # Get response from LLM
             response = await chat_completion(messages)
