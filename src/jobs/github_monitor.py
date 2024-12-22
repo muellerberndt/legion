@@ -8,7 +8,7 @@ from src.backend.database import DBSessionMixin
 from src.handlers.registry import HandlerRegistry
 import aiohttp
 from sqlalchemy import text
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import asyncio
 from urllib.parse import urlparse
 
@@ -189,8 +189,12 @@ class GithubMonitorJob(Job, DBSessionMixin):
         self.logger.info(f"Checking updates for {repo_url}")
         self.logger.debug(f"Current state: {repo}")
 
-        # Use last_check time from repo state (will be set to creation time for new repos)
-        cutoff_time = repo["last_check"].replace(tzinfo=timezone.utc) if repo["last_check"] else datetime.now(timezone.utc)
+        # Use last_check time from repo state, or default to 24 hours ago for new repos
+        if repo["last_check"]:
+            cutoff_time = repo["last_check"].replace(tzinfo=timezone.utc)
+        else:
+            cutoff_time = datetime.now(timezone.utc) - timedelta(days=1)
+            self.logger.info(f"New repo - using default cutoff time: {cutoff_time}")
 
         # Check commits and PRs in parallel
         commits_task = self._get_new_commits(owner, name, cutoff_time)
