@@ -10,6 +10,7 @@ from src.server.extension_loader import ExtensionLoader
 from src.webhooks.server import WebhookServer
 from src.jobs.scheduler import Scheduler
 from src.config.config import Config
+from src.webhooks.handlers import QuicknodeWebhookHandler
 
 
 class Server:
@@ -37,6 +38,10 @@ class Server:
             if webhook_enabled:
                 logger.info("Starting webhook server...")
                 webhook_server = await WebhookServer.get_instance()
+
+                # Register webhook handlers
+                webhook_server.register_handler("/webhooks/quicknode", QuicknodeWebhookHandler())
+
                 await webhook_server.start()
             else:
                 logger.info("Webhook server disabled in config")
