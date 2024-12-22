@@ -13,6 +13,7 @@ from src.actions.status import StatusAction
 from src.actions.github_monitor import GithubMonitorAction
 from src.actions.scheduler import SchedulerAction
 from src.actions.autobot import AutobotAction
+from src.actions.get_code import GetCodeAction
 
 
 def get_builtin_actions() -> List[Type[BaseAction]]:
@@ -31,4 +32,5 @@ def get_builtin_actions() -> List[Type[BaseAction]]:
         GithubMonitorAction,
         SchedulerAction,
         AutobotAction,
+        GetCodeAction,
     ]

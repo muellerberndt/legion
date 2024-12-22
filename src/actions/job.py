@@ -135,7 +135,7 @@ Examples:
                             "message": job.result.message,
                             "error": job.result.error,
                             "outputs": job.result.outputs,
-                            "data": job.result.data,
+                            # "data": job.result.data,
                         }
                     )
 
@@ -157,7 +157,7 @@ Examples:
                     "success": job_record.success,
                     "message": job_record.message,
                     "outputs": job_record.outputs,
-                    "data": job_record.data,
+                    # "data": job_record.data,
                 }
 
                 return ActionResult.tree(job_info)

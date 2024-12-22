@@ -45,27 +45,43 @@ async def test_execute_command_unknown(autobot):
 
 
 @pytest.mark.asyncio
-async def test_plan_next_step(autobot):
-    """Test planning next step"""
+async def test_plan_next_step():
+    # Create mock action registry with help command
+    mock_registry = MagicMock()
+    mock_registry._get_agent_command_instructions.return_value = {
+        "help": ActionSpec(
+            name="help",
+            description="Get help about available commands",
+            help_text="Usage: /help [command]",
+            agent_hint="Use this to get information about commands",
+        )
+    }
+
+    # Create Autobot instance with mock registry
+    autobot = Autobot(action_registry=mock_registry)
+
+    # Mock chat_completion to return a JSON string
     mock_response = json.dumps(
-        {"thought": "Test reasoning", "command": "test_command param1=test", "output": "Test output", "is_final": True}
+        {"thought": "Test thought", "command": "help", "output": "Test output", "is_final": False}  # Using the mocked command
     )
 
-    with patch("src.ai.autobot.chat_completion", AsyncMock(return_value=mock_response)) as mock_chat:
-        plan = await autobot.plan_next_step({"status": "started"})
+    with patch("src.ai.autobot.chat_completion", new_callable=AsyncMock) as mock_chat:
+        mock_chat.return_value = mock_response
 
-        # Verify the plan
-        assert plan["thought"] == "Test reasoning"
-        assert plan["command"] == "test_command param1=test"
-        assert plan["output"] == "Test output"
-        assert plan["is_final"] is True
+        # Test planning with empty state
+        result = await autobot.plan_next_step({})
 
-        # Verify the system prompt includes the correct parameter format
-        calls = mock_chat.call_args_list
-        assert len(calls) == 1
-        messages = calls[0][0][0]  # Get the messages argument
-        system_prompt = next(msg["content"] for msg in messages if msg["role"] == "system" and "Parameters:" in msg["content"])
-        assert "Parameters: param1*" in system_prompt  # param1 is required so has *
+        # Result should be parsed JSON
+        expected = {"thought": "Test thought", "command": "help", "output": "Test output", "is_final": False}
+        assert result == expected
+        assert mock_chat.called
+
+        # Verify the messages passed to chat_completion
+        call_args = mock_chat.call_args[0][0]
+        assert len(call_args) == 3  # System prompt, instructions, and user state
+        assert call_args[0]["role"] == "system"
+        assert call_args[1]["role"] == "system"
+        assert call_args[2]["role"] == "user"
 
 
 @pytest.mark.asyncio

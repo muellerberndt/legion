@@ -7,7 +7,6 @@ from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
 from src.ai.llm import chat_completion
 from src.util.command_parser import CommandParser
-import re
 from src.actions.result import ActionResult, ResultType
 from src.jobs.manager import JobManager
 
@@ -28,14 +27,7 @@ class Chatbot:
 
         # Build system prompt
         personality = self.config.get("llm.personality")
-        base_prompt = (
-            f"{personality}\n\n"
-            "Additional instructions:\n"
-            "1. Do not lie or make up facts.\n"
-            "2. If a user messages you in a foreign language, please respond in that language.\n"
-            "3. Do not use markdown or HTML tags in your responses.\n"
-            "4. Always specify the language in code blocks.\n"
-        )
+        base_prompt = f"{personality}\n\n"
 
         # Add command descriptions
         command_descriptions = []
@@ -70,69 +62,6 @@ class Chatbot:
         self.max_history = max_history
         self.history: List[Dict[str, str]] = [{"role": "system", "content": self.system_prompt}]
 
-    def _format_as_html(self, content: str) -> str:
-        """Format content as HTML with nice styling"""
-        html = """
-        <html>
-        <head>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
-                table { border-collapse: collapse; width: 100%; }
-                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                th { background-color: #f5f5f5; }
-                .tree-view { font-family: monospace; }
-                .tree-view .node { margin-left: 20px; }
-                .json { color: #333; }
-                .json .key { color: #0066cc; }
-                .json .string { color: #008800; }
-                .json .number { color: #aa0000; }
-                .json .boolean { color: #aa0000; }
-            </style>
-        </head>
-        <body>
-        """
-
-        # Try to detect and format different types of content
-        if content.strip().startswith(("{", "[")):
-            try:
-                # Format JSON with syntax highlighting
-                data = json.loads(content)
-                formatted = json.dumps(data, indent=2)
-                html += "<pre class='json'>"
-                # Add basic syntax highlighting
-                formatted = formatted.replace('"', "&quot;")
-                formatted = re.sub(r'(".*?"):', r'<span class="key">\1</span>:', formatted)
-                formatted = re.sub(r': "(.+?)"', r': <span class="string">&quot;\1&quot;</span>', formatted)
-                formatted = re.sub(r": (\d+)", r': <span class="number">\1</span>', formatted)
-                formatted = re.sub(r": (true|false)", r': <span class="boolean">\1</span>', formatted)
-                html += formatted
-                html += "</pre>"
-            except json.JSONDecodeError:
-                html += f"<pre>{content}</pre>"
-        elif "\n" in content and "|" in content:
-            # Looks like a table, convert to HTML table
-            rows = [row.strip().split("|") for row in content.strip().split("\n")]
-            html += "<table>"
-            for i, row in enumerate(rows):
-                html += "<tr>"
-                tag = "th" if i == 0 else "td"
-                for cell in row:
-                    html += f"<{tag}>{cell.strip()}</{tag}>"
-                html += "</tr>"
-            html += "</table>"
-        elif content.startswith(("├", "└", "│")):
-            # Looks like a tree structure
-            html += "<pre class='tree-view'>"
-            html += content
-            html += "</pre>"
-        else:
-            # Default to pre-formatted text
-            html += f"<pre>{content}</pre>"
-
-        html += "</body></html>"
-        return html
-
     def _truncate_result(self, result: str, max_length: int = 4000) -> tuple[str, str | None]:
         """Truncate a result string and return both truncated text and full content if truncated"""
         if len(result) <= max_length:
@@ -156,22 +85,6 @@ class Chatbot:
         # For plain text, truncate with ellipsis
         truncated = result[:max_length] + "... (truncated)"
         return truncated, result  # Return original result as full content
-
-    def _format_response(self, text: str) -> str:
-        """Format response text to be safe for Telegram"""
-        # Remove any special characters that could cause parsing issues
-        text = text.replace("`", "").replace("*", "").replace("_", "")
-
-        # For JSON responses, format them cleanly
-        if text.startswith("{") and text.endswith("}"):
-            try:
-                data = json.loads(text)
-                # Format without special characters
-                return json.dumps(data, indent=2, ensure_ascii=True)
-            except json.JSONDecodeError:
-                pass
-
-        return text
 
     def _add_to_history(self, role: str, content: str) -> None:
         """Add a message to conversation history"""
@@ -245,12 +158,14 @@ Your response MUST be a valid JSON object with these fields:
 The "output" field will be shown directly to the user, so it should be properly formatted.
 For intermediate steps (is_final=false), you can leave "output" empty.
 
+For complex tasks that may take long to complete, use the /autobot command to delegate the task.
+
 CRITICAL INSTRUCTIONS:
-1. For complex tasks that require multiple steps or jobs, use the /autobot command to delegate the task.
+
 2. NEVER truncate your output. Show ALL results completely.
-3. Do not add notes like "(truncated)" or "for brevity".
-4. When formatting lists or results, include ALL items with their complete information.
-5. Try to be efficient, e.g. attempt to use as few database queries as possible.
+2. When formatting lists or results, include ALL items with their complete information.
+3. Try to be efficient, e.g. attempt to use as few database queries as possible.
+4. Do NOT use markdown or HTML tags in your responses.
 
 Example responses:
 
@@ -269,15 +184,6 @@ For complex tasks:
     "output": "",
     "is_final": true
 }
-
-IMPORTANT:
-1. Return ONLY the JSON object, no other text
-2. Use double quotes for strings
-3. Use true/false (lowercase) for booleans
-4. If using a command, it must be one of the available commands
-5. Arguments containing spaces must be quoted!
-6. NEVER truncate or omit information from results
-7. For complex tasks requiring multiple steps, ALWAYS use the /autobot command
 
 Available commands and their parameters:"""
                     + "\n"
@@ -346,7 +252,7 @@ Available commands and their parameters:"""
             raise
 
     async def process_message(self, message: str, update_callback=None) -> str:
-        """Process a message and return a response"""
+        """Process a natural language message and return a response"""
         try:
             # Record user message
             self._add_to_history("user", message)
@@ -354,147 +260,49 @@ Available commands and their parameters:"""
             # Initialize state for this message
             state = {"message": message, "last_result": None, "status": "started", "is_final": False}
 
-            # Handle commands
-            if message.startswith("/"):
-                command, args_str = self.command_parser.parse_command(message)
-                if command in self.commands:
-                    try:
-                        # Execute the command
-                        result = await self.execute_command(command, args_str, update_callback=update_callback)
-
-                        # Format the result based on type
-                        if isinstance(result, dict):
-                            # For dictionary results, extract relevant data
-                            if "data" in result:
-                                formatted_result = str(result["data"])
-                            elif "message" in result:
-                                formatted_result = str(result["message"])
-                            else:
-                                formatted_result = str(result)
-                        else:
-                            formatted_result = str(result)
-
-                        # Add to history and return
-                        self._add_to_history("assistant", formatted_result)
-                        return self._format_response(formatted_result)
-
-                    except Exception as e:
-                        error_msg = f"Error executing command: {str(e)}"
-                        self.logger.error(error_msg)
-                        return error_msg
-                else:
-                    return f"Unknown command: {command}"
-
-            # For non-command messages, proceed with multi-step execution
-            max_steps = 10
-            step_count = 0
-
-            while True:
-                # Check step limit
-                if step_count >= max_steps:
-                    error_msg = f"Task exceeded maximum steps ({max_steps})"
-                    self.logger.error(error_msg)
-                    return self._format_response(error_msg)
-
-                # Plan next step
+            # Use AI planning
+            while not state["is_final"]:
+                # Get next step from AI
                 plan = await self._plan_next_step(state)
 
-                # Handle empty command (direct response)
-                if not plan["command"].strip():
-                    # For final steps, return the formatted result
-                    if plan["is_final"]:
-                        # Add to history and return without showing thinking process
-                        self._add_to_history("assistant", plan["output"])
-                        return self._format_response(plan["output"])
-                    else:
-                        # For non-final direct responses, continue to next step
-                        state["last_result"] = plan["output"]
-                        step_count += 1
-                        continue
+                # Show AI's thought process if callback provided
+                if update_callback and plan["thought"].strip():
+                    await update_callback(f"🤔 {plan['thought']}")
 
-                # For command execution, show step info
-                if update_callback and plan["command"].strip():
-                    # Extract command name and parameters first
-                    cmd_parts = plan["command"].split(maxsplit=1)
-                    cmd_name = cmd_parts[0]
+                # If there's a command to execute
+                if plan["command"].strip():
+                    command, args_str = self.command_parser.parse_command(plan["command"])
+                    try:
+                        # Show command being executed if callback provided
+                        if update_callback:
+                            await update_callback(f"🛠️ Executing: /{plan['command']}")
 
-                    # Only show thinking process for actual commands (not direct responses)
-                    if cmd_name in self.commands:
-                        step_info = []
-                        if plan["thought"]:
-                            # Remove any special characters from thought
-                            thought = plan["thought"].replace("`", "").replace("'", "").replace('"', "")
-                            step_info.append(f"🤔 Thinking: {thought}")
+                        result = await self.execute_command(command, args_str, update_callback=update_callback)
+                        state["last_result"] = result
 
-                        cmd_params = cmd_parts[1] if len(cmd_parts) > 1 else ""
+                        # Record the command and its result in history
+                        self._add_to_history("assistant", f"Command executed: /{plan['command']}\nResult: {str(result)}")
 
-                        # Try to parse and format JSON parameters if present
-                        try:
-                            if cmd_params.strip().startswith("{"):
-                                params_obj = json.loads(cmd_params)
-                                # Format JSON without special characters
-                                cmd_params = json.dumps(params_obj, separators=(",", ":"), ensure_ascii=True)
-                        except Exception:
-                            # If JSON parsing fails, just use the original string
-                            # Remove any special characters
-                            cmd_params = cmd_params.replace("`", "").replace("'", "").replace('"', "")
+                    except Exception as e:
+                        self.logger.error(f"Error executing command: {str(e)}")
+                        state["last_result"] = f"Error: {str(e)}"
+                        self._add_to_history("assistant", f"Command failed: /{plan['command']}\nError: {str(e)}")
 
-                        # Initialize _last_command_msg if not exists
-                        if not hasattr(self, "_last_command_msg"):
-                            self._last_command_msg = None
+                # Update state
+                state["is_final"] = plan["is_final"]
+                if plan["is_final"]:
+                    state["result"] = plan["output"]
+                    state["status"] = "completed"
 
-                        # Only show command if it's different from the last one
-                        command_msg = f"🛠️ Running: {cmd_name} {cmd_params}"
-                        if self._last_command_msg != command_msg:
-                            step_info.append(command_msg)
-                            self._last_command_msg = command_msg
+                # For final response, record in history and return
+                if plan["is_final"]:
+                    self._add_to_history("assistant", plan["output"])
+                    return plan["output"]
 
-                        if step_info:
-                            await update_callback("\n".join(step_info))
-
-                # Split command into name and parameters
-                command_parts = plan["command"].split(maxsplit=1)
-                command = command_parts[0]
-                param_str = command_parts[1] if len(command_parts) > 1 else ""
-
-                try:
-                    # Execute the command
-                    result = await self.execute_command(command, param_str)
-                    self.logger.info(f"Command result: {result}")
-
-                    # Update state
-                    state["last_result"] = result
-                    state["is_final"] = plan["is_final"]
-
-                    # For final steps after a command, use the output as the formatted result
-                    if plan["is_final"]:
-                        formatted_result = plan["output"] if plan["output"] else result
-                        state["result"] = formatted_result
-                        state["status"] = "completed"
-                        self._add_to_history("assistant", formatted_result)
-                        return self._format_response(formatted_result)
-
-                    # For non-final steps, only return immediately if:
-                    # 1. We have a result AND
-                    # 2. No output is planned AND
-                    # 3. No further commands are needed (based on the plan's thought)
-                    if (
-                        result
-                        and not plan["output"]
-                        and not any(cmd in plan["thought"].lower() for cmd in ["next", "then", "after", "chain", "follow"])
-                    ):
-                        formatted_result = self._format_response(result)
-                        self._add_to_history("assistant", formatted_result)
-                        return formatted_result
-
-                    # Continue to next step
-                    step_count += 1
-
-                except Exception as e:
-                    error_msg = f"Error executing command: {str(e)}"
-                    self.logger.error(error_msg)
-                    return self._format_response(error_msg)
+            return state.get("result", "No response generated")
 
         except Exception as e:
-            self.logger.error(f"Error processing message: {str(e)}")
-            return self._format_response(f"Error processing message: {str(e)}")
+            error_msg = f"Error processing message: {str(e)}"
+            self.logger.error(error_msg)
+            self._add_to_history("assistant", error_msg)
+            return error_msg

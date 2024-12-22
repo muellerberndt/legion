@@ -33,7 +33,6 @@ class AutobotResult:
     success: bool
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-    requires_user_input: bool = False
     user_prompt: Optional[str] = None
 
 
@@ -45,10 +44,8 @@ class Autobot:
         action_registry: Optional[ActionRegistry] = None,
         custom_prompt: Optional[str] = None,
         command_names: Optional[List[str]] = None,
-        update_callback=None,
     ):
         self.logger = Logger(self.__class__.__name__)
-        self.update_callback = update_callback
 
         # Use provided action registry or create a new one
         self.action_registry = action_registry or ActionRegistry()
@@ -149,11 +146,11 @@ class Autobot:
                 args = self.command_parser.parse_arguments(param_str, spec)
             self.command_parser.validate_arguments(args, spec)
 
-            # Execute the command with update callback
+            # Execute the command
             if isinstance(args, dict):
-                result = await handler(**args, _update_callback=self.update_callback)
+                result = await handler(**args)
             else:
-                result = await handler(*args, _update_callback=self.update_callback)
+                result = await handler(*args)
 
             # Debug logging
             self.logger.info(f"Command result type: {type(result)}")
@@ -204,6 +201,10 @@ class Autobot:
     async def plan_next_step(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Plan the next step based on current state"""
         try:
+            # Ensure we have a valid state dictionary
+            if not current_state:
+                current_state = {}
+
             # Truncate state before sending to LLM
             truncated_state = self._truncate_state_for_llm(current_state)
 
@@ -221,46 +222,7 @@ Your response MUST be a valid JSON object with these fields:
     "output": "The message to show to the user",
     "is_final": boolean (true if this is your final response)
 }
-
-The "output" field will be shown directly to the user, so it should be properly formatted.
-For intermediate steps (is_final=false), you can leave "output" empty.
-
-CRITICAL INSTRUCTIONS:
-1. NEVER truncate your output. Show ALL results completely.
-2. Do not add notes like "(truncated)" or "for brevity".
-3. When formatting lists or results, include ALL items with their complete information.
-
-Example responses:
-
-{
-    "thought": "I need to get the list of projects from the database",
-    "command": "db_query '{\"from\": \"projects\", \"limit\": 5}'",
-    "output": "",
-    "is_final": false
-}
-
-{
-    "thought": "I have the project data, now I'll format it nicely for the user",
-    "command": "",
-    "output": "Here are the projects:\n• Project A - Complete description of project A with all details\n• Project B - Complete description of project B with all details",
-    "is_final": true
-}
-
-IMPORTANT:
-1. Return ONLY the JSON object, no other text
-2. Use double quotes for strings
-3. Use true/false (lowercase) for booleans
-4. If using a command, it must be one of the available commands
-5. Arguments containing spaces must be quoted
-6. NEVER truncate or omit information from results
-
-Available commands and their parameters:"""
-                    + "\n"
-                    + "\n".join(
-                        f"- {name}: {cmd.description}\n  Parameters: {', '.join(arg.name + ('*' if arg.required else '') for arg in cmd.arguments)}"
-                        for name, cmd in self.commands.items()
-                    )
-                    + "\n",
+""",
                 },
                 {"role": "user", "content": f"Current state: {json.dumps(truncated_state, indent=2)}"},
             ]
@@ -310,7 +272,7 @@ Available commands and their parameters:"""
             if plan["command"].strip():
                 # Extract command name and validate it exists
                 command_parts = plan["command"].split(maxsplit=1)
-                command_name = command_parts[0]
+                command_name = command_parts[0].lstrip("/")  # Strip leading slash
                 if command_name not in self.commands:
                     raise ValueError(f"Unknown command: {command_name}. Must be one of: {', '.join(self.commands.keys())}")
 
@@ -336,7 +298,7 @@ Available commands and their parameters:"""
         """Check if the task is complete based on state"""
         return self.state.get("status") == "completed" or self.state.get("is_final", False) or "result" in self.state
 
-    async def execute_task(self, task: Dict[str, Any], update_callback=None) -> AutobotResult:
+    async def execute_task(self, task: Dict[str, Any]) -> AutobotResult:
         """Execute a task with safety limits and state tracking"""
         self.start_time = time.time()
         self.step_count = 0
@@ -354,7 +316,7 @@ Available commands and their parameters:"""
                     return AutobotResult(success=False, error=error_msg)
 
                 # Execute next step with callback
-                step_result = await self.execute_step(update_callback)
+                step_result = await self.execute_step(task)
 
                 # Increment step count and check limit
                 self.step_count += 1
@@ -368,10 +330,6 @@ Available commands and their parameters:"""
                 if not step_result.success:
                     self.state["status"] = "failed"
                     self.state["error"] = step_result.error
-                    return step_result
-
-                if step_result.requires_user_input:
-                    self.state["status"] = "waiting_for_input"
                     return step_result
 
                 if self.is_task_complete():
@@ -411,17 +369,15 @@ Available commands and their parameters:"""
             self.state["error"] = str(e)
             return AutobotResult(success=False, error=str(e))
 
-    async def execute_step(self, update_callback=None) -> AutobotResult:
+    async def execute_step(self, task: Dict[str, Any]) -> AutobotResult:
         """Execute a single step of the task"""
         try:
-            # Plan next step
-            plan = await self.plan_next_step(self.state)
+            # Get next step from AI
+            plan = await self.plan_next_step(task)
 
-            # Handle empty command (direct response)
+            # Handle direct responses (no command needed)
             if not plan["command"].strip():
-                # For final steps, the reasoning should be the formatted result
                 if plan["is_final"]:
-                    # Record the step
                     self.record_step(
                         action="response",
                         input_data={"command": ""},
@@ -429,14 +385,11 @@ Available commands and their parameters:"""
                         reasoning=plan["thought"],
                         next_action="complete",
                     )
-
-                    # Update state with the formatted result
                     self.state["result"] = plan["output"]
                     self.state["status"] = "completed"
                     self.state["is_final"] = True
                     return AutobotResult(success=True, data={"result": plan["output"]})
                 else:
-                    # For non-final direct responses
                     self.record_step(
                         action="response",
                         input_data={"command": ""},
@@ -446,43 +399,14 @@ Available commands and their parameters:"""
                     )
                     return AutobotResult(success=True, data={"result": plan["output"]})
 
-            # Show step info via callback
-            if update_callback:
-                step_info = []
-                if plan["thought"]:
-                    # Remove any special characters from thought
-                    thought = plan["thought"].replace("`", "").replace("'", "").replace('"', "")
-                    step_info.append(f"🤔 Thinking: {thought}")
-
-                # Split command into name and parameters
-                cmd_parts = plan["command"].split(maxsplit=1)
-                cmd_name = cmd_parts[0]
-                cmd_params = cmd_parts[1] if len(cmd_parts) > 1 else ""
-
-                # Try to format JSON parameters if present
-                try:
-                    if cmd_params.strip().startswith("{"):
-                        params_obj = json.loads(cmd_params)
-                        cmd_params = json.dumps(params_obj, separators=(",", ":"), ensure_ascii=True)
-                except Exception:
-                    # If JSON parsing fails, just use the original string
-                    cmd_params = cmd_params.replace("`", "").replace("'", "").replace('"', "")
-
-                # Show command
-                step_info.append(f"⚡️ Running: {cmd_name} {cmd_params}")
-
-                if step_info:
-                    await update_callback("\n".join(step_info))
-
             # Execute the command
             command_parts = plan["command"].split(maxsplit=1)
-            command = command_parts[0]
+            command = command_parts[0].lstrip("/")  # Strip leading slash
             param_str = command_parts[1] if len(command_parts) > 1 else ""
 
             try:
-                # Execute the command with update callback
+                # Execute the command
                 result = await self.execute_command(command, param_str)
-
                 self.logger.info(f"Command result: {result}")
 
                 # Record the step
@@ -498,12 +422,10 @@ Available commands and their parameters:"""
                 self.state["last_result"] = result
                 self.state["is_final"] = plan["is_final"]
 
-                # For final steps after a command, use the reasoning as the formatted result
                 if plan["is_final"]:
                     self.state["result"] = plan["output"]
                     self.state["status"] = "completed"
 
-                # Return the result
                 return AutobotResult(success=True, data={"result": plan["output"] if plan["is_final"] else result})
 
             except Exception as e:

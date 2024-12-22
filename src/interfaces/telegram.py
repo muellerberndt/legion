@@ -364,6 +364,12 @@ class TelegramInterface(Interface):
             return
 
         try:
+            # If content is an ActionResult, get its type and content
+            result_type = None
+            if isinstance(content, ActionResult):
+                result_type = content.type
+                content = content.content
+
             # Truncate content if needed
             truncated, full_content = self._truncate_content(content)
 
@@ -372,7 +378,7 @@ class TelegramInterface(Interface):
 
             # If content was truncated, send full version as HTML
             if full_content:
-                html_content = self._format_as_html(full_content)
+                html_content = self._format_as_html(full_content, result_type)
 
                 with tempfile.NamedTemporaryFile(mode="w", suffix=".html", encoding="utf-8") as f:
                     f.write(html_content)
@@ -385,7 +391,6 @@ class TelegramInterface(Interface):
 
         except Exception as e:
             self.logger.error(f"Failed to send message: {e}")
-            # Try to send error message
             try:
                 error_msg = f"Error sending message: {str(e)}"
                 await self.app.bot.send_message(chat_id=session_id, text=error_msg)
@@ -584,15 +589,15 @@ class TelegramInterface(Interface):
         """Send a status update to a specific chat"""
         await self.send_message(message, chat_id)
 
-    def _format_as_html(self, content: str) -> str:
-        """Format content as HTML with nice styling"""
+    def _format_as_html(self, content: str, result_type: ResultType = None) -> str:
+        """Format content as HTML with nice styling based on result type"""
         html = """
         <html>
         <head>
             <style>
                 body { font-family: Arial, sans-serif; margin: 20px; }
                 pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
-                table { border-collapse: collapse; width: 100%; }
+                table { border-collapse: collapse; width: 100%; margin: 10px 0; }
                 th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
                 th { background-color: #f5f5f5; }
                 .tree-view { font-family: monospace; }
@@ -602,19 +607,23 @@ class TelegramInterface(Interface):
                 .json .string { color: #008800; }
                 .json .number { color: #aa0000; }
                 .json .boolean { color: #aa0000; }
+                .list-item { margin: 5px 0; padding-left: 20px; }
+                .list-item:before { content: "•"; margin-right: 10px; }
             </style>
         </head>
         <body>
         """
 
-        # Try to detect and format different types of content
-        if content.strip().startswith(("{", "[")):
+        if result_type == ResultType.TEXT:
+            # Simple text content - just wrap in pre
+            html += f"<pre>{content}</pre>"
+
+        elif result_type == ResultType.JSON:
+            # Format JSON with syntax highlighting
             try:
-                # Format JSON with syntax highlighting
-                data = json.loads(content)
+                data = json.loads(content) if isinstance(content, str) else content
                 formatted = json.dumps(data, indent=2)
                 html += "<pre class='json'>"
-                # Add basic syntax highlighting
                 formatted = formatted.replace('"', "&quot;")
                 formatted = re.sub(r'(".*?"):', r'<span class="key">\1</span>:', formatted)
                 formatted = re.sub(r': "(.+?)"', r': <span class="string">&quot;\1&quot;</span>', formatted)
@@ -624,28 +633,77 @@ class TelegramInterface(Interface):
                 html += "</pre>"
             except json.JSONDecodeError:
                 html += f"<pre>{content}</pre>"
-        elif "\n" in content and "|" in content:
-            # Looks like a table, convert to HTML table
-            rows = [row.strip().split("|") for row in content.strip().split("\n")]
-            html += "<table>"
-            for i, row in enumerate(rows):
-                html += "<tr>"
-                tag = "th" if i == 0 else "td"
-                for cell in row:
-                    html += f"<{tag}>{cell.strip()}</{tag}>"
-                html += "</tr>"
-            html += "</table>"
-        elif content.startswith(("├", "└", "│")):
-            # Looks like a tree structure
+
+        elif result_type == ResultType.LIST:
+            # Format as bulleted list
+            try:
+                items = json.loads(content) if isinstance(content, str) else content
+                html += "<div class='list-view'>"
+                for item in items:
+                    html += f"<div class='list-item'>{item}</div>"
+                html += "</div>"
+            except json.JSONDecodeError:
+                html += f"<pre>{content}</pre>"
+
+        elif result_type == ResultType.TABLE:
+            # Format as HTML table
+            try:
+                data = json.loads(content) if isinstance(content, str) else content
+                if isinstance(data, dict) and "headers" in data and "rows" in data:
+                    html += "<table>"
+                    # Headers
+                    html += "<tr>"
+                    for header in data["headers"]:
+                        html += f"<th>{header}</th>"
+                    html += "</tr>"
+                    # Rows
+                    for row in data["rows"]:
+                        html += "<tr>"
+                        for cell in row:
+                            html += f"<td>{cell}</td>"
+                        html += "</tr>"
+                    html += "</table>"
+                else:
+                    html += f"<pre>{content}</pre>"
+            except json.JSONDecodeError:
+                html += f"<pre>{content}</pre>"
+
+        elif result_type == ResultType.TREE:
+            # Format as tree structure
             html += "<pre class='tree-view'>"
-            html += content
+            try:
+                data = json.loads(content) if isinstance(content, str) else content
+                html += self._format_tree_node(data)
+            except json.JSONDecodeError:
+                html += content
             html += "</pre>"
+
         else:
-            # Default to pre-formatted text
+            # Default to pre-formatted text for unknown types
             html += f"<pre>{content}</pre>"
 
         html += "</body></html>"
         return html
+
+    def _format_tree_node(self, node, level: int = 0) -> str:
+        """Helper function to format tree nodes recursively"""
+        result = []
+        indent = "  " * level
+
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(value, (dict, list)):
+                    result.append(f"{indent}{key}:")
+                    result.append(self._format_tree_node(value, level + 1))
+                else:
+                    result.append(f"{indent}{key}: {value}")
+        elif isinstance(node, list):
+            for item in node:
+                result.append(self._format_tree_node(item, level))
+        else:
+            result.append(f"{indent}{node}")
+
+        return "\n".join(result)
 
     def _truncate_content(self, content: str) -> tuple[str, str | None]:
         """Truncate content and return both truncated version and full content if needed"""

@@ -114,7 +114,6 @@ async def test_get_job_result_action():
         assert result.content["id"] == "test-job-1"
         assert result.content["status"] == "RUNNING"
         assert result.content["error"] == "Running test job"
-        assert result.content["data"] == {"key": "value"}
 
     # Test getting completed job from database
     mock_record = Mock(spec=JobRecord)
@@ -148,7 +147,6 @@ async def test_get_job_result_action():
         assert result.content["status"] == "COMPLETED"
         assert result.content["message"] == "Completed test job"
         assert result.content["outputs"] == ["Output 1", "Output 2"]
-        assert result.content["data"] == {"key": "value"}
 
     # Test job not found
     with (
