@@ -316,8 +316,8 @@ User: "What's the latest asset?"
                 # Get next action from LLM
                 plan = await self._plan_next_step(state)
 
-                # Show AI's thought process if callback provided
-                if update_callback and plan.get("thought"):
+                # Only show thoughts if we're about to execute a command
+                if update_callback and plan.get("command") and plan.get("thought"):
                     await update_callback(f"🤔 {plan['thought']}")
 
                 # If there's a command to execute
