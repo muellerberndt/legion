@@ -132,13 +132,12 @@ class Chatbot:
     async def _plan_next_step(self, current_state: Dict[str, Any]) -> Dict[str, Any]:
         """Plan the next step based on current state"""
         try:
-            # For complex queries requiring commands, proceed with planning
+            # Add instruction about result handling
             messages = [
                 {"role": "system", "content": self.system_prompt},
                 {
                     "role": "system",
                     "content": """
-
 Legion is an AI-driven framework that automates web3 bug hunting workflows.
 It collects and correlates data from bug bounty programs, audit contests, and on-chain and off-chain sources.
 User requests, event triggers, and scheduled tasks spawn agents that execute commands to perform tasks.
@@ -155,43 +154,65 @@ Your response MUST be a valid JSON object with these fields:
     "is_final": boolean (true if this is your final response)
 }
 
-The "output" field will be shown directly to the user, so it should be properly formatted.
-For intermediate steps (is_final=false), you can leave "output" empty.
-
-For complex tasks that may take long to complete, use the /autobot command to delegate the task.
-
 CRITICAL INSTRUCTIONS:
 
-2. NEVER truncate your output. Show ALL results completely.
+1. NEVER truncate your output. Show ALL results completely.
 2. When formatting lists or results, include ALL items with their complete information.
-3. Try to be efficient, e.g. attempt to use as few database queries as possible.
+3. Try to be efficient - use as few database queries as possible.
 4. Do NOT use markdown or HTML tags in your responses.
+5. ALWAYS set is_final to true when you have all the information needed to answer the user's question.
+6. NEVER repeat the same command without a different purpose.
+7. If you have the information needed, format it and return it immediately with is_final=true.
+8. Track what information you've already gathered in your thought process.
+9. For database queries, try to get all needed information in a single query using JOINs when possible.
+10. If you find yourself wanting to repeat a command, stop and format what you already have.
 
-Example responses:
+RESULT HANDLING INSTRUCTIONS:
 
-For simple tasks:
+1. For commands that return raw data that the user explicitly requested, pass through the result directly:
+   - /get_code: Return the code directly when user asks for code
+   - /file_search: Return the matches directly when user searches for specific patterns
+   - /semantic_search: Return the search results directly
+
+2. For commands that return metadata or require interpretation, summarize the results:
+   - Database queries that return project/asset information
+   - Status updates
+   - Job results that need explanation
+
+Examples:
+
+Good (direct code request):
+User: "Show me the code for asset X"
 {
-    "thought": "I need to get the list of projects from the database",
-    "command": "db_query '{\"from\": \"projects\", \"limit\": 5}'",
+    "thought": "User wants the raw code, I'll return it directly",
+    "command": "get_code 123",
     "output": "",
     "is_final": false
 }
-
-For complex tasks:
+// After command executes, return the code directly
 {
-    "thought": "This task requires multiple search and database commands. I should delegate it to an autobot.",
-    "command": "autobot \"Search for files containing 'bla bla', then retrieve the project information for each match and summarize the results\"",
-    "output": "",
+    "thought": "Returning the code directly as requested",
+    "command": "",
+    "output": "<the raw code>",
     "is_final": true
 }
 
-Available commands and their parameters:"""
-                    + "\n"
-                    + "\n".join(
-                        f"- {name}: {cmd.description}\n  Parameters: {', '.join(arg.name + ('*' if arg.required else '') for arg in cmd.arguments)}"
-                        for name, cmd in self.commands.items()
-                    )
-                    + "\n",
+Good (metadata query):
+User: "What's the latest asset?"
+{
+    "thought": "Need to query and summarize the asset info",
+    "command": "db_query ...",
+    "output": "",
+    "is_final": false
+}
+// After command executes, summarize the result
+{
+    "thought": "Summarizing the asset information",
+    "command": "",
+    "output": "The latest asset is X from project Y, added on date Z",
+    "is_final": true
+}
+""",
                 },
                 {"role": "user", "content": f"Current state: {json.dumps(current_state, indent=2)}"},
             ]
@@ -237,11 +258,27 @@ Available commands and their parameters:"""
             if not isinstance(plan["is_final"], bool):
                 raise ValueError("Field 'is_final' must be a boolean")
 
+            # Add loop detection
+            if "command_history" not in current_state:
+                current_state["command_history"] = []
+
+            # Check for command repetition
+            if plan["command"].strip():
+                if plan["command"] in current_state["command_history"]:
+                    self.logger.warning("Command repetition detected, forcing final response")
+                    return {
+                        "thought": "Detected command repetition. Formatting available information.",
+                        "command": "",
+                        "output": f"Based on the information gathered so far: {current_state.get('last_result', 'No results available')}",
+                        "is_final": True,
+                    }
+                current_state["command_history"].append(plan["command"])
+
             # Only validate command if it's not empty
             if plan["command"].strip():
                 # Extract command name and validate it exists
                 command_parts = plan["command"].split(maxsplit=1)
-                command_name = command_parts[0]
+                command_name = command_parts[0].lstrip("/")  # Strip leading slash - ensure only one slash is removed
                 if command_name not in self.commands:
                     raise ValueError(f"Unknown command: {command_name}. Must be one of: {', '.join(self.commands.keys())}")
 
@@ -258,7 +295,25 @@ Available commands and their parameters:"""
             self._add_to_history("user", message)
 
             # Initialize state for this message
-            state = {"message": message, "last_result": None, "status": "started", "is_final": False}
+            state = {
+                "message": message,
+                "last_result": None,
+                "status": "started",
+                "is_final": False,
+                "context": {},  # Add persistent context
+                "command_history": [],
+            }
+
+            # Load context from previous messages in history
+            for msg in self.history:
+                if msg["role"] == "assistant" and "Command executed:" in msg["content"]:
+                    # Extract command and result
+                    cmd_result = msg["content"].split("\nResult: ", 1)
+                    if len(cmd_result) == 2:
+                        cmd, result = cmd_result
+                        # Store query results in context
+                        if "db_query" in cmd:
+                            state["context"]["last_query_result"] = result
 
             # Use AI planning
             while not state["is_final"]:
