@@ -3,14 +3,16 @@ from src.services.telegram import TelegramService
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 from src.util.etherscan import EVMExplorer
-from sqlalchemy import text
-from src.jobs.autobot import AutobotJob
-from src.jobs.manager import JobManager
 from src.config.config import Config
+from src.backend.query_builder import QueryBuilder
 
 
 class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
-    """Handler for monitoring proxy implementation upgrades"""
+    """Example for a custom handler that reacts to proxy implementation upgrades.
+
+    This example demonstrates how to register for a specific trigger, handle incoming events,
+    and pre-filter the data. One could add more sophisticated handling here.
+    """
 
     def __init__(self):
         super().__init__()
@@ -24,6 +26,34 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
     def get_triggers(cls) -> list[HandlerTrigger]:
         """Get list of triggers this handler listens for"""
         return [HandlerTrigger.BLOCKCHAIN_EVENT]
+
+    async def is_contract_in_scope(self, contract_address: str) -> bool:
+        """Check if a contract address is in scope by comparing with deployed contract assets"""
+        try:
+            async with self.get_async_session() as session:
+                # Build query to find matching deployed contracts
+                query = (
+                    QueryBuilder()
+                    .from_table("assets")
+                    .select("assets.id")
+                    .where("asset_type", "=", "deployed_contract")
+                    .where("identifier", "contains", contract_address.lower())
+                    .build()
+                )
+
+                # Execute query
+                result = await session.execute(query)
+                matches = result.fetchall()
+
+                in_scope = len(matches) > 0
+                self.logger.info(
+                    f"Contract {contract_address} scope check", extra_data={"in_scope": in_scope, "matches": len(matches)}
+                )
+                return in_scope
+
+        except Exception as e:
+            self.logger.error(f"Error checking contract scope: {str(e)}")
+            return False
 
     async def handle(self) -> HandlerResult:
         try:
@@ -56,29 +86,41 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
                 self.logger.debug("No proxy upgrade event found in payload")
                 return HandlerResult(success=True, data={"found_upgrade": False})
 
-            # Create prompt for Autobot
-            prompt = (
-                f"The implementation of the proxy {contract_address} was just upgraded. "
-                f"Check if the proxy is associated with any bounty (search assets by source_url) and if so, "
-                f"provide a brief summary including the project details."
-            )
+            # Check if contract is in scope
+            if not await self.is_contract_in_scope(contract_address):
+                self.logger.info(f"Contract {contract_address} not in scope, ignoring upgrade")
+                return HandlerResult(success=True, data={"found_upgrade": True, "in_scope": False})
 
-            # Create and submit AutobotJob
-            job = AutobotJob(prompt=prompt)
-            job_manager = await JobManager.get_instance()
-            job_id = await job_manager.submit_job(job)
+            # We should add better handling here:
+            # - Store the new implementation in the assets table
+            # - Do a diff between the old and new implementation
+            # - Give the diff to the LLM to analyze
+            # - Only the user if the upgrade is significant
+
+            message_lines = [
+                "🔄 Proxy Implementation Upgrade Detected",
+                f"\nProxy Contract: {contract_address}",
+                f"New Implementation: {implementation_address}",
+                f"\nBlockchain: {source}",
+                f"Transaction: {payload.get('transaction_hash', 'Unknown')}",
+            ]
+
+            # Send notification
+            message = "\n".join(message_lines)
+            await self.telegram.send_message(message)
 
             return HandlerResult(
                 success=True,
                 data={
                     "found_upgrade": True,
+                    "in_scope": True,
                     "contract_address": contract_address,
                     "implementation_address": implementation_address,
-                    "job_id": job_id,
+                    "message": message,
                 },
             )
 
         except Exception as e:
             error_msg = f"Error handling proxy implementation upgrade event: {str(e)}"
             self.logger.error(error_msg)
-            return HandlerResult(success=False, data={"error": error_msg})  # Put error in data dict instead
+            return HandlerResult(success=False, data={"error": error_msg})
