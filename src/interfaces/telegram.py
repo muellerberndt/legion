@@ -1,5 +1,5 @@
 import asyncio
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from src.interfaces.base import Interface
 from src.actions.registry import ActionRegistry
@@ -14,6 +14,8 @@ import json
 from typing import Any, Dict, List, Optional
 import tempfile
 import re
+from src.util.formatting import ActionResultFormatter
+from src.jobs.manager import JobManager
 
 
 class TelegramInterface(Interface):
@@ -349,8 +351,23 @@ class TelegramInterface(Interface):
             async def update_callback(message: str):
                 await self.send_message(message, session_id)
 
-            # Process message with update callback
-            response = await agent.process_message(content, update_callback=update_callback)
+            # Create action result callback
+            async def action_callback(command: str, result: ActionResult):
+                # Generate HTML for the action result
+                html = ActionResultFormatter.to_html(result)
+                if html:
+                    # Send as HTML document
+                    with tempfile.NamedTemporaryFile(mode="w", suffix=".html") as f:
+                        f.write(html)
+                        f.flush()
+                        await self.app.bot.send_document(
+                            chat_id=session_id,
+                            document=open(f.name, "rb"),
+                            filename=f"action_result_{command.replace('/', '_')}.html",
+                        )
+
+            # Process message with both callbacks
+            response = await agent.process_message(content, update_callback=update_callback, action_callback=action_callback)
             await self.send_message(response, session_id)
 
         except Exception as e:
@@ -743,3 +760,52 @@ class TelegramInterface(Interface):
         # Default truncation
         truncated = content[: self.MAX_MESSAGE_LENGTH - 100] + "...\n(truncated, see full content in the HTML file)"
         return truncated, content
+
+    async def handle_job_update(self, job_id: str, update: str) -> None:
+        """Handle job status update"""
+
+        try:
+            # Get job result and chat_id from job metadata
+            job_manager = await JobManager.get_instance()
+            job = await job_manager.get_job(job_id)
+            chat_id = job.metadata.get("chat_id") if job and job.metadata else None
+            result = await job_manager.get_job_result(job_id)
+            if result and chat_id:  # Ensure both result and chat_id exist
+                await self.bot.send_message(chat_id=chat_id, text=str(result))
+                if hasattr(result, "file_path") and result.file_path:
+                    with open(result.file_path, "rb") as f:
+                        await self.bot.send_document(chat_id=chat_id, document=InputFile(f))
+
+        except Exception as e:
+            self.logger.error(f"Error sending job result: {str(e)}")
+
+    def format_action_result(self, result: ActionResult) -> str:
+        """Format an action result for Telegram"""
+        # Could have Telegram-specific formatting if needed
+        return ActionResultFormatter.to_html(result)
+
+    async def handle_file_upload(self, message, chat_id):
+        try:
+            # Get the file from the message
+            if message.document:
+                file = message.document
+                result = await self.bot.get_file(file.file_id)
+                file_path = result.file_path
+            elif message.photo:
+                photo = message.photo[-1]  # Get the largest photo size
+                result = await self.bot.get_file(photo.file_id)
+                file_path = result.file_path
+            else:
+                await self.bot.send_message(chat_id=chat_id, text="Please send a file or photo")
+                return
+
+            # Save the file to a temporary location
+            with tempfile.NamedTemporaryFile(mode="wb", delete=False) as temp_file:
+                await self.bot.download_file(file_path, temp_file)
+
+            # Process the file
+            # ...
+
+        except Exception as e:
+            self.logger.error(f"Error handling file upload: {e}")
+            await self.bot.send_message(chat_id=chat_id, text="Sorry, there was an error processing the file upload.")

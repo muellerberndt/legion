@@ -2,6 +2,7 @@ from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.backend.database import DBSessionMixin
 from src.util.embeddings import generate_embedding
 from sqlalchemy import text
+from src.actions.result import ActionResult
 
 
 class SemanticSearchAction(BaseAction, DBSessionMixin):
@@ -39,15 +40,8 @@ Results are ranked by semantic similarity to your query.""",
     def __init__(self):
         DBSessionMixin.__init__(self)
 
-    async def execute(self, query: str) -> str:
-        """Execute semantic search
-
-        Args:
-            query: Natural language search query
-
-        Returns:
-            Formatted string containing search results
-        """
+    async def execute(self, query: str) -> ActionResult:
+        """Execute semantic search"""
         try:
             # Add context markers to query for better matching with stored embeddings
             enhanced_query = f"[QUERY] {query}"
@@ -125,7 +119,7 @@ Results are ranked by semantic similarity to your query.""",
                                 f"{i}. {r['project']} ({similarity_pct}% match)",
                                 f"Type: {r['asset_type']}",
                                 f"URL: {r['url']}",
-                                f"Identifier: {r['identifier']}",  # Added identifier to output
+                                f"Identifier: {r['identifier']}",
                             ]
                         )
                         if r.get("files"):
@@ -134,9 +128,9 @@ Results are ranked by semantic similarity to your query.""",
                             message.append(f"Description: {r['description']}")
                         message.append("")  # Empty line between results
 
-                    return "\n".join(message)
+                    return ActionResult.text("\n".join(message))
                 else:
-                    return "No matching results found."
+                    return ActionResult.text("No matching results found.")
 
         except Exception as e:
-            return f"Search failed: {str(e)}"
+            return ActionResult.error(f"Search failed: {str(e)}")

@@ -44,10 +44,12 @@ class QueryBuilder:
 
     # Define allowed SQL functions with their exact formats
     ALLOWED_FUNCTIONS = {
-        "count(*) as count": "COUNT(*) as count",
-        "count(*) as total": "COUNT(*) as total",
-        "count(*) as total_projects": "COUNT(*) as total_projects",
-        "count(*)": "COUNT(*)",  # Default format without alias
+        "count(*) as count": "COUNT(*) AS count",
+        "count(*) as total": "COUNT(*) AS total",
+        "count(*) as total_projects": "COUNT(*) AS total_projects",
+        "count(*)": "COUNT(*)",
+        "random()": "RANDOM()",
+        "RANDOM()": "RANDOM()",
     }
 
     def __init__(self):
@@ -219,7 +221,7 @@ class QueryBuilder:
                         break
                 continue
 
-            # Handle normal fields (existing code)
+            # Handle normal fields
             if "." not in field:
                 base_table_name = self._table.__tablename__
                 qualified_field = f"{base_table_name}.{field}"

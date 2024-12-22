@@ -23,6 +23,9 @@ class Chatbot:
         timeout: int = 300,
     ):
         self.logger = Logger(self.__class__.__name__)
+        self.max_history = max_history
+        self.max_steps = max_steps
+        self.timeout = timeout
 
         # Use provided action registry or create new one
         self.action_registry = action_registry or ActionRegistry()
@@ -39,7 +42,6 @@ class Chatbot:
             self.commands = {name: cmd for name, cmd in self.commands.items() if name in command_names}
 
         self.command_parser = CommandParser()
-        self.max_history = max_history
 
         # Build system prompt
         self.system_prompt = custom_prompt or "Research assistant of a web3 bug hunter.\n"
@@ -93,7 +95,7 @@ class Chatbot:
         truncated = result[:max_length] + "... (truncated)"
         return truncated, result
 
-    async def execute_command(self, command: str, args_str: str, update_callback=None) -> Any:
+    async def execute_command(self, command: str, args_str: str, update_callback=None) -> ActionResult:
         """Execute a command with the given arguments"""
         try:
             # Get the action handler
@@ -111,15 +113,15 @@ class Chatbot:
             result = await handler(*args, _update_callback=update_callback)
 
             # If this is a job result, wait for completion
-            if isinstance(result, ActionResult):
-                if result.type == ResultType.JOB:
-                    self.logger.info(f"Waiting for job {result.job_id} to complete")
-                    job_manager = await JobManager.get_instance()
-                    job_result = await job_manager.wait_for_job_result(result.job_id)
-                    return job_result
-                else:
-                    # For non-job ActionResults, get the content
-                    return result.content if result.content is not None else str(result)
+            if isinstance(result, ActionResult) and result.type == ResultType.JOB:
+                self.logger.info(f"Waiting for job {result.job_id} to complete")
+                job_manager = await JobManager.get_instance()
+                job_result = await job_manager.wait_for_job_result(result.job_id)
+                # Create a new ActionResult with the job's data
+                return ActionResult(type=ResultType.TEXT, content=str(job_result))
+
+            if not isinstance(result, ActionResult):
+                raise ValueError(f"Action {command} returned {type(result)}, expected ActionResult")
 
             return result
 
@@ -286,54 +288,62 @@ User: "What's the latest asset?"
             self.logger.error(f"Error planning next step: {str(e)}")
             raise
 
-    async def process_message(self, message: str, update_callback=None) -> str:
-        """Process a natural language message and return a response"""
+    async def process_message(self, message: str, update_callback=None, action_callback=None) -> str:
+        """Process a message and return a response"""
         try:
-            # Record user message
-            self._add_to_history("user", message)
-
-            # Initialize state for this message
+            # Initialize state
             state = {
                 "message": message,
+                "status": "in_progress",
+                "result": None,
                 "last_result": None,
-                "status": "started",
-                "is_final": False,
-                "context": {},  # Add persistent context
                 "command_history": [],
+                "is_final": False,
             }
 
-            # Load context from previous messages in history
-            for msg in self.history:
-                if msg["role"] == "assistant" and "Command executed:" in msg["content"]:
-                    # Extract command and result
-                    cmd_result = msg["content"].split("\nResult: ", 1)
-                    if len(cmd_result) == 2:
-                        cmd, result = cmd_result
-                        # Store query results in context
-                        if "db_query" in cmd:
-                            state["context"]["last_query_result"] = result
+            # Add message to history
+            self._add_to_history("user", message)
 
-            # Use AI planning
-            while not state["is_final"]:
-                # Get next step from AI
+            # Process message in steps
+            steps = 0
+            while steps < self.max_steps and not state["is_final"]:
+                steps += 1
+
+                # Get next action from LLM
                 plan = await self._plan_next_step(state)
 
                 # Show AI's thought process if callback provided
-                if update_callback and plan["thought"].strip():
+                if update_callback and plan.get("thought"):
                     await update_callback(f"🤔 {plan['thought']}")
 
                 # If there's a command to execute
                 if plan["command"].strip():
                     command, args_str = self.command_parser.parse_command(plan["command"])
+
+                    # Check for command repetition
+                    if command in state["command_history"]:
+                        if state["last_result"] is not None:
+                            state["is_final"] = True
+                            state["result"] = f"Based on the information gathered so far: {str(state['last_result'])}"
+                            return state["result"]
+                        else:
+                            state["command_history"] = []  # Reset history to allow retry
+
                     try:
                         # Show command being executed if callback provided
                         if update_callback:
                             await update_callback(f"🛠️ Executing: /{plan['command']}")
 
-                        result = await self.execute_command(command, args_str, update_callback=update_callback)
-                        state["last_result"] = result
+                        result = await self.execute_command(command, args_str)
+                        # Convert ActionResult to string when storing in state
+                        state["last_result"] = str(result)
+
+                        # Call action_callback if provided
+                        if action_callback:
+                            await action_callback(plan["command"], result)
 
                         # Record the command and its result in history
+                        state["command_history"].append(command)
                         self._add_to_history("assistant", f"Command executed: /{plan['command']}\nResult: {str(result)}")
 
                     except Exception as e:

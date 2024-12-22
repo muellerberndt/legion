@@ -3,6 +3,7 @@
 from src.actions.base import BaseAction, ActionSpec, ActionArgument
 from src.jobs.scheduler import Scheduler
 from src.util.logging import Logger
+from src.actions.result import ActionResult
 
 
 class SchedulerAction(BaseAction):
@@ -45,23 +46,23 @@ Each action has a name, command to execute, interval in minutes, and enabled sta
     def __init__(self):
         self.logger = Logger("SchedulerAction")
 
-    async def execute(self, *args) -> str:
+    async def execute(self, *args) -> ActionResult:
         """Execute the scheduler action"""
         try:
             if not args:
-                return "Please specify a command. Use /help scheduler for usage information."
+                return ActionResult.error("Please specify a command. Use /help scheduler for usage information.")
 
             command = args[0].lower()
 
             if command not in ["list", "enable", "disable", "status"]:
-                return f"Unknown command: {command}. Use /help scheduler for usage information."
+                return ActionResult.error(f"Unknown command: {command}. Use /help scheduler for usage information.")
 
             scheduler = await Scheduler.get_instance()
 
             if command == "list":
                 actions = scheduler.list_actions()
                 if not actions:
-                    return "No scheduled actions configured"
+                    return ActionResult.text("No scheduled actions configured")
 
                 lines = ["📅 Scheduled Actions:"]
                 for name, status in actions.items():
@@ -74,27 +75,27 @@ Each action has a name, command to execute, interval in minutes, and enabled sta
                     lines.append(f"   • Last run: {last_run}")
                     if status["next_run"]:
                         lines.append(f"   • Next run: {status['next_run']}")
-                return "\n".join(lines)
+                return ActionResult.text("\n".join(lines))
 
             if len(args) < 2:
-                return "Please specify an action name"
+                return ActionResult.error("Please specify an action name")
 
             action_name = args[1]
 
             if command == "enable":
                 if scheduler.enable_action(action_name):
-                    return f"✅ Enabled scheduled action: {action_name}"
-                return f"❌ Action not found: {action_name}"
+                    return ActionResult.text(f"✅ Enabled scheduled action: {action_name}")
+                return ActionResult.error(f"❌ Action not found: {action_name}")
 
             elif command == "disable":
                 if scheduler.disable_action(action_name):
-                    return f"✅ Disabled scheduled action: {action_name}"
-                return f"❌ Action not found: {action_name}"
+                    return ActionResult.text(f"✅ Disabled scheduled action: {action_name}")
+                return ActionResult.error(f"❌ Action not found: {action_name}")
 
             elif command == "status":
                 status = scheduler.get_action_status(action_name)
                 if not status:
-                    return f"❌ Action not found: {action_name}"
+                    return ActionResult.error(f"❌ Action not found: {action_name}")
 
                 lines = [f"📊 Status for {action_name}:"]
                 lines.append(f"• Command: {status['command']}")
@@ -103,8 +104,8 @@ Each action has a name, command to execute, interval in minutes, and enabled sta
                 lines.append(f"• Last run: {status['last_run'] or 'Never'}")
                 if status["next_run"]:
                     lines.append(f"• Next run: {status['next_run']}")
-                return "\n".join(lines)
+                return ActionResult.text("\n".join(lines))
 
         except Exception as e:
             self.logger.error(f"Scheduler action failed: {str(e)}")
-            return f"Error executing scheduler command: {str(e)}"
+            return ActionResult.error(f"Error executing scheduler command: {str(e)}")

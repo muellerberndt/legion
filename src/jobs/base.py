@@ -7,6 +7,8 @@ from src.models.job import JobRecord
 from src.backend.database import DBSessionMixin
 from abc import ABC, abstractmethod
 from src.services.telegram import TelegramService
+from src.util.formatting import ActionResultFormatter
+from src.actions.result import ActionResult
 
 
 class JobStatus(str, Enum):
@@ -42,6 +44,26 @@ class JobResult(DBSessionMixin):
             return self.message or "No output"
 
         return "\n".join(self.outputs)
+
+    def generate_html(self) -> str:
+        """Generate HTML report of detailed results"""
+        if not self.data.get("action_results"):
+            return None
+
+        html = ["<html><body>"]
+        html.append("<h1>Detailed Action Results</h1>")
+
+        for action in self.data["action_results"]:
+            html.append(f"<h2>Command: /{action['command']}</h2>")
+            html.append(f"<p>Executed at: {action['timestamp']}</p>")
+
+            result = ActionResult.from_dict(action["result"])
+            formatted = ActionResultFormatter.to_html(result)
+            html.append(formatted)
+            html.append("<hr>")
+
+        html.append("</body></html>")
+        return "\n".join(html)
 
 
 class Job(DBSessionMixin, ABC):
