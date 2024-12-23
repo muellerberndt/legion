@@ -4,11 +4,11 @@
 
 Legion is an AI-driven framework that automates Web3 bug hunting workflows. It tracks ongoing bug bounties and contests and launches autonomous agents that can perform arbitrary tasks, such as assessing code revisions and upgrades, evaluating on-chain and off-chain events, searching code for potential bugs, or whatever else the security researcher desires. 
 
-The Legion framework ships with basic functionality. By [extending Legion](docs/customization.md), you can enhance the capabilities of your agents and implement your own "alpha" strategies that you might not be willing to share. Some ideas:
+The Legion framework ships with basic functionality. The idea is to share a base framework that can be used by all security researchers while keeping the more advanced features private. By [extending Legion](docs/customization.md), you can enhance the capabilities of your agents and implement your own "alpha" strategies that you might not be willing to share. Some ideas:
 
 - Intelligently prioritize targets using code complexity analysis & EV estimation (payouts, estimated competition, etc.)
-- Distill bug patterns from newly released reports to search for similar bugs in your scope
-- Gap analysis in tests suites & automated Foundry test generation to find missing edge cases
+- Integrate sophisticated vector search and reasoning capabilities to find bugs
+- Add gap analysis in tests suites & automated Foundry test generation to find edge cases
 - (... the list goes on)
 
 The base framework contains the following features:
