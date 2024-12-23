@@ -38,9 +38,35 @@ def sample_project():
 
 
 @pytest.mark.asyncio
+async def test_new_asset_event(handler, sample_asset, sample_project, mock_telegram_service):
+    """Test handling of new asset event"""
+    # Set up the asset with a project relationship
+    sample_asset.project = sample_project
+    handler.trigger = HandlerTrigger.NEW_ASSET
+    handler.context = {"asset": sample_asset}
+
+    await handler.handle()
+
+    # Verify notification was sent
+    mock_telegram_service.send_message.assert_called_once()
+    message = mock_telegram_service.send_message.call_args[0][0]
+
+    # Check message content
+    assert "New Asset Added" in message
+    assert sample_asset.source_url in message
+    assert sample_project.name in message
+    assert "$100,000" in message
+    assert "Ethereum" in message
+    assert "DeFi" in message
+
+
+@pytest.mark.asyncio
 async def test_asset_update_event(handler, sample_asset, sample_project, mock_telegram_service):
     """Test handling of asset update event"""
-    handler.context = {"asset": sample_asset, "project": sample_project, "old_revision": "abc123", "new_revision": "def456"}
+    # Set up the asset with a project relationship
+    sample_asset.project = sample_project
+    handler.trigger = HandlerTrigger.ASSET_UPDATE
+    handler.context = {"asset": sample_asset, "old_revision": "abc123", "new_revision": "def456"}
 
     await handler.handle()
 
@@ -59,9 +85,11 @@ async def test_asset_update_event(handler, sample_asset, sample_project, mock_te
 @pytest.mark.asyncio
 async def test_asset_update_with_diff(handler, sample_asset, sample_project, mock_telegram_service):
     """Test handling of asset update event with diff info"""
+    # Set up the asset with a project relationship
+    sample_asset.project = sample_project
+    handler.trigger = HandlerTrigger.ASSET_UPDATE
     handler.context = {
         "asset": sample_asset,
-        "project": sample_project,
         "old_revision": "abc123",
         "new_revision": "def456",
         "old_path": "/tmp/old.txt",
@@ -83,36 +111,44 @@ async def test_missing_context(handler, mock_telegram_service):
     """Test handling with missing context"""
     handler.context = {}
 
-    await handler.handle()
+    result = await handler.handle()
 
     # Verify no notification was sent
     mock_telegram_service.send_message.assert_not_called()
+    assert not result.success
+    assert "No context provided" in result.data["error"]
 
 
 @pytest.mark.asyncio
 async def test_missing_asset(handler, sample_project, mock_telegram_service):
     """Test handling with missing asset"""
-    handler.context = {"project": sample_project, "old_revision": "abc123", "new_revision": "def456"}
+    handler.context = {"project": sample_project}
 
-    await handler.handle()
+    result = await handler.handle()
 
     # Verify no notification was sent
     mock_telegram_service.send_message.assert_not_called()
+    assert not result.success
+    assert "No asset in context" in result.data["error"]
 
 
 @pytest.mark.asyncio
 async def test_missing_project(handler, sample_asset, mock_telegram_service):
     """Test handling with missing project"""
-    handler.context = {"asset": sample_asset, "old_revision": "abc123", "new_revision": "def456"}
+    sample_asset.project = None  # Ensure no project is associated
+    handler.context = {"asset": sample_asset}
 
-    await handler.handle()
+    result = await handler.handle()
 
     # Verify no notification was sent
     mock_telegram_service.send_message.assert_not_called()
+    assert not result.success
+    assert "No project associated" in result.data["error"]
 
 
 def test_handler_triggers():
     """Test that handler listens for correct triggers"""
     triggers = ImmunefiAssetEventHandler.get_triggers()
     assert HandlerTrigger.ASSET_UPDATE in triggers
-    assert len(triggers) == 1  # Should only handle ASSET_UPDATE
+    assert HandlerTrigger.NEW_ASSET in triggers
+    assert len(triggers) == 2  # Should handle both ASSET_UPDATE and NEW_ASSET

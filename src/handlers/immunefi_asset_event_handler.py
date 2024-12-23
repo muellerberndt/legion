@@ -5,7 +5,7 @@ from src.services.telegram import TelegramService
 
 
 class ImmunefiAssetEventHandler(Handler):
-    """Handler for Immunefi asset update events"""
+    """Handler for Immunefi asset events"""
 
     def __init__(self):
         super().__init__()
@@ -15,11 +15,11 @@ class ImmunefiAssetEventHandler(Handler):
     @classmethod
     def get_triggers(cls) -> List[HandlerTrigger]:
         """Get list of triggers this handler listens for"""
-        return [HandlerTrigger.ASSET_UPDATE]
+        return [HandlerTrigger.ASSET_UPDATE, HandlerTrigger.NEW_ASSET]
 
     async def handle(self) -> HandlerResult:
-        """Handle asset update events"""
-        self.logger.info("Handling asset update event")
+        """Handle asset events"""
+        self.logger.info(f"Handling asset event: {self.trigger}")
         self.logger.debug("Context received:", extra_data={"context": self.context})
 
         if not self.context:
@@ -31,22 +31,29 @@ class ImmunefiAssetEventHandler(Handler):
             self.logger.error("No asset in context")
             return HandlerResult(success=False, data={"error": "No asset in context"})
 
-        project = self.context.get("project")
+        project = asset.project  # Get project from asset relationship
         if not project:
-            self.logger.error("No project in context")
-            return HandlerResult(success=False, data={"error": "No project in context"})
+            self.logger.error("No project associated with asset")
+            return HandlerResult(success=False, data={"error": "No project associated with asset"})
 
-        old_revision = self.context.get("old_revision")
-        new_revision = self.context.get("new_revision")
-
-        # Build message
-        message = [
-            "🔄 Asset Updated\n",
-            f"🔗 Project: {project.name}",
-            f"🔗 URL: {asset.source_url}",
-            f"📁 Type: {asset.asset_type.value}",
-            f"📝 Revision: {old_revision} → {new_revision}\n",
-        ]
+        # Build message based on event type
+        if self.trigger == HandlerTrigger.NEW_ASSET:
+            message = [
+                "🆕 New Asset Added\n",
+                f"🔗 Project: {project.name}",
+                f"🔗 URL: {asset.source_url}",
+                f"📁 Type: {asset.asset_type.value}",
+            ]
+        else:  # ASSET_UPDATE
+            old_revision = self.context.get("old_revision")
+            new_revision = self.context.get("new_revision")
+            message = [
+                "🔄 Asset Updated\n",
+                f"🔗 Project: {project.name}",
+                f"🔗 URL: {asset.source_url}",
+                f"📁 Type: {asset.asset_type.value}",
+                f"📝 Revision: {old_revision} → {new_revision}\n",
+            ]
 
         # Add bounty info if available
         if project.extra_data:
@@ -64,11 +71,12 @@ class ImmunefiAssetEventHandler(Handler):
 
             message.append("")  # Add empty line before diff info
 
-        # Add diff info if available
-        old_path = self.context.get("old_path")
-        new_path = self.context.get("new_path")
-        if old_path and new_path:
-            message.append("💾 File diff available")
+        # Add diff info if available (for updates only)
+        if self.trigger == HandlerTrigger.ASSET_UPDATE:
+            old_path = self.context.get("old_path")
+            new_path = self.context.get("new_path")
+            if old_path and new_path:
+                message.append("💾 File diff available")
 
         # Send notification
         await self.telegram.send_message("\n".join(message))
@@ -78,8 +86,15 @@ class ImmunefiAssetEventHandler(Handler):
             data={
                 "project": project.name,
                 "asset_url": asset.source_url,
-                "old_revision": old_revision,
-                "new_revision": new_revision,
-                "has_diff": bool(old_path and new_path),
+                "event_type": self.trigger.value,
+                **(
+                    {
+                        "old_revision": self.context.get("old_revision"),
+                        "new_revision": self.context.get("new_revision"),
+                        "has_diff": bool(self.context.get("old_path") and self.context.get("new_path")),
+                    }
+                    if self.trigger == HandlerTrigger.ASSET_UPDATE
+                    else {}
+                ),
             },
         )
