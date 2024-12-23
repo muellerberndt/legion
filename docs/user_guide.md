@@ -11,7 +11,7 @@ Legion offers two ways to interact with the system:
 
 Normally, you'll want to use the chatbot to interact with the database and local files.
 
-### Getting Help
+### System Status and Help
 
 To see all available commands, use:
 ```
@@ -21,6 +21,11 @@ To see all available commands, use:
 For detailed help about a specific command:
 ```
 /help <command_name>
+```
+
+To see the status of the system, use:
+```
+/status
 ```
 
 ### Using Direct Commands
@@ -39,7 +44,7 @@ For example:
 
 ### Chatting with the AI
 
-Instead of remembering commands, you can simply tell Legion what you want to do. The AI will understand and execute the appropriate commands:
+For most operations including database queries and file searches, you'll likely want to use the chatbot. The AI will understand and execute the appropriate commands:
 
 ```
 "Show me the system status"
@@ -58,24 +63,6 @@ While Legion has a direct database query system, it's recommended to use natural
 ```
 "Show me 5 projects that have been updated in the last 30 days"
 "List all smart contract projects that use Rust and have been updated in the last 30 days"
-```
-
-## Complex Tasks with Autobot
-
-For more complex tasks that require multiple steps use the `/autobot` command. Autobot is an autonomous agent that can plan and execute sequences of actions.
-
-### Basic Autobot Usage
-
-```
-TODO - example
-```
-
-### Example Complex Tasks
-
-Here are some examples of what you can ask autobot to do:
-
-```
-TODO - examples
 ```
 
 ## Working with Jobs

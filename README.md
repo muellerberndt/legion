@@ -31,35 +31,27 @@ To start the server, run:
 ./legion.sh server start --log-level INFO
 ```
 
-You can then talk to the bot via Telegram:
+Sync bounty data from Immunefi with `/immunefi silent`. Then chat away with the bot:
 
 ```
 Bernhard, [22 Dec BE 2567 at 21:06:27]:
-Have any assets on Etherscan been added to bounty scopes recently? Or updated? If so please list me the URLs along with the project names.
+Search all assets for the string 'using SignatureUtil for bytes'. If you find any asset containing this string please run semgrep on it and briefly summarize the asset code and semgrep results, as well as the associated project.
 
-legion, [22 Dec BE 2567 at 21:06:31]:
-🤔 I need to find recently updated or added assets of type 'deployed_contract' and join them with their respective project names.
+legion, [23 Dec BE 2567 at 06:57:18]:
+🤔 First, I need to search for assets containing the string 'using SignatureUtil for bytes'. If found, I'll proceed to run semgrep on those assets.
+🛠️ Executing: /file_search 'using SignatureUtil for bytes'
+(... working a bit ...)
 
-🛠️ Executing: /db_query '{"from": "assets", "join": {"table": "projects", "on": {"project_id": "id"}}, "where": [{"field": "asset_type", "op": "=", "value": "deployed_contract"}], "order_by": [{"field": "assets.updated_at", "direction": "desc"}], "select": ["assets.source_url", "projects.name"], "limit": 10}'
+The asset associated with the string 'using SignatureUtil for bytes' is part of the 'deBridge' project. The project is described as a cross-chain interoperability and liquidity transfer protocol that allows decentralized transfer of data and assets between various blockchains. The semgrep scan on the asset with ID 906 found no issues. The code for the asset includes a library for handling signatures and a contract for asset transfers, among other functionalities.
 
-Here are the recently updated deployed contracts on Etherscan along with their project names:
+Bernhard Mueller, [23 Dec BE 2567 at 07:01:41]:
+What's the explorer URL for that asset?
 
-1. Project: eBTC
-   URL: https://etherscan.io/address/0xd366e016Ae0677CdCE93472e603b75051E022AD0#code
+legion, [23 Dec BE 2567 at 07:01:48]:
+🤔 I need to retrieve the explorer URL for the asset with ID 906.
+🛠️ Executing: /db_query '{"from": "assets", "select": ["identifier"], "where": [{"field": "id", "op": "=", "value": 906}]}'
 
-2. Project: eBTC
-   URL: https://etherscan.io/address/0x6dBDB6D420c110290431E863A1A978AE53F69ebC#code
-
-(...)
-
-Bernhard, [22 Dec BE 2567 at 21:06:57]:
-Thanks! Can you please run semgrep on the first one
-
-legion, [22 Dec BE 2567 at 21:07:00]:
-🤔 The user wants to run a semgrep scan on the first asset. I need to execute the semgrep command using the asset ID of the first URL provided.
-🛠️ Executing: /semgrep 4051
-
-The semgrep scan on the first asset (https://etherscan.io/address/0xd366e016Ae0677CdCE93472e603b75051E022AD0#code) completed successfully with no issues found.
+The explorer URL for the asset is: https://etherscan.io/address/0x24455aa55ded7728783c9474be8ea2f5c935f8eb
 ```
 
 ## Documentation

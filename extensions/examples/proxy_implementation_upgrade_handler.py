@@ -96,13 +96,12 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
             # - Do a diff between the old and new implementation
             # - Give the diff to the LLM to analyze
             # - Only the user if the upgrade is significant
+            # - Add project details to the message
 
             message_lines = [
                 "🔄 Proxy Implementation Upgrade Detected",
                 f"\nProxy Contract: {contract_address}",
                 f"New Implementation: {implementation_address}",
-                f"\nBlockchain: {source}",
-                f"Transaction: {payload.get('transaction_hash', 'Unknown')}",
             ]
 
             # Send notification

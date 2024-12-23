@@ -90,8 +90,6 @@ async def test_handle_upgrade_in_scope(handler, proxy_upgrade_event):
         "🔄 Proxy Implementation Upgrade Detected",
         f"Proxy Contract: {result.data['contract_address']}",
         f"New Implementation: {result.data['implementation_address']}",
-        f"Blockchain: {proxy_upgrade_event['source']}",
-        f"Transaction: {proxy_upgrade_event['transaction_hash']}",
     ]
 
     for line in expected_lines:
