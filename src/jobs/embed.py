@@ -7,6 +7,7 @@ from src.util.embeddings import update_asset_embedding
 from src.util.logging import Logger
 from sqlalchemy import select, text
 from datetime import datetime
+from sqlalchemy.orm import joinedload
 
 
 class EmbedJob(Job, DBSessionMixin):
@@ -29,9 +30,10 @@ class EmbedJob(Job, DBSessionMixin):
             self.logger.info("Starting embedding generation for all assets")
 
             with self.get_session() as session:
-                # Get all assets
-                query = select(Asset)
+                # Get all assets with their projects eagerly loaded
+                query = select(Asset).options(joinedload(Asset.project))
                 assets = session.execute(query).scalars().all()
+
                 total = len(assets)
                 self.logger.info(f"Found {total} assets to process")
 
@@ -40,6 +42,8 @@ class EmbedJob(Job, DBSessionMixin):
                 for i, asset in enumerate(assets):
                     try:
                         self.logger.info(f"Processing asset {asset.id} ({i+1}/{total})")
+
+                        # Generate embedding directly from asset
                         embedding = await update_asset_embedding(asset)
 
                         # Format the embedding array properly for PostgreSQL
@@ -52,7 +56,7 @@ class EmbedJob(Job, DBSessionMixin):
                             SET embedding = array[%s]::vector(384)
                             WHERE id = :id
                             """
-                            % embedding_str  # Directly interpolate the array values
+                            % embedding_str
                         )
                         session.execute(update_query, {"id": asset.id})
 

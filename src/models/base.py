@@ -5,7 +5,7 @@ from src.backend.database import Base
 import enum
 from datetime import datetime
 import os
-import json
+from typing import Optional
 
 
 # Add custom VECTOR type for pgvector
@@ -113,37 +113,73 @@ class Asset(Base):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
-    def generate_embedding_text(self) -> str:
-        """Generate text for embedding"""
+    def generate_embedding_text(self) -> Optional[str]:
+        """Generate enriched text for embedding generation."""
+        code = self.get_code()
+        if not code:
+            return None
+
         text_parts = []
 
-        # Add basic info
-        if self.source_url:
-            text_parts.append(f"Source: {self.source_url}")
+        # Add high-level context with more detailed type checking
+        if hasattr(self, "project") and self.project is not None:
+            if isinstance(self.project, type):
+                print(f"Error: project is a class instead of an instance for asset {self.id}")
+            elif not isinstance(self.project, Project):
+                print(f"Error: project is type {type(self.project)} for asset {self.id}")
+            else:
+                text_parts.append(f"Project: {self.project.name}")
+                if self.project.description:
+                    text_parts.append(f"Context: {self.project.description}")
 
-        # Add metadata if available
-        if self.extra_data:
-            try:
-                if isinstance(self.extra_data, str):
-                    metadata = json.loads(self.extra_data)
-                else:
-                    metadata = self.extra_data
-
-                # Add relevant metadata fields
-                if "description" in metadata:
-                    text_parts.append(metadata["description"])
-                if "name" in metadata:
-                    text_parts.append(metadata["name"])
-            except Exception:
-                pass
-
-        # Add file contents if available
-        if self.local_path and os.path.exists(self.local_path):
-            try:
-                with open(self.local_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    text_parts.append(content)
-            except Exception:
-                pass
+        # Add the code with some basic context
+        text_parts.append(f"Type: {self.asset_type}")
+        text_parts.append("Content:")
+        text_parts.append(code)
 
         return "\n".join(text_parts)
+
+    def get_code(self) -> Optional[str]:
+        """Get code contents for the asset.
+
+        Returns:
+            str: Code contents for GITHUB_FILE and DEPLOYED_CONTRACT assets
+            None: If asset type is not supported or file cannot be read
+        """
+        if not self.local_path or not os.path.exists(self.local_path):
+            return None
+
+        try:
+            if self.asset_type == AssetType.GITHUB_FILE:
+                return self._read_file_contents(self.local_path)
+            elif self.asset_type == AssetType.DEPLOYED_CONTRACT:
+                if not os.path.isdir(self.local_path):
+                    return None
+                return self._read_directory_contents(self.local_path)
+            return None
+
+        except Exception as e:
+            # Log error but don't raise - return None to indicate failure
+            print(f"Error reading code for asset {self.id}: {str(e)}")
+            return None
+
+    def _read_file_contents(self, path: str) -> str:
+        """Read contents of a single file"""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    def _read_directory_contents(self, directory: str) -> str:
+        """Read and concatenate contents of all files in directory"""
+        contents = []
+
+        for root, _, files in os.walk(directory):
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    relative_path = os.path.relpath(file_path, directory)
+                    file_content = self._read_file_contents(file_path)
+                    contents.append(f"// File: {relative_path}\n{file_content}\n")
+                except Exception:
+                    continue  # Skip files that can't be read
+
+        return "\n".join(contents)

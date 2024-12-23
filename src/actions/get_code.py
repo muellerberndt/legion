@@ -67,13 +67,8 @@ Examples:
     async def execute(self, asset_id: str, **kwargs) -> ActionResult:
         """Execute the get code action"""
         try:
-            # Convert asset_id to int
-            try:
-                asset_id = int(asset_id)
-            except ValueError:
-                return ActionResult.error("Asset ID must be a number")
+            asset_id = int(asset_id)
 
-            # Get asset from database
             db = DBSessionMixin()
             with db.get_session() as session:
                 asset = session.query(Asset).filter(Asset.id == asset_id).first()
@@ -81,28 +76,17 @@ Examples:
                 if not asset:
                     return ActionResult.error(f"Asset with ID {asset_id} not found")
 
-                # Check asset type
                 if asset.asset_type == AssetType.GITHUB_REPO:
                     return ActionResult.error("Getting code for entire repositories is not supported")
 
-                if not asset.local_path:
-                    return ActionResult.error("Asset has no local path")
-
-                if not os.path.exists(asset.local_path):
-                    return ActionResult.error("Asset file not found on disk")
-
-                # Get code based on asset type
-                if asset.asset_type == AssetType.GITHUB_FILE:
-                    code = self._read_file_contents(asset.local_path)
-                elif asset.asset_type == AssetType.DEPLOYED_CONTRACT:
-                    if not os.path.isdir(asset.local_path):
-                        return ActionResult.error("Contract path is not a directory")
-                    code = self._read_directory_contents(asset.local_path)
-                else:
-                    return ActionResult.error(f"Unsupported asset type: {asset.asset_type}")
+                code = asset.get_code()
+                if code is None:
+                    return ActionResult.error("Could not read asset contents")
 
                 return ActionResult.text(code)
 
+        except ValueError:
+            return ActionResult.error("Asset ID must be a number")
         except Exception as e:
             self.logger.error(f"Get code action failed: {str(e)}")
             return ActionResult.error(f"Error getting code: {str(e)}")

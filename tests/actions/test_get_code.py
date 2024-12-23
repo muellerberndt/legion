@@ -30,6 +30,7 @@ async def test_get_code_github_file(get_code_action, mock_db_session, tmp_path):
     mock_asset.id = 1
     mock_asset.asset_type = AssetType.GITHUB_FILE
     mock_asset.local_path = str(test_file)
+    mock_asset.get_code.return_value = "contract Test { }"
     mock_db_session.query.return_value.filter.return_value.first.return_value = mock_asset
 
     # Execute action
@@ -46,7 +47,7 @@ async def test_get_code_deployed_contract(get_code_action, mock_db_session, tmp_
     contract_dir = tmp_path / "contract"
     contract_dir.mkdir()
 
-    # Create some test files
+    # Create test files
     (contract_dir / "main.sol").write_text("contract Main { }")
     (contract_dir / "lib.sol").write_text("library Lib { }")
 
@@ -55,11 +56,19 @@ async def test_get_code_deployed_contract(get_code_action, mock_db_session, tmp_
     sub_dir.mkdir()
     (sub_dir / "helper.sol").write_text("contract Helper { }")
 
+    # Expected content with all files
+    expected_content = [
+        "// File: main.sol\ncontract Main { }",
+        "// File: lib.sol\nlibrary Lib { }",
+        "// File: utils/helper.sol\ncontract Helper { }",
+    ]
+
     # Mock the asset query
     mock_asset = MagicMock(spec=Asset)
     mock_asset.id = 2
     mock_asset.asset_type = AssetType.DEPLOYED_CONTRACT
     mock_asset.local_path = str(contract_dir)
+    mock_asset.get_code.return_value = "\n".join(expected_content)
     mock_db_session.query.return_value.filter.return_value.first.return_value = mock_asset
 
     # Execute action
@@ -67,9 +76,8 @@ async def test_get_code_deployed_contract(get_code_action, mock_db_session, tmp_
 
     # Verify result
     assert result.type == ResultType.TEXT
-    assert "// File: main.sol\ncontract Main { }" in result.content
-    assert "// File: lib.sol\nlibrary Lib { }" in result.content
-    assert "// File: utils/helper.sol\ncontract Helper { }" in result.content
+    for content in expected_content:
+        assert content in result.content
 
 
 @pytest.mark.asyncio
@@ -108,6 +116,7 @@ async def test_get_code_missing_file(get_code_action, mock_db_session):
     mock_asset.id = 4
     mock_asset.asset_type = AssetType.GITHUB_FILE
     mock_asset.local_path = "/path/that/does/not/exist.sol"
+    mock_asset.get_code.return_value = None  # Simulate file not found
     mock_db_session.query.return_value.filter.return_value.first.return_value = mock_asset
 
     # Execute action
@@ -115,7 +124,7 @@ async def test_get_code_missing_file(get_code_action, mock_db_session):
 
     # Verify result
     assert result.type == ResultType.ERROR
-    assert "not found" in result.error.lower()
+    assert any(phrase in result.error.lower() for phrase in ["not found", "could not read"])  # Accept either error message
 
 
 @pytest.mark.asyncio
