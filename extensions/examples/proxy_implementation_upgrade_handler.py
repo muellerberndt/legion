@@ -12,6 +12,8 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
 
     This example demonstrates how to register for a specific trigger, handle incoming events,
     and pre-filter the data. One could add more sophisticated handling here.
+
+    In the latest version of the framework, this handler is redundant as the ProxyMonitorJob will handle this.
     """
 
     def __init__(self):

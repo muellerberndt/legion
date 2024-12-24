@@ -3,7 +3,7 @@ import aiohttp
 import json
 import aiofiles
 from src.config.config import Config
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
 from urllib.parse import urlparse
 from enum import Enum
 
@@ -90,6 +90,90 @@ class EVMExplorer:
         api_key = self.config.get(config_path)
         self.logger.debug(f"Getting API key for {config_key} from path {config_path}: {'present' if api_key else 'missing'}")
         return api_key if api_key else None
+
+    async def get_proxy_upgrade_events(self, source_url: str) -> List[Dict]:
+        """Get proxy implementation upgrade events for an address"""
+        try:
+            # Clean up URL first
+            source_url = source_url.split("#")[0]
+            self.logger.info(f"Getting proxy upgrade events for {source_url}")
+
+            # Check if this is a supported explorer URL
+            is_supported, explorer_type = self.is_supported_explorer(source_url)  # Pass the full URL
+            if not is_supported:
+                if explorer_type:
+                    raise ValueError(f"No API key configured for {explorer_type.value}")
+                else:
+                    raise ValueError("Unsupported explorer URL")
+
+            # Extract clean address after URL validation
+            address = source_url.split("/")[-1].lower()
+            # Remove any extra parts after the address (like #code)
+            address = address.split("#")[0]
+
+            # Get API key and URL
+            api_key = self.get_api_key(explorer_type)
+            api_url = self.get_api_url(explorer_type)
+
+            # ERC1967 Upgrade event topic
+            upgrade_topic = "0xbc7cd75a20ee27fd9adebab32041f755214dbc6bffa90cc0225b39da2e5c2d3b"
+
+            # Construct API URL for getLogs
+            full_api_url = (
+                f"{api_url}?module=logs&action=getLogs" f"&address={address}" f"&topic0={upgrade_topic}" f"&apikey={api_key}"
+            )
+
+            # Fetch logs
+            async with aiohttp.ClientSession() as session:
+                async with session.get(full_api_url) as response:
+                    data = await response.json()
+
+            if data["status"] != "1":
+                self.logger.warning(f"No upgrade events found for {address}: {data.get('message', 'Unknown error')}")
+                return []
+
+            # Process events
+            events = []
+            for log in data["result"]:
+                # Extract implementation address from topics[1]
+                impl_address = "0x" + log["topics"][1][-40:]
+
+                # Get block timestamp
+                block_number = int(log["blockNumber"], 16)
+                timestamp = await self._get_block_timestamp(explorer_type, block_number, api_key)
+
+                events.append(
+                    {
+                        "implementation": impl_address.lower(),
+                        "blockNumber": block_number,
+                        "timestamp": timestamp,
+                        "transactionHash": log["transactionHash"],
+                    }
+                )
+
+            return sorted(events, key=lambda x: x["blockNumber"])
+
+        except Exception as e:
+            self.logger.error(f"Error getting proxy upgrade events: {str(e)}")
+            return []
+
+    async def _get_block_timestamp(self, explorer_type: ExplorerType, block_number: int, api_key: str) -> str:
+        """Get timestamp for a block number"""
+        try:
+            api_url = self.get_api_url(explorer_type)
+            full_api_url = f"{api_url}?module=block&action=getblockreward" f"&blockno={block_number}" f"&apikey={api_key}"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(full_api_url) as response:
+                    data = await response.json()
+
+            if data["status"] == "1" and "result" in data:
+                return data["result"]["timeStamp"]
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error getting block timestamp: {str(e)}")
+            return None
 
 
 async def fetch_verified_sources(explorer_url: str, target_path: str) -> None:

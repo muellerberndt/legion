@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from src.jobs.manager import JobManager
 from src.jobs.base import Job, JobStatus, JobResult
-from datetime import datetime, timedelta
+from datetime import datetime
 import asyncio
 from src.models.job import JobRecord
 

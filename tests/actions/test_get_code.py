@@ -1,9 +1,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
-import os
 from src.actions.get_code import GetCodeAction
 from src.models.base import Asset, AssetType
-from src.actions.result import ActionResult, ResultType
+from src.actions.result import ResultType
 
 
 @pytest.fixture

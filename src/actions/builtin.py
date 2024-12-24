@@ -14,6 +14,7 @@ from src.actions.github_monitor import GithubMonitorAction
 from src.actions.scheduler import SchedulerAction
 from src.actions.autobot import AutobotAction
 from src.actions.get_code import GetCodeAction
+from src.actions.proxy_monitor import ProxyMonitorAction
 
 
 def get_builtin_actions() -> List[Type[BaseAction]]:
@@ -33,4 +34,5 @@ def get_builtin_actions() -> List[Type[BaseAction]]:
         SchedulerAction,
         AutobotAction,
         GetCodeAction,
+        ProxyMonitorAction,
     ]

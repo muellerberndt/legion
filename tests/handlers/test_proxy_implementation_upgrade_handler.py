@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, AsyncMock
 from src.handlers.base import HandlerTrigger
 from extensions.examples.proxy_implementation_upgrade_handler import ProxyImplementationUpgradeHandler
 

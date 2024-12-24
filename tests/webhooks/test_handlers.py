@@ -4,7 +4,6 @@ import pytest
 from aiohttp import web
 from unittest.mock import AsyncMock, Mock, patch
 from src.webhooks.handlers import QuicknodeWebhookHandler
-from src.handlers.base import HandlerTrigger
 
 
 @pytest.fixture

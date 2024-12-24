@@ -86,15 +86,19 @@ class Asset(Base):
     __tablename__ = "assets"
 
     id = Column(Integer, primary_key=True)
-    identifier = Column(String, unique=True)  # URL or unique identifier
+    identifier = Column(String, unique=True)
     project_id = Column(Integer, ForeignKey("projects.id"))
-    asset_type = Column(String)  # Type of asset (repo, file, contract)
-    source_url = Column(String)  # URL to asset source
-    local_path = Column(String)  # Path to downloaded content
-    extra_data = Column(JSON)  # Additional metadata including asset-specific URLs
+    asset_type = Column(String)
+    source_url = Column(String)
+    local_path = Column(String)
+    extra_data = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     embedding = Column(VECTOR(384))
+
+    # Add relationship for proxy implementations
+    impl_for_id = Column(Integer, ForeignKey("assets.id"), nullable=True)
+    implementation = relationship("Asset", remote_side=[id], backref="proxy_contracts")
 
     # Many-to-one relationship
     project = relationship("Project", back_populates="assets")
@@ -183,3 +187,11 @@ class Asset(Base):
                     continue  # Skip files that can't be read
 
         return "\n".join(contents)
+
+    def is_proxy(self) -> bool:
+        """Check if this is a proxy contract"""
+        return self.asset_type == AssetType.DEPLOYED_CONTRACT and bool(self.proxy_contracts)
+
+    def is_implementation(self) -> bool:
+        """Check if this is an implementation contract"""
+        return self.asset_type == AssetType.DEPLOYED_CONTRACT and bool(self.impl_for_id)

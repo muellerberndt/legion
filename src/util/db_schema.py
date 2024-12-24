@@ -86,7 +86,10 @@ Example Queries:
 
 - Get highest bounty:
   db_query '{"from": "projects", "select": ["cast(extra_data->>'maxBounty' as integer) as max_bounty", "name"], "order_by": [{"field": "cast(extra_data->>'maxBounty' as integer)", "direction": "desc"}], "limit": 1}'
-"""
+
+  # Get implementation for a specific proxy address
+  /db_query '{"from":"assets","select":["assets.identifier","assets.impl_for_id","assets.extra_data"],"where":[{"field":"assets.identifier","op":"ilike","value":"%0xE497B094d6DbB3D5E4CaAc9a14696D7572588d14%"}]}'
+  """
 
     return f"""Database Schema:
 {schema}

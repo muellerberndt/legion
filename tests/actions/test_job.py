@@ -1,8 +1,7 @@
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch
 from datetime import datetime
 from src.actions.job import ListJobsAction, GetJobResultAction
-from src.jobs.manager import JobManager
 from src.jobs.base import JobStatus, Job, JobResult
 from src.models.job import JobRecord
 from src.actions.result import ActionResult, ResultType

@@ -2,7 +2,7 @@
 
 import pytest
 from aiohttp import web
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock
 from src.webhooks.server import WebhookServer
 from src.webhooks.handlers import WebhookHandler
 

@@ -24,6 +24,7 @@ class HandlerTrigger(Enum):
     GITHUB_PUSH = auto()
     GITHUB_PR = auto()
     BLOCKCHAIN_EVENT = auto()
+    CONTRACT_UPGRADED = auto()
 
     @classmethod
     def register_custom_trigger(cls, trigger_name: str) -> "HandlerTrigger":
