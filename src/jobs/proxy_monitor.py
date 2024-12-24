@@ -133,16 +133,17 @@ class ProxyMonitorJob(Job, DBSessionMixin):
                         # Commit changes
                         session.commit()
 
-                        # Always trigger upgrade event when we see a new implementation
-                        await self.handler_registry.trigger_event(
-                            HandlerTrigger.CONTRACT_UPGRADED,
-                            {
-                                "proxy": contract,
-                                "old_implementation": old_impl,
-                                "new_implementation": impl_asset,
-                                "event": latest_event,
-                            },
-                        )
+                        # Only trigger upgrade event if there was a previous implementation
+                        if old_impl:
+                            await self.handler_registry.trigger_event(
+                                HandlerTrigger.CONTRACT_UPGRADED,
+                                {
+                                    "proxy": contract,
+                                    "old_implementation": old_impl,
+                                    "new_implementation": impl_asset,
+                                    "event": latest_event,
+                                },
+                            )
 
                     except Exception as e:
                         self.logger.error(f"Error processing contract {contract.identifier}: {str(e)}")

@@ -31,12 +31,13 @@ def mock_telegram():
 
 @pytest.fixture
 def proxy_monitor(mock_session, mock_telegram):
-    job = ProxyMonitorJob()
-    job.get_session = Mock(return_value=mock_session)
-    job.explorer = Mock()
-    job.handler_registry = Mock()
-    job.logger = Mock()
-    return job
+    with patch("src.jobs.proxy_monitor.fetch_verified_sources", new_callable=AsyncMock):
+        job = ProxyMonitorJob()
+        job.get_session = Mock(return_value=mock_session)
+        job.explorer = Mock()
+        job.handler_registry = Mock()
+        job.logger = Mock()
+        yield job
 
 
 @pytest.mark.asyncio
@@ -71,9 +72,21 @@ async def test_proxy_monitor_marks_non_proxy(proxy_monitor, mock_session):
 @pytest.mark.asyncio
 async def test_proxy_monitor_handles_upgrade(proxy_monitor, mock_session):
     """Test that proxy upgrades are properly handled"""
-    # Setup test contract
-    proxy = Asset(identifier="https://etherscan.io/address/0x123", asset_type=AssetType.DEPLOYED_CONTRACT, extra_data={})
+    # Setup test contract with an existing implementation
+    old_impl = Asset(
+        identifier="https://etherscan.io/address/0x789",
+        asset_type=AssetType.DEPLOYED_CONTRACT,
+        extra_data={"is_implementation": True},
+    )
+    proxy = Asset(
+        identifier="https://etherscan.io/address/0x123",
+        asset_type=AssetType.DEPLOYED_CONTRACT,
+        extra_data={},
+        implementation=old_impl,  # Set existing implementation
+        project_id=1,  # Add project_id for path construction
+    )
     mock_session.query.return_value.filter.return_value.all.return_value = [proxy]
+    mock_session.query.return_value.filter.return_value.first.return_value = None  # New implementation not found
 
     # Mock explorer responses
     proxy_monitor.explorer.is_supported_explorer = Mock(return_value=(True, "etherscan"))
@@ -87,7 +100,7 @@ async def test_proxy_monitor_handles_upgrade(proxy_monitor, mock_session):
 
     # Verify implementation was recorded
     assert proxy.extra_data is not None, "extra_data should not be None"
-    assert "implementation_history" in proxy.extra_data
+    assert "implementation_history" in proxy.extra_data, f"implementation_history not found in {proxy.extra_data}"
     assert len(proxy.extra_data["implementation_history"]) == 1
     assert proxy.extra_data["implementation_history"][0]["address"] == "0x456"
 
@@ -95,8 +108,42 @@ async def test_proxy_monitor_handles_upgrade(proxy_monitor, mock_session):
     proxy_monitor.handler_registry.trigger_event.assert_called_once()
     call_args = proxy_monitor.handler_registry.trigger_event.call_args
     assert call_args[0][0] == HandlerTrigger.CONTRACT_UPGRADED
-    assert "proxy" in call_args[0][1]
-    assert "new_implementation" in call_args[0][1]
+    assert call_args[0][1]["proxy"] == proxy
+    assert call_args[0][1]["old_implementation"] == old_impl
+
+
+@pytest.mark.asyncio
+async def test_proxy_monitor_handles_first_implementation(proxy_monitor, mock_session):
+    """Test that first implementation is handled without triggering upgrade event"""
+    # Setup test contract without implementation
+    proxy = Asset(
+        identifier="https://etherscan.io/address/0x123",
+        asset_type=AssetType.DEPLOYED_CONTRACT,
+        extra_data={},
+        implementation=None,  # No existing implementation
+        project_id=1,  # Add project_id for path construction
+    )
+    mock_session.query.return_value.filter.return_value.all.return_value = [proxy]
+    mock_session.query.return_value.filter.return_value.first.return_value = None
+
+    # Mock explorer responses
+    proxy_monitor.explorer.is_supported_explorer = Mock(return_value=(True, "etherscan"))
+    proxy_monitor.explorer.EXPLORERS = {"etherscan": {"domain": "etherscan.io"}}
+    proxy_monitor.explorer.get_proxy_upgrade_events = AsyncMock(
+        return_value=[{"implementation": "0x456", "blockNumber": 1234, "timestamp": 1234567890}]
+    )
+
+    # Run job
+    await proxy_monitor.start()
+
+    # Verify implementation was recorded
+    assert proxy.extra_data is not None, "extra_data should not be None"
+    assert "implementation_history" in proxy.extra_data, f"implementation_history not found in {proxy.extra_data}"
+    assert len(proxy.extra_data["implementation_history"]) == 1
+    assert proxy.extra_data["implementation_history"][0]["address"] == "0x456"
+
+    # Verify no event was triggered
+    proxy_monitor.handler_registry.trigger_event.assert_not_called()
 
 
 @pytest.mark.asyncio
