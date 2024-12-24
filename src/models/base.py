@@ -1,5 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.types import UserDefinedType
 from src.backend.database import Base
 import enum
@@ -96,9 +96,18 @@ class Asset(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     embedding = Column(VECTOR(384))
 
-    # Add relationship for proxy implementations
-    impl_for_id = Column(Integer, ForeignKey("assets.id"), nullable=True)
-    implementation = relationship("Asset", remote_side=[id], backref="proxy_contracts")
+    # Implementation id for proxy contracts
+    implementation_id = Column(Integer, ForeignKey("assets.id"), nullable=True)
+
+    # One-to-many relationship:
+    # One implementation can have many proxies pointing to it
+    implementation = relationship(
+        "Asset", foreign_keys=[implementation_id], backref=backref("proxy_contracts", lazy="dynamic"), remote_side=[id]
+    )
+
+    # Proxy status flags
+    is_proxy = Column(Boolean, default=False)
+    checked_for_proxy = Column(Boolean, default=False)
 
     # Many-to-one relationship
     project = relationship("Project", back_populates="assets")
@@ -115,6 +124,8 @@ class Asset(Base):
             "extra_data": self.extra_data,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_proxy": self.is_proxy,
+            "checked_for_proxy": self.checked_for_proxy,
         }
 
     def generate_embedding_text(self) -> Optional[str]:
@@ -188,10 +199,6 @@ class Asset(Base):
 
         return "\n".join(contents)
 
-    def is_proxy(self) -> bool:
-        """Check if this is a proxy contract"""
-        return self.asset_type == AssetType.DEPLOYED_CONTRACT and bool(self.proxy_contracts)
-
     def is_implementation(self) -> bool:
         """Check if this is an implementation contract"""
-        return self.asset_type == AssetType.DEPLOYED_CONTRACT and bool(self.impl_for_id)
+        return self.asset_type == AssetType.DEPLOYED_CONTRACT and bool(self.proxy_contracts)
