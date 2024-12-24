@@ -14,7 +14,9 @@ class DBQueryAction(BaseAction, DBSessionMixin):
     spec = ActionSpec(
         name="db_query",
         description="Execute a database query using a JSON query specification",
-        help_text="Query the database using a structured JSON format that supports filtering, joining, and sorting.",
+        help_text="""Query the database using a structured JSON format that supports filtering, joining, and sorting.
+                    Note: Some large columns like 'embedding' are excluded by default.
+                    Use explicit 'select' to include them.""",
         agent_hint=get_db_query_hint(),
         arguments=[ActionArgument(name="query", description="JSON string containing the query specification", required=True)],
     )

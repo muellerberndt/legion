@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from src.handlers.proxy_upgrade import ProxyUpgradeHandler
-from src.handlers.base import HandlerTrigger, HandlerResult
 from src.models.base import Asset, Project
 from src.services.telegram import TelegramService
 

@@ -31,7 +31,8 @@ class ImmunefiAssetEventHandler(Handler):
             self.logger.error("No asset in context")
             return HandlerResult(success=False, data={"error": "No asset in context"})
 
-        project = asset.project  # Get project from asset relationship
+        # Get project either from relationship or context
+        project = getattr(asset, "project", None) or self.context.get("project")
         if not project:
             self.logger.error("No project associated with asset")
             return HandlerResult(success=False, data={"error": "No project associated with asset"})

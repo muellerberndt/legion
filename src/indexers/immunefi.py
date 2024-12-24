@@ -2,7 +2,6 @@ import aiohttp
 from src.models.base import Project, Asset, AssetType
 from src.config.config import Config
 from src.util.etherscan import fetch_verified_sources
-from urllib.parse import urlparse
 import os
 import asyncio
 from src.util.github import fetch_github_file, fetch_github_repo
@@ -13,6 +12,7 @@ from src.handlers.registry import HandlerRegistry
 import threading
 from sqlalchemy.orm import Session
 from datetime import datetime
+from src.backend.asset_storage import AssetStorage
 
 
 def _serialize_datetime(obj):
@@ -92,8 +92,13 @@ class ImmunefiIndexer:
     async def trigger_event(self, event_type: HandlerTrigger, event_data: dict):
         """Safely trigger an event with serialized data."""
         if not self.initialize_mode and self.handler_registry:
-            serialized_data = _serialize_event_data(event_data)
-            await self.handler_registry.trigger_event(event_type, serialized_data)
+            # Skip serialization for asset events that need model objects
+            if event_type in [HandlerTrigger.NEW_ASSET, HandlerTrigger.ASSET_UPDATE]:
+                await self.handler_registry.trigger_event(event_type, event_data)
+            else:
+                # Serialize data for other events
+                serialized_data = _serialize_event_data(event_data)
+                await self.handler_registry.trigger_event(event_type, serialized_data)
 
     def stop(self):
         """Signal the indexer to stop"""
@@ -357,9 +362,6 @@ class ImmunefiIndexer:
         if not asset_data:
             return
 
-        self.logger.info(f"Download assets called with handler_registry: {self.handler_registry}")
-        self.logger.info(f"Initialize mode: {self.initialize_mode}")
-
         base_dir = os.path.join(self.config.data_dir, str(project_id))
         os.makedirs(base_dir, exist_ok=True)
 
@@ -372,47 +374,23 @@ class ImmunefiIndexer:
             self.logger.info(f"Processing {url} with revision {revision}")
 
             try:
-                parsed_url = urlparse(url)
-                target_dir = os.path.join(base_dir, parsed_url.netloc, parsed_url.path.strip("/"))
+                target_dir, _ = AssetStorage.get_asset_path(base_dir, url)
+                self.logger.info(f"Target directory: {target_dir}")
 
-                # Check if asset already exists using identifier field
+                # Find existing asset
                 existing_asset = self.session.query(Asset).filter(Asset.identifier == url).first()
 
-                # If asset exists, check if we need to update based on revision
                 if existing_asset:
-                    existing_revision = existing_asset.extra_data.get("revision")
-                    if existing_revision == revision:
-                        self.logger.info(f"Skipping {url} - revision {revision} already downloaded")
+                    if existing_asset.extra_data and existing_asset.extra_data.get("revision") == revision:
+                        self.logger.info(f"Asset {url} already exists with same revision")
                         continue
-                    elif existing_revision and revision and existing_revision > revision:
-                        self.logger.info(f"Skipping {url} - existing revision {existing_revision} is newer than {revision}")
-                        continue
-
-                    # Store old revision before updating
-                    old_revision = existing_revision
-
-                    # For files that we want to diff, preserve the old content
-                    old_path = None
-                    if existing_asset.asset_type == AssetType.GITHUB_FILE.value and existing_asset.local_path:
-                        self.logger.info("Creating backup of old file")
-                        # Create backup of old file
-                        old_path = f"{existing_asset.local_path}.old"
-                        if os.path.exists(existing_asset.local_path):
-                            await asyncio.to_thread(shutil.copy2, existing_asset.local_path, old_path)
-
-                    # Delete old files before downloading new version
-                    if existing_asset.local_path and os.path.exists(existing_asset.local_path):
-                        self.logger.info(f"Deleting old version at {existing_asset.local_path}")
-                        if os.path.isdir(existing_asset.local_path):
-                            await self._remove_dir(existing_asset.local_path)
-                        else:
-                            await self._remove_file(existing_asset.local_path)
-
-                    # Update the existing asset record
                     asset_record = existing_asset
                 else:
-                    # Create a new asset record
-                    asset_record = Asset(identifier=url, project_id=project_id)  # Set project_id directly
+                    asset_record = Asset(
+                        project_id=project_id,
+                        identifier=url,
+                        local_path=target_dir,
+                    )
 
                 # Update asset metadata
                 asset_record.extra_data = asset_record.extra_data or {}
@@ -420,77 +398,39 @@ class ImmunefiIndexer:
                 asset_record.source_url = url
 
                 # Download based on URL type
-                if "github.com" in parsed_url.netloc:
+                if "github.com" in url:
                     if "/blob/" in url:
-                        asset_type = AssetType.GITHUB_FILE
+                        asset_record.asset_type = AssetType.GITHUB_FILE
                         await fetch_github_file(url, target_dir)
-                        asset_record.asset_type = asset_type
-                        asset_record.local_path = target_dir
-                        asset_record.extra_data["file_url"] = url
                     else:
-                        asset_type = AssetType.GITHUB_REPO
+                        asset_record.asset_type = AssetType.GITHUB_REPO
                         await fetch_github_repo(url, target_dir)
-                        asset_record.asset_type = asset_type
-                        asset_record.local_path = target_dir
-                        asset_record.extra_data["repo_url"] = url
-                elif "etherscan.io" in url:
-                    try:
-                        asset_type = AssetType.DEPLOYED_CONTRACT
-                        await fetch_verified_sources(url, target_dir)
-                        asset_record.asset_type = asset_type
-                        asset_record.local_path = target_dir
-                        asset_record.extra_data["explorer_url"] = url
-                    except Exception as e:
-                        self.logger.warning(f"Failed to fetch Etherscan contract at {url}: {str(e)}")
-                        continue
+                elif any(explorer in url for explorer in ["etherscan.io", "bscscan.com", "polygonscan.com"]):
+                    asset_record.asset_type = AssetType.DEPLOYED_CONTRACT
+                    await fetch_verified_sources(url, target_dir)
                 else:
-                    # Check if it's a supported EVM explorer
-                    from src.util.etherscan import EVMExplorer
+                    self.logger.warning(f"Unsupported asset URL: {url}")
+                    continue
 
-                    explorer = EVMExplorer()
-                    is_supported, explorer_type = explorer.is_supported_explorer(url)
-
-                    if is_supported:
-                        try:
-                            asset_type = AssetType.DEPLOYED_CONTRACT
-                            await fetch_verified_sources(url, target_dir)
-                            asset_record.asset_type = asset_type
-                            asset_record.local_path = target_dir
-                            asset_record.extra_data["explorer_url"] = url
-                        except Exception as e:
-                            self.logger.warning(f"Failed to fetch contract from {explorer_type.value} at {url}: {str(e)}")
-                            continue
-                    else:
-                        self.logger.warning(f"Unsupported asset URL: {url}")
-                        continue
-
-                # Associate the asset with the project if it's new
                 if not existing_asset:
-                    project = self.session.query(Project).filter(Project.id == project_id).first()
-                    if project:
-                        project.assets.append(asset_record)
-                        self.session.add(asset_record)
+                    self.session.add(asset_record)
 
                 # Only handle events if not in initialize mode
                 if not self.initialize_mode:
                     self.logger.info("Not in initialize mode, handling events")
                     if existing_asset:
-                        self.logger.info(f"Checking revision update - old: {old_revision}, new: {revision}")
-                        if old_revision != revision:
-                            self.logger.info("Revision changed, triggering update event")
-                            event_data = {"asset": asset_record, "old_revision": old_revision, "new_revision": revision}
-
-                            # Add diff data for files
-                            if old_path and os.path.exists(old_path):
-                                event_data["old_path"] = old_path
-                                event_data["new_path"] = target_dir
-
-                            self.logger.info(f"Triggering ASSET_UPDATE event with data: {event_data}")
-                            await self.trigger_event(HandlerTrigger.ASSET_UPDATE, event_data)
-
-                            # Clean up old file after event is triggered
-                            if old_path and os.path.exists(old_path):
-                                await self._remove_file(old_path)
+                        # Get old revision for event context
+                        old_revision = existing_asset.extra_data.get("revision") if existing_asset.extra_data else None
+                        await self.trigger_event(
+                            HandlerTrigger.ASSET_UPDATE,
+                            {
+                                "asset": asset_record,
+                                "old_revision": old_revision,
+                                "new_revision": revision,
+                                "old_path": existing_asset.local_path,
+                                "new_path": target_dir,
+                            },
+                        )
                     else:
                         self.logger.info("Triggering NEW_ASSET event")
                         await self.trigger_event(HandlerTrigger.NEW_ASSET, {"asset": asset_record})
@@ -499,4 +439,5 @@ class ImmunefiIndexer:
 
             except Exception as e:
                 self.logger.warning(f"Error in asset processing loop for {url}: {str(e)}")
+                self.session.rollback()
                 continue

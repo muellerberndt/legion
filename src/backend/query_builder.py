@@ -42,6 +42,11 @@ class QueryBuilder:
     # Define allowed tables and their models
     ALLOWED_TABLES = {"projects": Project, "assets": Asset}
 
+    # Define columns to exclude by default for each table
+    EXCLUDED_COLUMNS = {
+        "assets": ["embedding"],
+    }
+
     # Define allowed SQL functions with their exact formats
     ALLOWED_FUNCTIONS = {
         "count(*) as count": "COUNT(*) AS count",
@@ -384,7 +389,17 @@ class QueryBuilder:
         if self._selected_fields:
             query = select(*self._selected_fields)
         else:
-            query = select(self._table)
+            # If no specific fields selected, exclude certain columns
+            table_name = self._table.__tablename__
+            if table_name in self.EXCLUDED_COLUMNS:
+                columns = [
+                    getattr(self._table, c.name)
+                    for c in self._table.__table__.columns
+                    if c.name not in self.EXCLUDED_COLUMNS[table_name]
+                ]
+                query = select(*columns)
+            else:
+                query = select(self._table)
 
         # Add JOINs
         for join_table, join_condition in self._joins:
