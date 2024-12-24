@@ -54,6 +54,15 @@ For most operations including database queries and file searches, you'll likely 
 
 ```
 
+### Built-in tools
+
+The base version of Legion has a few built-in tools. Those are meant to be run regularly to keep the system up to date (you can schedule them in the config individually or schedule an autobot that runs them).
+
+- `/immunefi` - Sync Immunefi data. Run with `silent` to sync without notifications. Will detect newly added projects and changes to existing ones. 
+- `/github_monitor` - Monitor GitHub repositories. This will fetch the latest commits and pull requests for all tracked repositories and evaluate whether the changes might impact the security of the project.
+- `/proxy_monitor` - Downloads the implementations of all proxy contracts (EVM) and checks for implementation upgrades.
+- `/embeddings` - Create embeddings for all assets in the database. The embeddings are used by the `/semantic_search` command.
+
 ## Working with Data
 
 ### Querying the Database
@@ -61,7 +70,6 @@ For most operations including database queries and file searches, you'll likely 
 While Legion has a direct database query system, it's recommended to use natural language queries through the chatbot:
 
 ```
-"Show me 5 projects that have been updated in the last 30 days"
 "List all smart contract projects that use Rust and have been updated in the last 30 days"
 ```
 
