@@ -21,11 +21,11 @@ class EmbeddingGenerator:
 
     def __init__(self):
         if self._model is None:
-            # Use a small but effective model for semantic similarity
-            self._model = SentenceTransformer("all-MiniLM-L6-v2")
+            # Use CodeBERT model fine-tuned for semantic similarity
+            self._model = SentenceTransformer("microsoft/codebert-base")
 
     def generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for text using sentence-transformers"""
+        """Generate embedding for text using CodeBERT"""
         # Convert text to embedding
         embedding = self._model.encode(text, convert_to_tensor=False)
         return embedding.tolist()

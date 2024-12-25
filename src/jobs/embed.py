@@ -27,7 +27,7 @@ class EmbedJob(Job, DBSessionMixin):
         """Start the embedding job"""
         try:
             self.started_at = datetime.utcnow()
-            self.logger.info("Starting embedding generation for all assets")
+            self.logger.info("Starting embedding generation using CodeBERT")
 
             with self.get_session() as session:
                 # Get all assets with their projects eagerly loaded
@@ -53,7 +53,7 @@ class EmbedJob(Job, DBSessionMixin):
                         update_query = text(
                             """
                             UPDATE assets
-                            SET embedding = array[%s]::vector(384)
+                            SET embedding = array[%s]::vector(768)
                             WHERE id = :id
                             """
                             % embedding_str

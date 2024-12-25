@@ -63,11 +63,11 @@ Results are ranked by semantic similarity to your query.""",
                         a.updated_at,
                         p.name as project_name,
                         p.description as project_description,
-                        1 / (1 + (a.embedding <-> array[{','.join(map(str, embedding))}]::vector(384))) as similarity
+                        1 / (1 + (a.embedding <-> array[{','.join(map(str, embedding))}]::vector(768))) as similarity
                     FROM assets a
                     LEFT JOIN projects p ON a.project_id = p.id
                     WHERE a.embedding IS NOT NULL
-                    ORDER BY a.embedding <-> array[{','.join(map(str, embedding))}]::vector(384)
+                    ORDER BY a.embedding <-> array[{','.join(map(str, embedding))}]::vector(768)
                     LIMIT 10
                     """
                 )

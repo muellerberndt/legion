@@ -84,6 +84,7 @@ class Asset(Base):
     """Asset model"""
 
     __tablename__ = "assets"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(Integer, primary_key=True)
     identifier = Column(String, unique=True)
@@ -94,7 +95,7 @@ class Asset(Base):
     extra_data = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    embedding = Column(VECTOR(384))
+    embedding = Column(VECTOR(768), nullable=True)  # CodeBERT embeddings (768-dimensional)
 
     # Implementation id for proxy contracts
     implementation_id = Column(Integer, ForeignKey("assets.id"), nullable=True)
