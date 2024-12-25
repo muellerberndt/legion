@@ -66,7 +66,7 @@ The asset with ID 4987 is not a proxy contract, so there is no implementation to
 
 ## Contributing
 
-Contributions are welcome!
+Contributions are welcome! To contribute to the base framework, you need to sign the [Contributor License Agreement](https://gist.github.com/muellerberndt/219f6bd1cf759596b73c2f14b5036dc8) and follow the [Development Guide](docs/development.md).
 
 ## License
 
