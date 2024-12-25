@@ -68,6 +68,11 @@ class ExtensionLoader:
             # Convert path to module name (e.g., examples/simple_semgrep.py -> examples.simple_semgrep)
             module_name = f"extensions.{os.path.splitext(rel_path)[0].replace(os.sep, '.')}"
 
+            # Skip if module is already loaded
+            if module_name in sys.modules:
+                self.logger.debug(f"Module {module_name} already loaded, skipping")
+                return
+
             # Load module
             spec = importlib.util.spec_from_file_location(module_name, file_path)
             if not spec or not spec.loader:

@@ -202,3 +202,25 @@ class Asset(Base):
     def is_implementation(self) -> bool:
         """Check if this is an implementation contract"""
         return self.asset_type == AssetType.DEPLOYED_CONTRACT and bool(self.proxy_contracts)
+
+    def refresh_from_session(self, session):
+        """Refresh the object from the database"""
+        session.refresh(self)
+
+    def mark_as_non_proxy(self, session):
+        """Mark asset as non-proxy and commit"""
+        self.checked_for_proxy = True
+        self.is_proxy = False
+        session.add(self)
+        session.commit()
+        session.refresh(self)  # Refresh after commit
+
+    def mark_as_proxy(self, session, implementation=None):
+        """Mark asset as proxy and set implementation"""
+        self.checked_for_proxy = True
+        self.is_proxy = True
+        if implementation:
+            self.implementation = implementation
+        session.add(self)
+        session.commit()
+        session.refresh(self)  # Refresh after commit

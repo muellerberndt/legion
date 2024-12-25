@@ -118,7 +118,7 @@ class ProxyMonitorJob(Job, DBSessionMixin):
                                 asset_type=AssetType.DEPLOYED_CONTRACT,
                                 source_url=impl_url,
                                 local_path=target_dir,
-                                extra_data={"is_implementation": True, "explorer_url": impl_url},
+                                extra_data={"is_implementation": True, "added_by_proxy_monitor": True},
                             )
                             session.add(impl_asset)
                             self.logger.info(f"Created new implementation asset: {impl_url}")
