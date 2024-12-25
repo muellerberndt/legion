@@ -1,5 +1,8 @@
 # Development Guide
 
+## Contributor License Agreement
+To contribute to the base framework, you need to sign the [Contributor License Agreement](https://cla-assistant.io/muellerberndt/legion) and follow the [Development Guide](docs/development.md).
+
 ## Code Style
 
 This project uses Black for code formatting and flake8 for linting. To check your code:

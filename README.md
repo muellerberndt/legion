@@ -1,7 +1,6 @@
 # Legion
 
-![Tests](https://github.com/muellerberndt/Legion/actions/workflows/tests.yml/badge.svg)
-<a href="https://cla-assistant.io/muellerberndt/legion"><img src="https://cla-assistant.io/readme/badge/muellerberndt/legion" alt="CLA assistant" /></a>
+![Tests](https://github.com/muellerberndt/Legion/actions/workflows/tests.yml/badge.svg)xw
 
 Legion is an AI-driven framework that automates Web3 bug hunting workflows. It tracks ongoing bug bounties and contests and launches autonomous agents that can perform arbitrary tasks, such as assessing code revisions and upgrades, evaluating on-chain and off-chain events, searching code for potential bugs, or whatever else the security researcher desires. 
 
