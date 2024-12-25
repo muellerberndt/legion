@@ -1,6 +1,7 @@
 # Legion
 
 ![Tests](https://github.com/muellerberndt/Legion/actions/workflows/tests.yml/badge.svg)
+<a href="https://cla-assistant.io/muellerberndt/legion"><img src="https://cla-assistant.io/readme/badge/muellerberndt/legion" alt="CLA assistant" /></a>
 
 Legion is an AI-driven framework that automates Web3 bug hunting workflows. It tracks ongoing bug bounties and contests and launches autonomous agents that can perform arbitrary tasks, such as assessing code revisions and upgrades, evaluating on-chain and off-chain events, searching code for potential bugs, or whatever else the security researcher desires. 
 
@@ -66,7 +67,7 @@ The asset with ID 4987 is not a proxy contract, so there is no implementation to
 
 ## Contributing
 
-Contributions are welcome! To contribute to the base framework, you need to sign the [Contributor License Agreement](https://gist.github.com/muellerberndt/219f6bd1cf759596b73c2f14b5036dc8) and follow the [Development Guide](docs/development.md).
+Contributions are welcome! To contribute to the base framework, you need to sign the [Contributor License Agreement](https://cla-assistant.io/muellerberndt/legion) and follow the [Development Guide](docs/development.md).
 
 ## License
 
