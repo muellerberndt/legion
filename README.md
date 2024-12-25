@@ -50,7 +50,7 @@ So is it a proxy? If so, what's the implementation? Can you run semgrep on that 
 
 legion, [25 Dec BE 2567 at 07:59:29]:
 🤔 To determine if the asset is a proxy and find its implementation, I need to query the database for the asset's proxy status and implementation details.
-🛠️ Executing: //db_query '{"from": "assets", "select": ["is_proxy", "implementation_id"], "where": [{"field": "id", "op": "=", "value": 4987}]}'
+🛠️ Executing: /db_query '{"from": "assets", "select": ["is_proxy", "implementation_id"], "where": [{"field": "id", "op": "=", "value": 4987}]}'
 
 (...)
 
