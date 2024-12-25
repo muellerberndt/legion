@@ -34,7 +34,7 @@ To start the server, run:
 Sync bounty data from Immunefi with `/immunefi silent`. Then chat away with the bot:
 
 ```
-Bernhard, [22 Dec BE 2567 at 21:06:27]:
+Bernhard, [22 Dec BE 2024 at 21:06:27]:
 Search all assets for the string 'using SignatureUtil for bytes'. If you find any asset containing this string please run semgrep on it and briefly summarize the asset code and semgrep results, as well as the associated project.
 
 legion, [23 Dec BE 2567 at 06:57:18]:
@@ -44,14 +44,14 @@ legion, [23 Dec BE 2567 at 06:57:18]:
 
 The asset associated with the string 'using SignatureUtil for bytes' is part of the 'deBridge' project. The project is described as a cross-chain interoperability and liquidity transfer protocol that allows decentralized transfer of data and assets between various blockchains. The semgrep scan on the asset with ID 906 found no issues. The code for the asset includes a library for handling signatures and a contract for asset transfers, among other functionalities.
 
-Bernhard Mueller, [23 Dec BE 2567 at 07:01:41]:
+Bernhard, [22 Dec BE 2024 at 21:07:43]:
 What's the explorer URL for that asset?
 
 legion, [23 Dec BE 2567 at 07:01:48]:
 🤔 I need to retrieve the explorer URL for the asset with ID 906.
 🛠️ Executing: /db_query '{"from": "assets", "select": ["identifier"], "where": [{"field": "id", "op": "=", "value": 906}]}'
 
-The explorer URL for the asset is: https://etherscan.io/address/0x24455aa55ded7728783c9474be8ea2f5c935f8eb
+The explorer URL for the asset is: https://etherscan.io/address/(...)
 ```
 
 ## Documentation
