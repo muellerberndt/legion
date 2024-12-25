@@ -8,6 +8,7 @@ from src.util.logging import Logger
 from sqlalchemy import select, text
 from datetime import datetime
 from sqlalchemy.orm import joinedload
+from asyncio import sleep
 
 
 class EmbedJob(Job, DBSessionMixin):
@@ -29,10 +30,11 @@ class EmbedJob(Job, DBSessionMixin):
             self.started_at = datetime.utcnow()
             self.logger.info("Starting embedding generation using CodeBERT")
 
-            with self.get_session() as session:
+            async with self.get_async_session() as session:
                 # Get all assets with their projects eagerly loaded
                 query = select(Asset).options(joinedload(Asset.project))
-                assets = session.execute(query).scalars().all()
+                result = await session.execute(query)
+                assets = result.scalars().all()
 
                 total = len(assets)
                 self.logger.info(f"Found {total} assets to process")
@@ -42,6 +44,10 @@ class EmbedJob(Job, DBSessionMixin):
                 for i, asset in enumerate(assets):
                     try:
                         self.logger.info(f"Processing asset {asset.id} ({i+1}/{total})")
+
+                        # Yield control periodically
+                        if i % 5 == 0:  # Every 5 assets
+                            await sleep(0.1)
 
                         # Generate embedding directly from asset
                         embedding = await update_asset_embedding(asset)
@@ -58,7 +64,7 @@ class EmbedJob(Job, DBSessionMixin):
                             """
                             % embedding_str
                         )
-                        session.execute(update_query, {"id": asset.id})
+                        await session.execute(update_query, {"id": asset.id})
 
                         self.processed += 1
                         current_batch.append(asset.id)
@@ -68,13 +74,14 @@ class EmbedJob(Job, DBSessionMixin):
                         if should_commit and current_batch:
                             self.logger.info(f"Committing batch of {len(current_batch)} assets: {current_batch}")
                             try:
-                                session.commit()
+                                await session.commit()
                                 self._commit_count += 1
                                 self.logger.info(f"Commit #{self._commit_count} successful")
                                 current_batch = []  # Clear batch after successful commit
+                                await sleep(0.1)  # Yield after each commit
                             except Exception as e:
                                 self.logger.error(f"Failed to commit batch: {str(e)}")
-                                session.rollback()
+                                await session.rollback()
                                 raise
 
                     except Exception as e:
