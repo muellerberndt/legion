@@ -46,7 +46,7 @@ legion, [25 Dec BE 2567 at 07:55:20]:
 The asset with ID 4987 is a deployed contract on Etherscan with the identifier https://etherscan.io/address/0x9C07A72177c5A05410cA338823e790876E79D73B. It is part of the DeGate project, which is an audit competition hosted on Immunefi. The target of the bounty is approximately 500 lines of new code designed to allow contract upgrades. The semgrep scan on this asset found no issues.
 
 Bernhard Mueller, [25 Dec BE 2567 at 07:59:26]:
-So is it aproxy? If so, what's the implementation? Can you run semgrep on that as well?
+So is it a proxy? If so, what's the implementation? Can you run semgrep on that as well?
 
 legion, [25 Dec BE 2567 at 07:59:29]:
 🤔 To determine if the asset is a proxy and find its implementation, I need to query the database for the asset's proxy status and implementation details.
