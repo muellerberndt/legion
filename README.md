@@ -4,10 +4,10 @@
 
 Legion is an AI-driven framework that automates Web3 bug hunting workflows. It tracks ongoing bug bounties and contests and launches autonomous agents that can perform arbitrary tasks, such as assessing code revisions and upgrades, evaluating on-chain and off-chain events, searching code for potential bugs, or whatever else the security researcher desires. 
 
-The Legion framework ships with basic functionality. The idea is to offer a base framework that can be used by all security researchers while keeping the more advanced features private. By [extending Legion](docs/customization.md), you can enhance the capabilities of your agents and implement your own "alpha" strategies that you might not be willing to share. Some ideas:
+Legion is meant to be used as a base framework for security researchers. By [extending Legion](docs/customization.md), you can enhance the capabilities of your agents and implement your own "alpha" strategies that you might not be willing to share. Some ideas:
 
 - Intelligently prioritize targets using code complexity analysis & EV estimation (payouts, estimated competition, etc.)
-- Integrate more sophisticated vector search and reasoning models to find bugs
+- Integrate more sophisticated embeddings generation and reasoning models to find bugs
 - Add gap analysis in tests suites & automated Foundry test generation / fuzzing to find edge cases
 - (... the list goes on)
 
@@ -15,9 +15,9 @@ The base framework contains the following features:
 
 - Telegram chatbot interface
 - Auto-sync data and code from Immunefi bounties
-- Search bounty data, files and repos using regex & vector search
-- Auto-review of PRs and commits in GitHub repos in scope
-- Auto-review of proxy implementation upgrades in scope (see [example extension](extensions/examples/proxy_upgrade_review.py))
+- Auto-tracking of EVM proxy implementations across multiple chains
+- Search bounty code using regex & vector search
+- Auto-review of PRs and commits in GitHub repos associated with bounties
 - Launch agents on demand or schedule them to run at specific intervals
 - Simple semgrep scanning (see [example extension](extensions/examples/simple_semgrep.py))
 

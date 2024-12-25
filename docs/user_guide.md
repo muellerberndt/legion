@@ -4,6 +4,8 @@ Welcome to Legion! This guide will help you get started with using Legion's feat
 
 ## Basic Usage
 
+Legion is meant to be used as a base framework for security researchers. By adding your own actions, jobs and agent prompts, you can build up an army of agents that do your bidding. However, Legion also ships with a few built-in features that can be used as a starting point for your own projects.
+
 Legion offers two ways to interact with the system:
 
 1. "Low level" commands (e.g., `/file_search`, `/db_query`)
@@ -51,7 +53,6 @@ For most operations including database queries and file searches, you'll likely 
 "What commands are available?"
 "Search all assets for the string 'using SignatureUtil for bytes', then give me a list of the associated projects"
 "Give me the name of the project that address 0xa0ed89af63367ddc8e1dd6b992f20d1214ccb51c is associated with, if any."
-
 ```
 
 ### Built-in tools
