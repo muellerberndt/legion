@@ -252,6 +252,14 @@ class Config:
     def watchers(self) -> List[str]:
         return self.get("watchers.active_watchers")
 
+    @property
+    def embeddings_model(self) -> str:
+        return self.get("embeddings.model", "microsoft/codebert-base")
+
+    @property
+    def embeddings_dimension(self) -> int:
+        return self.get("embeddings.dimension", 768)
+
 
 # Environment variable mappings
 ENV_MAPPINGS = {
@@ -274,11 +282,17 @@ ENV_MAPPINGS = {
     "active_extensions": {"env": "LEGION_EXTENSIONS", "type": "list"},
     "watchers.active_watchers": {"env": "LEGION_WATCHERS", "type": "list"},
     "github.api_token": "LEGION_GITHUB_TOKEN",
+    "embeddings.model": "LEGION_EMBEDDINGS_MODEL",
+    "embeddings.dimension": {"env": "LEGION_EMBEDDINGS_DIMENSION", "type": "int"},
 }
 
 # Default configuration
 DEFAULT_CONFIG = {
     "data_dir": "./data",
+    "embeddings": {
+        "model": "microsoft/codebert-base",  # Default model
+        "dimension": 384,
+    },
     "llm": {
         "openai": {"key": None, "model": "gpt-4o"},
         "personality": (

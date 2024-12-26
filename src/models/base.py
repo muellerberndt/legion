@@ -95,7 +95,7 @@ class Asset(Base):
     extra_data = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    embedding = Column(VECTOR(768), nullable=True)  # CodeBERT embeddings (768-dimensional)
+    embedding = Column(VECTOR(384), nullable=True)  # For MiniLM-L6-v2 embeddings
 
     # Implementation id for proxy contracts
     implementation_id = Column(Integer, ForeignKey("assets.id"), nullable=True)

@@ -5,6 +5,7 @@ import numpy as np
 import logging
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from src.config.config import Config
 
 
 class EmbeddingGenerator:
@@ -12,6 +13,7 @@ class EmbeddingGenerator:
 
     _instance = None
     _model = None
+    _config = None
 
     @classmethod
     def get_instance(cls):
@@ -20,12 +22,16 @@ class EmbeddingGenerator:
         return cls._instance
 
     def __init__(self):
+        if self._config is None:
+            self._config = Config()
+
         if self._model is None:
-            # Use CodeBERT model fine-tuned for semantic similarity
-            self._model = SentenceTransformer("microsoft/codebert-base")
+            model_name = self._config.embeddings_model
+            logging.info(f"Initializing embedding model: {model_name}")
+            self._model = SentenceTransformer(model_name)
 
     def generate_embedding(self, text: str) -> List[float]:
-        """Generate embedding for text using CodeBERT"""
+        """Generate embedding for text using configured model"""
         # Convert text to embedding
         embedding = self._model.encode(text, convert_to_tensor=False)
         return embedding.tolist()

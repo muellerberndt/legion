@@ -3,6 +3,7 @@ from src.backend.database import DBSessionMixin
 from src.util.embeddings import generate_embedding
 from sqlalchemy import text
 from src.actions.result import ActionResult
+from src.config.config import Config
 
 
 class SemanticSearchAction(BaseAction, DBSessionMixin):
@@ -39,6 +40,7 @@ Results are ranked by semantic similarity to your query.""",
 
     def __init__(self):
         DBSessionMixin.__init__(self)
+        self.config = Config()
 
     async def execute(self, query: str) -> ActionResult:
         """Execute semantic search"""
@@ -46,6 +48,7 @@ Results are ranked by semantic similarity to your query.""",
             # Add context markers to query for better matching with stored embeddings
             enhanced_query = f"[QUERY] {query}"
             embedding = await generate_embedding(enhanced_query)
+            dimension = self.config.embeddings_dimension
 
             # Search for similar assets
             with self.get_session() as session:
@@ -63,11 +66,11 @@ Results are ranked by semantic similarity to your query.""",
                         a.updated_at,
                         p.name as project_name,
                         p.description as project_description,
-                        1 / (1 + (a.embedding <-> array[{','.join(map(str, embedding))}]::vector(768))) as similarity
+                        1 / (1 + (a.embedding <-> array[{','.join(map(str, embedding))}]::vector({dimension}))) as similarity
                     FROM assets a
                     LEFT JOIN projects p ON a.project_id = p.id
                     WHERE a.embedding IS NOT NULL
-                    ORDER BY a.embedding <-> array[{','.join(map(str, embedding))}]::vector(768)
+                    ORDER BY a.embedding <-> array[{','.join(map(str, embedding))}]::vector({dimension})
                     LIMIT 10
                     """
                 )

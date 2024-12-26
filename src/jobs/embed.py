@@ -9,6 +9,7 @@ from sqlalchemy import select, text
 from datetime import datetime
 from sqlalchemy.orm import joinedload
 from asyncio import sleep
+from src.config.config import Config
 
 
 class EmbedJob(Job, DBSessionMixin):
@@ -23,12 +24,15 @@ class EmbedJob(Job, DBSessionMixin):
         self.processed = 0
         self.failed = 0
         self._commit_count = 0  # Track number of commits
+        self.config = Config()
 
     async def start(self) -> None:
         """Start the embedding job"""
         try:
             self.started_at = datetime.utcnow()
-            self.logger.info("Starting embedding generation using CodeBERT")
+            model = self.config.embeddings_model
+            dimension = self.config.embeddings_dimension
+            self.logger.info(f"Starting embedding generation using model: {model}")
 
             async with self.get_async_session() as session:
                 # Get all assets with their projects eagerly loaded
@@ -74,9 +78,9 @@ class EmbedJob(Job, DBSessionMixin):
 
                         # Update embedding using native PostgreSQL array casting
                         update_query = text(
-                            """
+                            f"""
                             UPDATE assets
-                            SET embedding = array[%s]::vector(768)
+                            SET embedding = array[%s]::vector({dimension})
                             WHERE id = :id
                             """
                             % embedding_str

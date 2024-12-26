@@ -11,6 +11,11 @@ database:
   user: legion
   password: your_password_here
 
+# Embeddings configuration
+embeddings:
+    model: "sentence-transformers/all-MiniLM-L6-v2"
+    dimension: 384 # If you change this, you must also change the dimension in the database
+
 # Block explorer API keys (optional but recommended)
 block_explorers:
   # etherscan:
