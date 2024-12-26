@@ -232,7 +232,7 @@ logger.debug("Loading my extension...")
 
 ### Automatic Registration
 
-One of Legion's most powerful features is its automatic registration system. When you create a new action or handler, you don't need to manually register it anywhere. Simply defining the class in a module within your extension directory is enough:
+When you create a new action or handler, you don't need to manually register it anywhere. Simply defining the class in a module within your extension directory is enough:
 
 ```python
 # extensions/my_extension/actions.py
