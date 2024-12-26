@@ -66,37 +66,34 @@ class GithubMonitorJob(Job, DBSessionMixin):
             # Initialize API session
             await self.initialize()
 
-            while not self._stop_event.is_set():
-                try:
-                    # Get all repos in scope
-                    repos = await self._get_repos_in_scope()
-                    if not repos:
-                        self.logger.info("No GitHub repositories found in scope")
-                        await self._wait_or_stop()
+            try:
+                # Get all repos in scope
+                repos = await self._get_repos_in_scope()
+                if not repos:
+                    self.logger.info("No GitHub repositories found in scope")
+                    await self.complete(JobResult(success=True, message="No repositories to monitor"))
+                    return
+
+                self.logger.info(f"Found {len(repos)} repositories to check")
+
+                # Check each repo for updates
+                for repo in repos:
+                    try:
+                        await self._check_repo_updates(repo)
+                    except Exception as e:
+                        self.logger.error(f"Failed to check repo {repo['repo_url']}: {str(e)}")
                         continue
 
-                    self.logger.info(f"Found {len(repos)} repositories to check")
+                # Clean up
+                if self.session:
+                    await self.session.close()
 
-                    # Check each repo for updates
-                    for repo in repos:
-                        try:
-                            await self._check_repo_updates(repo)
-                        except Exception as e:
-                            self.logger.error(f"Failed to check repo {repo['repo_url']}: {str(e)}")
-                            continue
+                # Complete the job
+                await self.complete(JobResult(success=True, message="GitHub monitoring completed"))
 
-                    await self._wait_or_stop()
-
-                except Exception as e:
-                    self.logger.error(f"Error in monitoring cycle: {str(e)}")
-                    await self._wait_or_stop()
-
-            # Clean up
-            if self.session:
-                await self.session.close()
-
-            # Complete the job
-            await self.complete(JobResult(success=True, message="GitHub monitoring completed"))
+            except Exception as e:
+                self.logger.error(f"Error in monitoring cycle: {str(e)}")
+                raise
 
         except Exception as e:
             self.logger.error(f"Failed to run GitHub monitor: {str(e)}")

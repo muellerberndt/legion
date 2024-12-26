@@ -52,6 +52,23 @@ class EmbedJob(Job, DBSessionMixin):
                         # Generate embedding directly from asset
                         embedding = await update_asset_embedding(asset)
 
+                        # Add debug logging for embedding quality checks
+                        if embedding:
+                            self.logger.info(f"Generated embedding of length {len(embedding)}")
+                            self.logger.info(f"Sample values: {embedding[:5]}")
+                            self.logger.info(
+                                f"Stats - min: {min(embedding):.4f}, max: {max(embedding):.4f}, mean: {sum(embedding)/len(embedding):.4f}"
+                            )
+
+                            # Check for zero vectors or constant values
+                            unique_values = len(set(embedding))
+                            self.logger.info(f"Number of unique values: {unique_values}")
+                            if unique_values < 10:
+                                self.logger.warning("Warning: Very few unique values in embedding!")
+                        else:
+                            self.logger.warning(f"Empty embedding generated for asset {asset.id}")
+                            continue
+
                         # Format the embedding array properly for PostgreSQL
                         embedding_str = ",".join(str(x) for x in embedding)
 
