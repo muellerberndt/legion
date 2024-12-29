@@ -225,9 +225,6 @@ class FileSearchJob(Job, DBSessionMixin):
                     if asset_key not in seen_assets:
                         seen_assets.add(asset_key)
                         identifier = asset["source_url"] or "N/A"
-                        # Truncate long identifiers
-                        if len(identifier) > 40:
-                            identifier = identifier[:37] + "..."
 
                         result.add_output(
                             f"| {asset['id']} | {identifier} | {asset['project'] or 'N/A'} | {asset['asset_type']} |"

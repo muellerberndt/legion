@@ -615,17 +615,19 @@ class TelegramInterface(Interface):
                 body { font-family: Arial, sans-serif; margin: 20px; }
                 pre { background: #f5f5f5; padding: 10px; border-radius: 5px; }
                 table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th, td {
+                    border: 1px solid #ddd;
+                    padding: 8px;
+                    text-align: left;
+                    max-width: 500px;  /* Allow cells to be wider */
+                    word-wrap: break-word;  /* Break long URLs */
+                }
                 th { background-color: #f5f5f5; }
-                .tree-view { font-family: monospace; }
-                .tree-view .node { margin-left: 20px; }
-                .json { color: #333; }
-                .json .key { color: #0066cc; }
-                .json .string { color: #008800; }
-                .json .number { color: #aa0000; }
-                .json .boolean { color: #aa0000; }
-                .list-item { margin: 5px 0; padding-left: 20px; }
-                .list-item:before { content: "•"; margin-right: 10px; }
+                .identifier-cell {
+                    word-break: break-all;  /* Break anywhere for URLs */
+                    font-family: monospace;  /* Better for URLs */
+                }
+                /* ... rest of styles ... */
             </style>
         </head>
         <body>
