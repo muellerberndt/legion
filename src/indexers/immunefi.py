@@ -330,15 +330,16 @@ class ImmunefiIndexer:
                 if asset.identifier not in current_asset_urls:
                     self.logger.info(f"Asset {asset.identifier} no longer in scope for project {project.name}, removing")
 
+                    # Trigger event BEFORE deletion if not in initialize mode
+                    if not self.initialize_mode:
+                        await self.trigger_event(HandlerTrigger.ASSET_REMOVE, {"asset": asset, "project": project})
+
                     # Delete local files if they exist
                     if asset.local_path and os.path.exists(asset.local_path):
                         if os.path.isdir(asset.local_path):
                             await self._remove_dir(asset.local_path)
                         else:
                             await self._remove_file(asset.local_path)
-
-                    # Trigger event if not in initialize mode
-                    await self.trigger_event(HandlerTrigger.ASSET_REMOVE, {"asset": asset, "project": project})
 
                     # Delete asset from database
                     self.session.delete(asset)
@@ -348,6 +349,7 @@ class ImmunefiIndexer:
         except Exception as e:
             self.logger.error(f"Error cleaning up removed assets for project {project.name}: {str(e)}")
             self.session.rollback()
+            raise  # Re-raise the exception to handle it in the caller
 
     async def _remove_dir(self, path: str):
         """Asynchronously remove a directory"""
