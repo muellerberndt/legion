@@ -21,7 +21,13 @@ class AssetStorage:
         Raises:
             ValueError: If target directory would be outside base directory
         """
-        parsed_url = urlparse(url)
+        # Basic URL validation
+        try:
+            parsed_url = urlparse(url)
+            if not all([parsed_url.scheme, parsed_url.netloc]):
+                raise ValueError(f"Invalid URL format: {url}")
+        except Exception as e:
+            raise ValueError(f"URL parsing failed: {url} - {str(e)}")
 
         # Ensure path components don't start with slash
         path_components = [component for component in parsed_url.path.split("/") if component and component != "/"]

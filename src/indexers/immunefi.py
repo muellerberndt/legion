@@ -13,6 +13,7 @@ import threading
 from sqlalchemy.orm import Session
 from datetime import datetime
 from src.backend.asset_storage import AssetStorage
+from sqlalchemy import text
 
 
 def _serialize_datetime(obj):
@@ -114,6 +115,26 @@ class ImmunefiIndexer:
                     response.raise_for_status()
                     bounty_data = await response.json()
 
+            # Normalize asset revisions - keep only latest revision for each asset
+            asset_revisions = {}  # url -> latest revision
+            for project in bounty_data:
+                for asset in project.get("assets", []):
+                    url = asset.get("url")
+                    revision = asset.get("revision")
+                    if url and revision is not None:
+                        if url not in asset_revisions or revision > asset_revisions[url]:
+                            asset_revisions[url] = revision
+                            self.logger.debug(f"Found revision {revision} for {url}")
+
+            # Update bounty data with normalized revisions
+            for project in bounty_data:
+                if "assets" in project:
+                    project["assets"] = [
+                        {**asset, "revision": asset_revisions.get(asset["url"], asset.get("revision"))}
+                        for asset in project["assets"]
+                        if asset.get("url") in asset_revisions
+                    ]
+
             # Track current project names
             current_projects = {project["project"] for project in bounty_data if "project" in project}
 
@@ -201,7 +222,7 @@ class ImmunefiIndexer:
 
             # Get current asset URLs from bounty data
             current_asset_urls = {asset["url"] for asset in bounty_data.get("assets", []) if asset.get("url")}
-            self.logger.info(f"Current asset URLs: {current_asset_urls}")
+            self.logger.debug(f"Current asset URLs: {current_asset_urls}")
 
             # Collect all keywords from various fields
             keywords = set()
@@ -370,72 +391,164 @@ class ImmunefiIndexer:
         for asset in asset_data:
             url = asset.get("url")
             revision = asset.get("revision")
+
             if not url:
                 continue
 
-            self.logger.info(f"Processing {url} with revision {revision}")
+            self.logger.debug(f"Processing {url} with revision {revision}")
 
             try:
-                target_dir, _ = AssetStorage.get_asset_path(base_dir, url)
-                self.logger.info(f"Target directory: {target_dir}")
-
                 # Find existing asset
                 existing_asset = self.session.query(Asset).filter(Asset.identifier == url).first()
 
                 if existing_asset:
-                    if existing_asset.extra_data and existing_asset.extra_data.get("revision") == revision:
-                        self.logger.info(f"Asset {url} already exists with same revision")
-                        continue
-                    asset_record = existing_asset
-                else:
-                    asset_record = Asset(
-                        project_id=project_id,
-                        identifier=url,
-                        local_path=target_dir,
+                    # Debug logging for revision check
+                    self.logger.debug(f"Found existing asset: {existing_asset.id}")
+                    self.logger.debug(f"Current extra_data: {existing_asset.extra_data}")
+                    self.logger.debug(
+                        f"Current revision in DB: {existing_asset.extra_data.get('revision') if existing_asset.extra_data else None}"
                     )
+                    self.logger.debug(f"New revision from API: {revision}")
 
-                # Update asset metadata
-                asset_record.extra_data = asset_record.extra_data or {}
-                asset_record.extra_data["revision"] = revision
-                asset_record.source_url = url
+                    # Check if anything has actually changed
+                    if existing_asset.extra_data and existing_asset.extra_data.get("revision") == revision:
+                        self.logger.debug(f"Asset {url} already exists with same revision")
+                        continue
 
-                # Download based on URL type
-                if "github.com" in url:
-                    if "/blob/" in url:
-                        asset_record.asset_type = AssetType.GITHUB_FILE
-                        await fetch_github_file(url, target_dir)
-                    else:
-                        asset_record.asset_type = AssetType.GITHUB_REPO
-                        await fetch_github_repo(url, target_dir)
-                elif any(explorer in url for explorer in ["etherscan.io", "bscscan.com", "polygonscan.com"]):
-                    asset_record.asset_type = AssetType.DEPLOYED_CONTRACT
-                    await fetch_verified_sources(url, target_dir)
-                else:
-                    self.logger.warning(f"Unsupported asset URL: {url}")
-                    continue
+                    # Get old code BEFORE any changes or cleanup
+                    old_code = None
+                    new_code = None
+                    can_diff = existing_asset.asset_type in [AssetType.GITHUB_FILE, AssetType.DEPLOYED_CONTRACT]
+                    old_revision = existing_asset.extra_data.get("revision") if existing_asset.extra_data else None
 
-                if not existing_asset:
-                    self.session.add(asset_record)
+                    self.logger.debug(f"Asset type before getting old code: {existing_asset.asset_type}")
+                    if can_diff:
+                        try:
+                            old_code = existing_asset.get_code()
+                            self.logger.debug(f"Successfully got old code, length: {len(old_code) if old_code else 0}")
+                        except Exception as e:
+                            self.logger.error(f"Failed to get old code: {e}")
 
-                # Only handle events if not in initialize mode
-                if not self.initialize_mode:
-                    self.logger.info("Not in initialize mode, handling events")
-                    if existing_asset:
-                        # Get old revision for event context
-                        old_revision = existing_asset.extra_data.get("revision") if existing_asset.extra_data else None
-                        await self.trigger_event(
-                            HandlerTrigger.ASSET_UPDATE,
-                            {
-                                "asset": asset_record,
-                                "old_revision": old_revision,
-                                "new_revision": revision,
-                                "old_path": existing_asset.local_path,
-                                "new_path": target_dir,
-                            },
+                    # Create new directory path
+                    target_dir, _ = AssetStorage.get_asset_path(base_dir, url)
+
+                    # Store old code before cleaning up
+                    old_code_backup = old_code
+
+                    # Now it's safe to clean up old files
+                    if os.path.exists(target_dir):
+                        self.logger.info(f"Cleaning up old path: {target_dir}")
+                        try:
+                            if os.path.isfile(target_dir):
+                                await self._remove_file(target_dir)
+                                # Ensure parent directory exists
+                                os.makedirs(os.path.dirname(target_dir), exist_ok=True)
+                            else:
+                                for item in os.listdir(target_dir):
+                                    item_path = os.path.join(target_dir, item)
+                                    if os.path.isfile(item_path):
+                                        await self._remove_file(item_path)
+                                    elif os.path.isdir(item_path):
+                                        await self._remove_dir(item_path)
+                        except Exception as e:
+                            self.logger.error(f"Error during cleanup: {e}")
+
+                    # Update existing asset
+                    if "github.com" in url:
+                        if "/blob/" in url:
+                            existing_asset.asset_type = AssetType.GITHUB_FILE
+                            await fetch_github_file(url, target_dir)
+                        else:
+                            existing_asset.asset_type = AssetType.GITHUB_REPO
+                            await fetch_github_repo(url, target_dir)
+                    elif any(explorer in url for explorer in ["etherscan.io", "bscscan.com", "polygonscan.com"]):
+                        existing_asset.asset_type = AssetType.DEPLOYED_CONTRACT
+                        await fetch_verified_sources(url, target_dir)
+
+                    # Update metadata
+                    existing_asset.extra_data = existing_asset.extra_data or {}
+                    existing_asset.extra_data["revision"] = revision
+                    existing_asset.source_url = url
+                    existing_asset.local_path = target_dir
+
+                    # Get new code AFTER downloading
+                    self.logger.info(f"Asset type before getting new code: {existing_asset.asset_type}")
+                    if can_diff:
+                        try:
+                            new_code = existing_asset.get_code()
+                            self.logger.info(f"Successfully got new code, length: {len(new_code) if new_code else 0}")
+                        except Exception as e:
+                            self.logger.error(f"Failed to get new code: {e}")
+
+                    if not self.initialize_mode:
+                        self.logger.info(f"Asset changed - old revision: {old_revision}, new revision: {revision}")
+
+                        # Create event data
+                        event_data = {
+                            "asset": existing_asset,
+                            "old_revision": old_revision,
+                            "new_revision": revision,
+                            "old_path": target_dir,
+                            "new_path": target_dir,
+                        }
+
+                        if can_diff and old_code_backup is not None and new_code is not None:
+                            event_data["old_code"] = old_code_backup
+                            event_data["new_code"] = new_code
+                            self.logger.debug("Added code to event data for diffing")
+
+                        # Trigger the event
+                        await self.trigger_event(HandlerTrigger.ASSET_UPDATE, event_data)
+
+                        # Update the asset's revision using raw SQL
+                        self.logger.info(f"Updating asset {existing_asset.id} revision to {revision}")
+
+                        # Debug the session type
+                        self.logger.info(f"Session type: {type(self.session)}")
+
+                        update_sql = text(
+                            """
+                        UPDATE assets
+                        SET extra_data = CAST(extra_data AS jsonb) || jsonb_build_object('revision', CAST(:revision AS integer))
+                        WHERE id = :asset_id
+                        RETURNING id, extra_data;
+                        """
                         )
+
+                        try:
+                            # Execute with RETURNING to see what happened
+                            result = self.session.execute(
+                                update_sql, {"revision": revision, "asset_id": existing_asset.id}  # Keep as integer
+                            )
+
+                            # Log the result
+                            updated = result.first()
+                            self.logger.info(f"Update result: {updated}")
+
+                            # Explicitly commit
+                            self.session.commit()
+                            self.logger.info("Commit completed")
+
+                            # Double check with a separate query
+                            verify_sql = text("SELECT id, extra_data FROM assets WHERE id = :asset_id")
+                            verify_result = self.session.execute(verify_sql, {"asset_id": existing_asset.id})
+                            verify_row = verify_result.first()
+                            self.logger.info(f"Verification query result: {verify_row}")
+
+                        except Exception as e:
+                            self.logger.error(f"Error during update: {str(e)}")
+                            self.logger.error(f"Error type: {type(e)}")
+                            self.session.rollback()
+                            raise
+
+                        # Expire all objects to force reload from DB
+                        self.session.expire_all()
+
+                    # Final commit to ensure all changes are saved
+                    if hasattr(self.session, "commit"):
+                        self.session.commit()
                     else:
-                        self.logger.info("Triggering NEW_ASSET event")
-                        await self.trigger_event(HandlerTrigger.NEW_ASSET, {"asset": asset_record})
+                        await self.session.commit()
 
                 self.session.commit()
 

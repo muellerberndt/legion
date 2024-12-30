@@ -1,9 +1,10 @@
 import telegram
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from typing import Optional
+from typing import Optional, Union
 from src.config.config import Config
 from src.util.logging import Logger
 from src.services.notification_service import NotificationService
+from io import IOBase  # Import IOBase directly from io
 
 
 class TelegramService(NotificationService):
@@ -75,6 +76,31 @@ class TelegramService(NotificationService):
 
         except Exception as e:
             self.logger.error(f"Failed to send file via Telegram: {e}")
+            raise
+
+    async def send_document(
+        self,
+        document: Union[str, bytes, IOBase],
+        caption: Optional[str] = None,
+        filename: Optional[str] = None,
+        chat_id: Optional[str] = None,
+    ) -> None:
+        """Send a document through Telegram"""
+        try:
+            target_chat = chat_id or self.chat_id
+            if not target_chat:
+                raise ValueError("No chat ID configured")
+
+            # If document is a string, treat it as a file path
+            if isinstance(document, str):
+                with open(document, "rb") as f:
+                    await self.bot.send_document(chat_id=target_chat, document=f, filename=filename, caption=caption)
+            else:
+                # For bytes or file-like objects, send directly
+                await self.bot.send_document(chat_id=target_chat, document=document, filename=filename, caption=caption)
+
+        except Exception as e:
+            self.logger.error(f"Failed to send document via Telegram: {e}")
             raise
 
     async def start_bot(self):
