@@ -1,6 +1,6 @@
 """Chatbot implementation using the new chat_completion function"""
 
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 import json
 from src.util.logging import Logger
 from src.actions.registry import ActionRegistry
@@ -68,22 +68,22 @@ class Chatbot:
         # Keep history within limits, but preserve system message
         if len(self.history) > self.max_history + 1:  # +1 for system message
             # Remove oldest messages but keep system message
-            self.history = [self.history[0]] + self.history[-(self.max_history):]
+            self.history = [self.history[0]] + self.history[-(self.max_history) :]
 
         # Check total token usage and trim if needed
         _, _, available = self.get_context_limits()
         current_tokens = sum(self.count_tokens(msg["content"]) for msg in self.history)
-        
+
         if current_tokens > available:
             # Always keep system message and last 2 messages of conversation
             preserved = [self.history[0]] + self.history[-2:]
             older_messages = self.history[1:-2]
-            
+
             # Remove older messages until we're under the limit
             while current_tokens > available and older_messages:
                 removed = older_messages.pop()
                 current_tokens -= self.count_tokens(removed["content"])
-            
+
             # Reconstruct history with remaining messages
             self.history = preserved if not older_messages else [self.history[0]] + older_messages + self.history[-2:]
 
@@ -108,12 +108,11 @@ class Chatbot:
     def _truncate_result(self, result: str) -> str:
         """Dynamically truncate results based on available space"""
         available_space = self.get_available_space()
-        
+
         # Use up to 25% of available space for results, but no more than 1/8 of total context
         max_tokens, _, _ = self.get_context_limits()
         max_result_tokens = min(
-            available_space // 4,  # 25% of available space
-            max_tokens // 8        # Or 1/8 of total context, whichever is smaller
+            available_space // 4, max_tokens // 8  # 25% of available space  # Or 1/8 of total context, whichever is smaller
         )
 
         result_tokens = self.count_tokens(result)
@@ -143,7 +142,7 @@ class Chatbot:
             chars_to_keep = max_result_tokens * 4  # Convert tokens to chars
             first_part = int(chars_to_keep * 0.67)
             last_part = int(chars_to_keep * 0.33)
-            
+
             return f"{result[:first_part]}\n...[truncated]...\n{result[-last_part:]}"
 
     async def execute_command(self, command: str, args_str: str, update_callback=None) -> ActionResult:
@@ -169,13 +168,14 @@ class Chatbot:
                 job_manager = await JobManager.get_instance()
                 job_result = await job_manager.wait_for_job_result(result.job_id)
                 if job_result:
-                    return ActionResult.text(job_result.get_output())
+                    return ActionResult.text(self._truncate_result(job_result.get_output()))
                 return ActionResult.text("No output available")
 
             if not isinstance(result, ActionResult):
                 raise ValueError(f"Action {command} returned {type(result)}, expected ActionResult")
 
-            return result
+            # Truncate any result type after converting to string
+            return ActionResult.text(self._truncate_result(str(result)))
 
         except Exception as e:
             self.logger.error(f"Error executing command: {str(e)}")
@@ -207,12 +207,27 @@ Your response MUST be a valid JSON object with these fields:
     "is_final": boolean (true if this is your final response)
 }
 
+FORMATTING RULES (STRICTLY ENFORCED):
+1. PLAIN TEXT ONLY - NO markdown, NO HTML, NO special formatting
+2. Use this format for lists:
+   🔍 Found X items:
+
+   1. Name (Context) - Description
+      → address or link
+
+   2. Name (Context) - Description
+      → address or link
+
+3. Use emojis for headers (🔍, ℹ️)
+4. Use → for links/addresses
+5. Use plain numbers and spaces for structure
+
 CRITICAL INSTRUCTIONS:
 
 1. NEVER truncate your output. Show ALL results completely.
 2. When formatting lists or results, include ALL items with their complete information.
 3. Try to be efficient - use as few database queries as possible.
-4. Do NOT use markdown or HTML tags in your responses.
+4. DO NOT use markdown or HTML tags in your responses.
 5. ALWAYS set is_final to true when you have all the information needed to answer the user's question.
 6. NEVER repeat the same command without a different purpose.
 7. If you have the information needed, format it and return it immediately with is_final=true.
@@ -223,15 +238,25 @@ CRITICAL INSTRUCTIONS:
 
 RESULT HANDLING INSTRUCTIONS:
 
-1. For commands that return raw data that the user explicitly requested, pass through the result directly:
+1. For commands that return raw data that the user explicitly requested, return the results directly:
    - /get_code: Return the code directly when user asks for code
-   - /file_search: Return the matches directly when user searches for specific patterns
-   - /semantic_search: Return the search results directly
 
 2. For commands that return metadata or require interpretation, summarize the results:
    - Database queries that return project/asset information
    - Status updates
    - Job results that need explanation
+
+3. For commands that return lists, tables or tree structures, format them concisely for the Telegram UI.
+
+Example for list formatting:
+
+🔍 Found 10 finalize functions:
+
+1. finalizeBridgeERC721 (Optimism) - ERC721 token bridge finalization
+   → 0x3268ed09f76e619331528270b6267d4d2c5ab5c2
+
+2. finalizeBridgeETH (Optimism) - ETH bridge transfers
+   → 0xae2af01232a6c4a4d3012c5ec5b1b35059caf10d
 
 Examples:
 
@@ -257,6 +282,15 @@ User: "What's the latest asset?"
     "thought": "Summarizing the asset information",
     "command": "",
     "output": "The latest asset is X from project Y, added on date Z",
+    "is_final": true
+}
+
+User: "Find me functions in bridge smart contracts that finalize transactions"
+// Execute the command first, then format the result for the user
+{
+    "thought": "I'll format the list of finalize functions in a clear, plain text format with emojis for better readability",
+    "command": "",
+    "output": "🔍 Found 10 finalize functions:\n\n1. finalizeBridgeERC721 (Optimism) - ERC721 token bridge finalization\n   → 0x3268ed09f76e619331528270b6267d4d2c5ab5c2\n\n2. finalizeBridgeETH (Optimism) - ETH bridge transfers\n   → 0xae2af01232a6c4a4d3012c5ec5b1b35059caf10d\n\n3. finalizeBridgeERC721 (Optimism) - ERC721 cross-bridge transfers\n   → 0xc599fa757c2bcaa5ae3753ab129237f38c10da0b",
     "is_final": true
 }
 """,
@@ -381,7 +415,7 @@ User: "What's the latest asset?"
                     try:
                         # Show command being executed if callback provided
                         if update_callback:
-                            await update_callback(f"🛠️ Executing: /{plan['command']}")
+                            await update_callback(f"🛠️ Executing: {plan['command']}")
 
                         result = await self.execute_command(command, args_str)
                         # Convert ActionResult to string when storing in state
