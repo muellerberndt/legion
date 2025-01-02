@@ -70,29 +70,64 @@ class Chatbot:
             # Remove oldest messages but keep system message
             self.history = [self.history[0]] + self.history[-(self.max_history) :]
 
-    def _truncate_result(self, result: str, max_length: int = 4000) -> Tuple[str, Optional[str]]:
-        """Truncate a result string and return both truncated text and full content if truncated"""
-        if len(result) <= max_length:
-            return result, None
+    def count_tokens(self, text: str) -> int:
+        """Estimate token count for a string"""
+        # Rough estimation: 4 chars per token
+        return len(text) // 4
 
-        # For JSON strings, try to parse and truncate the content
+    def get_context_limits(self) -> tuple[int, int, int]:
+        """Get context limits from config"""
+        max_tokens = self.config.get("llm.openai.max_context_length", 128000)
+        reserve = self.config.get("llm.openai.context_reserve", 8000)
+        available = max_tokens - reserve
+        return max_tokens, reserve, available
+
+    def get_available_space(self) -> int:
+        """Calculate remaining available space"""
+        _, _, total_available = self.get_context_limits()
+        used = sum(self.count_tokens(msg["content"]) for msg in self.history)
+        return max(0, total_available - used)
+
+    def _truncate_result(self, result: str) -> str:
+        """Dynamically truncate results based on available space"""
+        available_space = self.get_available_space()
+        
+        # Use up to 25% of available space for results, but no more than 1/8 of total context
+        max_tokens, _, _ = self.get_context_limits()
+        max_result_tokens = min(
+            available_space // 4,  # 25% of available space
+            max_tokens // 8        # Or 1/8 of total context, whichever is smaller
+        )
+
+        result_tokens = self.count_tokens(result)
+        if result_tokens <= max_result_tokens:
+            return result
+
+        # If JSON, try to preserve structure while truncating
         try:
             data = json.loads(result)
             if isinstance(data, dict):
-                if "results" in data and isinstance(data["results"], list):
-                    # Truncate results array
-                    original_count = len(data["results"])
-                    data["results"] = data["results"][:10]  # Keep only first 10 results
-                    data["note"] = f"Results truncated to 10 of {original_count} total matches"
-                    truncated = json.dumps(data, indent=2)
-                    if len(truncated) <= max_length:
-                        return truncated, result
+                # Truncate each field intelligently
+                truncated = {}
+                for k, v in data.items():
+                    if isinstance(v, list):
+                        truncated[k] = v[:10]  # Keep first 10 items
+                    elif isinstance(v, str) and len(v) > 100:
+                        truncated[k] = v[:100] + "..."
+                    else:
+                        truncated[k] = v
+                return json.dumps(truncated)
         except json.JSONDecodeError:
             pass
 
-        # For plain text, truncate with ellipsis
-        truncated = result[:max_length] + "... (truncated)"
-        return truncated, result
+        # For plain text, preserve beginning and end with context
+        if result_tokens > max_result_tokens:
+            # Keep first 2/3 and last 1/3 of allowed size
+            chars_to_keep = max_result_tokens * 4  # Convert tokens to chars
+            first_part = int(chars_to_keep * 0.67)
+            last_part = int(chars_to_keep * 0.33)
+            
+            return f"{result[:first_part]}\n...[truncated]...\n{result[-last_part:]}"
 
     async def execute_command(self, command: str, args_str: str, update_callback=None) -> ActionResult:
         """Execute a command with the given arguments"""
