@@ -13,7 +13,7 @@ import threading
 from sqlalchemy.orm import Session
 from datetime import datetime
 from src.backend.asset_storage import AssetStorage
-from sqlalchemy import text
+from sqlalchemy import text, select
 
 
 def _serialize_datetime(obj):
@@ -108,6 +108,32 @@ class ImmunefiIndexer:
     async def index(self):
         """Fetch and index bounties"""
         try:
+            # First check for and retry missing contract assets
+            stmt = select(Asset).where(Asset.asset_type == AssetType.DEPLOYED_CONTRACT)
+            result = self.session.scalars(stmt)
+            assets = result.all()
+            
+            missing_contracts = []
+            for asset in assets:
+                if not asset.local_path or not os.path.isdir(asset.local_path) or not os.listdir(asset.local_path):
+                    missing_contracts.append(asset)
+            
+            if missing_contracts:
+                self.logger.info(f"Found {len(missing_contracts)} contracts with missing files")
+                for contract in missing_contracts:
+                    self.logger.info(f"Attempting to download contract: {contract.source_url}")
+                    try:
+                        # Create directory if it doesn't exist
+                        os.makedirs(os.path.dirname(contract.local_path), exist_ok=True)
+                        
+                        # Attempt to fetch verified sources
+                        await fetch_verified_sources(contract.source_url, contract.local_path)
+                        self.logger.info(f"Successfully downloaded contract: {contract.source_url}")
+                        
+                    except Exception as e:
+                        self.logger.error(f"Failed to download contract {contract.source_url}: {str(e)}")
+
+            # Continue with regular indexing...
             url = self.config.get("api", {}).get("immunefi", {}).get("url", "https://immunefi.com/public-api/bounties.json")
 
             async with aiohttp.ClientSession() as session:
