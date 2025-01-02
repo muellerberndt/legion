@@ -68,7 +68,24 @@ class Chatbot:
         # Keep history within limits, but preserve system message
         if len(self.history) > self.max_history + 1:  # +1 for system message
             # Remove oldest messages but keep system message
-            self.history = [self.history[0]] + self.history[-(self.max_history) :]
+            self.history = [self.history[0]] + self.history[-(self.max_history):]
+
+        # Check total token usage and trim if needed
+        _, _, available = self.get_context_limits()
+        current_tokens = sum(self.count_tokens(msg["content"]) for msg in self.history)
+        
+        if current_tokens > available:
+            # Always keep system message and last 2 messages of conversation
+            preserved = [self.history[0]] + self.history[-2:]
+            older_messages = self.history[1:-2]
+            
+            # Remove older messages until we're under the limit
+            while current_tokens > available and older_messages:
+                removed = older_messages.pop()
+                current_tokens -= self.count_tokens(removed["content"])
+            
+            # Reconstruct history with remaining messages
+            self.history = preserved if not older_messages else [self.history[0]] + older_messages + self.history[-2:]
 
     def count_tokens(self, text: str) -> int:
         """Estimate token count for a string"""
