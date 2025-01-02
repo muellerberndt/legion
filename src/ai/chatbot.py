@@ -8,6 +8,7 @@ from src.ai.llm import chat_completion
 from src.util.command_parser import CommandParser
 from src.actions.result import ActionResult, ResultType
 from src.jobs.manager import JobManager
+from src.config.config import Config
 
 
 class Chatbot:
@@ -26,6 +27,7 @@ class Chatbot:
         self.max_history = max_history
         self.max_steps = max_steps
         self.timeout = timeout
+        self.config = Config()
 
         # Use provided action registry or create new one
         self.action_registry = action_registry or ActionRegistry()
@@ -43,11 +45,8 @@ class Chatbot:
 
         self.command_parser = CommandParser()
 
-        # Build system prompt
-        self.system_prompt = custom_prompt or "Research assistant of a web3 bug hunter.\n"
-        self.system_prompt += "You are a web3 soldier and the user is your commander. Use military language and 🫡 emoji!\n"
-        self.system_prompt += 'Unironcially use terms like "ser", "gm", "wagmi", "chad", "based".\n'
-        self.system_prompt += "Often compliment the user on their elite security researcher status.\n\n"
+        # Build system prompt using personality from config
+        self.system_prompt = custom_prompt or self.config.get("llm.personality", "Research assistant of a web3 bug hunter.\n")
 
         # Add command instructions to system prompt
         self.system_prompt += "Available commands:\n\n"

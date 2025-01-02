@@ -74,7 +74,12 @@ CONFIG_SCHEMA = {
             "properties": {
                 "openai": {
                     "type": "object",
-                    "properties": {"key": {"type": "string"}, "model": {"type": "string", "default": "gpt-4"}},
+                    "properties": {
+                        "key": {"type": "string"},
+                        "model": {"type": "string", "default": "gpt-4"},
+                        "max_context_length": {"type": "integer", "default": 128000},
+                        "context_reserve": {"type": "integer", "default": 8000},
+                    },
                 }
             },
             "default": {"openai": {}},
