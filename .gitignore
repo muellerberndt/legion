@@ -8,3 +8,4 @@ extensions/*
 !extensions/examples/
 tests/extensions
 fly.toml
+tools
