@@ -180,6 +180,7 @@ async def fetch_verified_sources(explorer_url: str, target_path: str) -> bool:
     """
     Fetch verified sources from an EVM explorer and store them locally.
     """
+
     explorer = EVMExplorer()
     try:
         # Clean URL by removing query parameters and #code suffix

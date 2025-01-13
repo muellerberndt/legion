@@ -37,6 +37,9 @@ async def fetch_github_file(url: str, target_path: str) -> bool:
     Returns:
         bool: True if file was successfully fetched and stored
     """
+
+    logger.debug(f"Fetching GitHub file: {url} to {target_path}")
+
     try:
         # Convert web URL to raw content URL
         raw_url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/").replace("/tree/", "/")
@@ -75,6 +78,9 @@ async def fetch_github_repo(url: str, target_path: str) -> bool:
     Returns:
         bool: True if repo was successfully fetched and stored
     """
+
+    logger.debug(f"Fetching GitHub repo: {url} to {target_path}")
+
     try:
         # Extract owner and repo from URL
         parts = url.rstrip("/").split("/")
