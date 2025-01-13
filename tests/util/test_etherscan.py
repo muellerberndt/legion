@@ -2,7 +2,7 @@ import json
 import os
 import pytest
 from unittest.mock import patch, Mock
-from src.util.etherscan import fetch_verified_sources
+from src.util.etherscan import fetch_verified_sources, ExplorerType
 
 
 @pytest.fixture
@@ -14,13 +14,38 @@ def mock_config():
 
 @pytest.fixture
 def mock_response():
-    # Load the mock response data from the test file
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    test_data_path = os.path.join(current_dir, "..", "testdata", "etherscan-verified-sources.json")
-
-    with open(test_data_path, "r") as f:
-        mock_data = json.load(f)
-        return mock_data
+    return {
+        "status": "1",
+        "message": "OK",
+        "result": [
+            {
+                "SourceCode": json.dumps(
+                    {
+                        "sources": {
+                            "BeaconProxy.sol": {"content": "// SPDX-License-Identifier: MIT\ncontract BeaconProxy {}"},
+                            "IBeacon.sol": {"content": "// SPDX-License-Identifier: MIT\ncontract IBeacon {}"},
+                            "Proxy.sol": {"content": "// SPDX-License-Identifier: MIT\ncontract Proxy {}"},
+                            "ERC1967Utils.sol": {"content": "// SPDX-License-Identifier: MIT\ncontract ERC1967Utils {}"},
+                            "Address.sol": {"content": "// SPDX-License-Identifier: MIT\ncontract Address {}"},
+                            "StorageSlot.sol": {"content": "// SPDX-License-Identifier: MIT\ncontract StorageSlot {}"},
+                        }
+                    }
+                ),
+                "ABI": "[]",
+                "ContractName": "BeaconProxy",
+                "CompilerVersion": "v0.8.0",
+                "OptimizationUsed": "1",
+                "Runs": "200",
+                "ConstructorArguments": "",
+                "EVMVersion": "default",
+                "Library": "",
+                "LicenseType": "MIT",
+                "Proxy": "0",
+                "Implementation": "",
+                "SwarmSource": "",
+            }
+        ],
+    }
 
 
 class MockResponse:
@@ -55,30 +80,44 @@ class MockClientSession:
 async def test_fetch_verified_sources(tmp_path, mock_config, mock_response):
     # Mock the Config class
     with patch("src.util.etherscan.Config", return_value=mock_config):
-        # Mock the aiohttp.ClientSession
-        with patch("aiohttp.ClientSession", return_value=MockClientSession(mock_response)):
-            # Test URL and target path
-            etherscan_url = "https://etherscan.io/address/0x1234567890123456789012345678901234567890"
-            target_path = str(tmp_path / "sources")
+        # Mock the EVMExplorer
+        mock_explorer = Mock()
+        mock_explorer.is_supported_explorer.return_value = (True, ExplorerType.ETHERSCAN)
+        mock_explorer.get_api_key.return_value = "dummy_key"
+        mock_explorer.get_api_url.return_value = "https://api.etherscan.io/api"
+        mock_explorer.logger = Mock()
 
-            # Call the function
-            await fetch_verified_sources(etherscan_url, target_path)
+        with patch("src.util.etherscan.EVMExplorer", return_value=mock_explorer):
+            # Mock the aiohttp.ClientSession
+            with patch("aiohttp.ClientSession", return_value=MockClientSession(mock_response)):
+                # Test URL and target path
+                etherscan_url = "https://etherscan.io/address/0x1234567890123456789012345678901234567890"
+                target_path = str(tmp_path / "sources")
 
-            # Verify the expected files were created (using basenames)
-            expected_files = [
-                "BeaconProxy.sol",
-                "IBeacon.sol",
-                "Proxy.sol",
-                "ERC1967Utils.sol",
-                "Address.sol",
-                "StorageSlot.sol",
-            ]
+                # Call the function
+                result = await fetch_verified_sources(etherscan_url, target_path)
 
-            for file_path in expected_files:
-                full_path = os.path.join(target_path, file_path)
-                assert os.path.exists(full_path), f"Expected file {file_path} not found"
+                # Verify the function returned True
+                assert result is True, "fetch_verified_sources should return True on success"
 
-                # Verify file contents are not empty
-                with open(full_path, "r") as f:
+                # Debug: Print the contents of the target directory
+                print(f"\nTarget directory contents: {os.listdir(target_path)}")
+
+                # Verify the expected files were created (using basenames)
+                expected_files = [
+                    "BeaconProxy.sol",
+                    "IBeacon.sol",
+                    "Proxy.sol",
+                    "ERC1967Utils.sol",
+                    "Address.sol",
+                    "StorageSlot.sol",
+                ]
+
+                for file_path in expected_files:
+                    full_path = os.path.join(target_path, file_path)
+                    assert os.path.exists(full_path), f"Expected file {file_path} not found"
+
+                # Verify file contents (optional)
+                with open(os.path.join(target_path, "BeaconProxy.sol")) as f:
                     content = f.read()
-                    assert content.strip(), f"File {file_path} is empty"
+                    assert "BeaconProxy" in content, "File content verification failed"

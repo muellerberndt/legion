@@ -176,77 +176,109 @@ class EVMExplorer:
             return None
 
 
-async def fetch_verified_sources(explorer_url: str, target_path: str) -> None:
+async def fetch_verified_sources(explorer_url: str, target_path: str) -> bool:
     """
     Fetch verified sources from an EVM explorer and store them locally.
     """
-    # Clean URL by removing query parameters
-    clean_url = explorer_url.split("?")[0]
-
-    # Extract address from URL and clean it
-    address = clean_url.split("/")[-1].lower()
-
-    # Get API key and URL
     explorer = EVMExplorer()
-    is_supported, explorer_type = explorer.is_supported_explorer(clean_url)
+    try:
+        # Clean URL by removing query parameters and #code suffix
+        clean_url = explorer_url.split("?")[0].split("#")[0]
+        explorer.logger.debug(f"Clean URL: {clean_url}")
 
-    if not is_supported:
-        if explorer_type:
-            raise ValueError(f"No API key configured for {explorer_type.value}")
-        else:
-            raise ValueError("Unsupported explorer URL")
+        # Extract address from URL and clean it
+        address = clean_url.split("/")[-1].lower()
+        explorer.logger.debug(f"Extracted address: {address}")
 
-    # Construct API URL
-    full_api_url = f"{explorer.get_api_url(explorer_type)}?module=contract&action=getsourcecode&address={address}&apikey={explorer.get_api_key(explorer_type)}"
+        # Get API key and URL
+        is_supported, explorer_type = explorer.is_supported_explorer(clean_url)
+        explorer.logger.debug(f"Explorer support check: supported={is_supported}, type={explorer_type}")
 
-    # Fetch source code
-    async with aiohttp.ClientSession() as session:
-        async with session.get(full_api_url) as response:
-            data = await response.json()
+        if not is_supported:
+            if explorer_type:
+                explorer.logger.error(f"No API key configured for {explorer_type.value}")
+                return False
+            else:
+                explorer.logger.error("Unsupported explorer URL")
+                return False
 
-    if data["status"] != "1":
-        raise Exception(f"Explorer API error: {data.get('message', 'Unknown error')}")
+        # Get API key and check it
+        api_key = explorer.get_api_key(explorer_type)
+        explorer.logger.debug(f"API key retrieval result: {'present' if api_key else 'missing'}")
 
-    # Create target directory if it doesn't exist
-    os.makedirs(target_path, exist_ok=True)
+        if not api_key:
+            explorer.logger.error(f"No API key available for {explorer_type.value}")
+            return False
 
-    # Extract and store source files
-    result = data["result"][0]
-    source_code = result.get("SourceCode", "")
+        explorer.logger.debug("About to construct API URL")
+        api_url = explorer.get_api_url(explorer_type)
+        explorer.logger.debug(f"Got API URL: {api_url}")
 
-    if source_code:
+        # Construct API URL (only after we know we have a valid API key)
+        full_api_url = f"{api_url}?module=contract&action=getsourcecode&address={address}&apikey={api_key}"
+        explorer.logger.debug("Full API URL constructed (not showing due to API key)")
+
+        # Fetch source code
+        explorer.logger.debug("About to fetch source code")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(full_api_url) as response:
+                data = await response.json()
+
+        if data["status"] != "1":
+            explorer.logger.error(f"Explorer API error: {data.get('message', 'Unknown error')} for {address}")
+            return False
+
+        # Create target directory if it doesn't exist
+        os.makedirs(target_path, exist_ok=True)
+
+        # Extract and store source files
+        result = data["result"][0]
+        source_code = result.get("SourceCode", "")
+
+        if not source_code:
+            explorer.logger.error(f"No source code found for {address}")
+            return False
+
         try:
             # Handle double-wrapped JSON (starts with {{ and ends with }})
             if source_code.startswith("{{") and source_code.endswith("}}"):
-                # Remove the double braces
                 source_code = source_code[1:-1].strip()
 
-            # Parse the JSON directly
-            source_data = json.loads(source_code)
+            # Try to parse as JSON
+            try:
+                source_data = json.loads(source_code)
+                sources = source_data.get("sources", {})
 
-            # Extract all source files
-            sources = source_data.get("sources", {})
+                for filename, filedata in sources.items():
+                    file_content = filedata.get("content", "")
+                    # Sanitize the path: remove any leading slashes or dots
+                    safe_filename = filename.lstrip("./\\")
+                    file_path = os.path.join(target_path, safe_filename)
 
-            for filename, filedata in sources.items():
-                file_content = filedata.get("content", "")
+                    # SECURITY CHECK: Ensure the final path is strictly within target_path
+                    real_file_path = os.path.realpath(file_path)
+                    real_target_path = os.path.realpath(target_path)
+                    if not real_file_path.startswith(real_target_path):
+                        explorer.logger.error(f"Security error: Path traversal attempt detected for {filename}")
+                        return False
 
-                # Create safe path within target directory
-                file_path = os.path.join(target_path, os.path.basename(filename))
+                    # Only proceed if security check passes
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                    async with aiofiles.open(file_path, "w") as f:
+                        await f.write(file_content)
 
-                # SECURITY CHECK: Ensure the final path is strictly within target_path
-                real_file_path = os.path.realpath(file_path)
-                real_target_path = os.path.realpath(target_path)
-                if not real_file_path.startswith(real_target_path):
-                    raise ValueError(
-                        f"Security error: Path traversal attempt detected. File path {real_file_path} is outside target directory {real_target_path}"
-                    )
-
-                # Only proceed if security check passes
-                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            except json.JSONDecodeError:
+                # If not JSON, save as single file
+                file_path = os.path.join(target_path, f"{address}.sol")
                 async with aiofiles.open(file_path, "w") as f:
-                    await f.write(file_content)
+                    await f.write(source_code)
 
-        except json.JSONDecodeError:
-            # If not JSON, it might be a single file
-            async with aiofiles.open(os.path.join(target_path, f"{address}.sol"), "w") as f:
-                await f.write(source_code)
+            return True
+
+        except Exception as e:
+            explorer.logger.error(f"Error processing source code for {address}: {str(e)}")
+            return False
+
+    except Exception as e:
+        explorer.logger.error(f"Error fetching verified sources for {explorer_url}: {str(e)}")
+        return False

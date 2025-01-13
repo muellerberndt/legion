@@ -482,28 +482,43 @@ class ImmunefiIndexer:
                         if "/blob/" in url or "/tree/" in url:
                             asset_type = AssetType.GITHUB_FILE
                             self.logger.debug(f"Fetching GitHub file: {url} to {target_dir}")
-                            try:
-                                await fetch_github_file(url, target_dir)
-                            except Exception as e:
-                                self.logger.error(f"Failed to fetch GitHub file: {url} - {str(e)}")
+                            if not await fetch_github_file(url, target_dir):
+                                self.logger.error(f"Failed to fetch GitHub file: {url}")
                                 continue
                         else:
                             asset_type = AssetType.GITHUB_REPO
                             self.logger.debug(f"Fetching GitHub repo: {url} to {target_dir}")
-                            try:
-                                await fetch_github_repo(url, target_dir)
-                            except Exception as e:
-                                self.logger.error(f"Failed to fetch GitHub repo: {url} - {str(e)}")
+                            if not await fetch_github_repo(url, target_dir):
+                                self.logger.error(f"Failed to fetch GitHub repo: {url}")
                                 continue
                     elif any(explorer in url for explorer in ["etherscan.io", "bscscan.com", "polygonscan.com"]):
                         asset_type = AssetType.DEPLOYED_CONTRACT
                         self.logger.debug(f"Fetching contract source from {url} to {target_dir}")
                         try:
-                            await fetch_verified_sources(url, target_dir)
-                            # No need to check result - fetch_verified_sources raises on error
+                            # Create and await the coroutine in one step
+                            if not await fetch_verified_sources(url, target_dir):
+                                self.logger.error(f"Failed to fetch verified sources: {url}")
+                                continue
                         except Exception as e:
-                            self.logger.error(f"Failed to fetch contract source: {url} - {str(e)}")
+                            self.logger.error(f"Error fetching verified sources for {url}: {str(e)}", exc_info=True)
                             continue
+
+                        self.logger.debug("Successfully fetched sources, updating asset")
+                        # Only proceed if download was successful
+                        new_asset = Asset(
+                            identifier=url,
+                            project_id=project_id,
+                            asset_type=asset_type,
+                            source_url=url,
+                            local_path=target_dir,
+                            extra_data={"revision": revision} if revision else {},
+                        )
+
+                        self.session.add(new_asset)
+                        await self.session.commit()
+
+                        if not self.initialize_mode:
+                            await self.trigger_event(HandlerTrigger.NEW_ASSET, {"asset": new_asset})
                     else:
                         self.logger.warning(f"Unknown asset type for URL: {url}")
                         continue
@@ -600,60 +615,49 @@ class ImmunefiIndexer:
 
                     # Determine asset type and download content
                     try:
-                        if "github.com" in url:
-                            # Skip directory-like paths (ending with branch name or no file extension)
-                            if "/tree/" in url and (
-                                url.split("/")[-1].startswith("v")  # version tag like v0.2.x
-                                or "." not in url.split("/")[-1]  # no file extension
-                            ):
-                                self.logger.debug(f"Skipping directory path: {url}")
+                        if "/blob/" in url or "/tree/" in url:
+                            asset_type = AssetType.GITHUB_FILE
+                            self.logger.debug(f"Fetching GitHub file: {url} to {target_dir}")
+                            if not await fetch_github_file(url, target_dir):
+                                self.logger.error(f"Failed to fetch GitHub file: {url}")
                                 continue
-
-                            # Handle file paths
-                            if "/blob/" in url or "/tree/" in url:
-                                asset_type = AssetType.GITHUB_FILE
-                                self.logger.debug(f"Fetching GitHub file: {url} to {target_dir}")
-                                try:
-                                    await fetch_github_file(url, target_dir)
-                                except Exception as e:
-                                    self.logger.error(f"Failed to fetch GitHub file: {url} - {str(e)}")
-                                    continue
-                            else:
-                                asset_type = AssetType.GITHUB_REPO
-                                self.logger.debug(f"Fetching GitHub repo: {url} to {target_dir}")
-                                try:
-                                    await fetch_github_repo(url, target_dir)
-                                except Exception as e:
-                                    self.logger.error(f"Failed to fetch GitHub repo: {url} - {str(e)}")
-                                    continue
+                        elif "/github.com/" in url and not ("/blob/" in url or "/tree/" in url):
+                            asset_type = AssetType.GITHUB_REPO
+                            self.logger.debug(f"Fetching GitHub repo: {url} to {target_dir}")
+                            if not await fetch_github_repo(url, target_dir):
+                                self.logger.error(f"Failed to fetch GitHub repo: {url}")
+                                continue
                         elif any(explorer in url for explorer in ["etherscan.io", "bscscan.com", "polygonscan.com"]):
                             asset_type = AssetType.DEPLOYED_CONTRACT
                             self.logger.debug(f"Fetching contract source from {url} to {target_dir}")
-                            await fetch_verified_sources(url, target_dir)
+                            if not await fetch_verified_sources(url, target_dir):
+                                self.logger.error(f"Failed to fetch verified sources: {url}")
+                                continue
                         else:
                             self.logger.warning(f"Unknown asset type for URL: {url}")
                             continue
-
-                        # Only create asset if download succeeded
-                        new_asset = Asset(
-                            identifier=url,
-                            project_id=project_id,
-                            asset_type=asset_type,
-                            source_url=url,
-                            local_path=target_dir,
-                            extra_data={"revision": revision} if revision else {},
-                        )
-
-                        self.session.add(new_asset)
-                        await self.session.commit()
-
-                        if not self.initialize_mode:
-                            await self.trigger_event(HandlerTrigger.NEW_ASSET, {"asset": new_asset})
 
                     except Exception as e:
                         self.logger.error(f"Failed to process asset {url}: {str(e)}")
                         self.session.rollback()
                         continue
+
+                    # Create new asset (moved outside the if/elif blocks, same indentation as the if/elif)
+                    self.logger.debug(f"Creating new asset for {url} of type {asset_type}")
+                    new_asset = Asset(
+                        identifier=url,
+                        project_id=project_id,
+                        asset_type=asset_type,
+                        source_url=url,
+                        local_path=target_dir,
+                        extra_data={"revision": revision} if revision else {},
+                    )
+
+                    self.session.add(new_asset)
+                    await self.session.commit()
+
+                    if not self.initialize_mode:
+                        await self.trigger_event(HandlerTrigger.NEW_ASSET, {"asset": new_asset})
 
             except Exception as e:
                 self.logger.warning(f"Error in asset processing loop for {url}: {str(e)}")

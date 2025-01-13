@@ -24,7 +24,7 @@ async def get_headers():
     return headers
 
 
-async def fetch_github_file(url: str, target_path: str) -> None:
+async def fetch_github_file(url: str, target_path: str) -> bool:
     """
     Fetch a single file from GitHub and store it locally.
 
@@ -33,6 +33,9 @@ async def fetch_github_file(url: str, target_path: str) -> None:
              - https://github.com/owner/repo/blob/branch/path/to/file
              - https://github.com/owner/repo/tree/branch/path/to/file
         target_path: Path where to store the file
+
+    Returns:
+        bool: True if file was successfully fetched and stored
     """
     try:
         # Convert web URL to raw content URL
@@ -43,7 +46,8 @@ async def fetch_github_file(url: str, target_path: str) -> None:
         async with aiohttp.ClientSession() as session:
             async with session.get(raw_url, headers=headers) as response:
                 if response.status != 200:
-                    raise Exception(f"GitHub fetch error: Status code {response.status} for URL {raw_url}")
+                    logger.error(f"GitHub fetch error: Status code {response.status} for URL {raw_url}")
+                    return False
                 content = await response.text()
 
         # Create target directory if it doesn't exist
@@ -53,58 +57,69 @@ async def fetch_github_file(url: str, target_path: str) -> None:
         async with aiofiles.open(target_path, "w") as f:
             await f.write(content)
 
-        return None  # Explicit return to ensure coroutine
+        return True
 
     except Exception as e:
         logger.error(f"Error fetching GitHub file {url}: {str(e)}")
-        raise  # Re-raise to handle in caller
+        return False
 
 
-async def fetch_github_repo(url: str, target_path: str) -> None:
+async def fetch_github_repo(url: str, target_path: str) -> bool:
     """
     Fetch an entire GitHub repository and store it locally.
 
     Args:
         url: GitHub repository URL of the format https://github.com/owner/repo
         target_path: Path where to store the repository files
+
+    Returns:
+        bool: True if repo was successfully fetched and stored
     """
-    # Extract owner and repo from URL
-    parts = url.rstrip("/").split("/")
-    owner = parts[-2]
-    repo = parts[-1]
+    try:
+        # Extract owner and repo from URL
+        parts = url.rstrip("/").split("/")
+        owner = parts[-2]
+        repo = parts[-1]
 
-    # Construct API URL
-    api_url = f"https://api.github.com/repos/{owner}/{repo}/zipball"
+        # Construct API URL
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/zipball"
 
-    # Fetch repository content
-    headers = await get_headers()
-    async with aiohttp.ClientSession() as session:
-        async with session.get(api_url, headers=headers) as response:
-            if response.status != 200:
-                raise Exception(f"GitHub fetch error: Status code {response.status}")
-            content = await response.read()
+        # Fetch repository content
+        headers = await get_headers()
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url, headers=headers) as response:
+                if response.status != 200:
+                    logger.error(f"GitHub fetch error: Status code {response.status}")
+                    return False
+                content = await response.read()
 
-            # Check rate limit info
-            rate_limit = response.headers.get("X-RateLimit-Remaining")
-            if rate_limit:
-                logger.info(f"GitHub API requests remaining: {rate_limit}")
+                # Check rate limit info
+                rate_limit = response.headers.get("X-RateLimit-Remaining")
+                if rate_limit:
+                    logger.info(f"GitHub API requests remaining: {rate_limit}")
 
-    # Create target directory if it doesn't exist
-    os.makedirs(target_path, exist_ok=True)
+        # Create target directory if it doesn't exist
+        os.makedirs(target_path, exist_ok=True)
 
-    # Save zip file temporarily
-    zip_path = os.path.join(target_path, "repo.zip")
-    with open(zip_path, "wb") as f:
-        f.write(content)
+        # Save zip file temporarily
+        zip_path = os.path.join(target_path, "repo.zip")
+        with open(zip_path, "wb") as f:
+            f.write(content)
 
-    # Extract zip file
-    import zipfile
+        # Extract zip file
+        import zipfile
 
-    with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(target_path)
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(target_path)
 
-    # Remove temporary zip file
-    os.remove(zip_path)
+        # Remove temporary zip file
+        os.remove(zip_path)
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error fetching GitHub repo {url}: {str(e)}")
+        return False
 
 
 async def check_rate_limit() -> dict:
