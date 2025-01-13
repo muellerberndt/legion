@@ -515,7 +515,12 @@ class ImmunefiIndexer:
                         )
 
                         self.session.add(new_asset)
-                        await self.session.commit()
+                        # Fix the commit logic to handle both sync and async sessions
+                        if hasattr(self.session, "commit"):
+                            if asyncio.iscoroutinefunction(self.session.commit):
+                                await self.session.commit()
+                            else:
+                                self.session.commit()
 
                         if not self.initialize_mode:
                             await self.trigger_event(HandlerTrigger.NEW_ASSET, {"asset": new_asset})
@@ -654,7 +659,12 @@ class ImmunefiIndexer:
                     )
 
                     self.session.add(new_asset)
-                    await self.session.commit()
+                    # Fix the commit logic to handle both sync and async sessions
+                    if hasattr(self.session, "commit"):
+                        if asyncio.iscoroutinefunction(self.session.commit):
+                            await self.session.commit()
+                        else:
+                            self.session.commit()
 
                     if not self.initialize_mode:
                         await self.trigger_event(HandlerTrigger.NEW_ASSET, {"asset": new_asset})
