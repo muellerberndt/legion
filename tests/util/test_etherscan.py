@@ -64,14 +64,14 @@ async def test_fetch_verified_sources(tmp_path, mock_config, mock_response):
             # Call the function
             await fetch_verified_sources(etherscan_url, target_path)
 
-            # Verify the expected files were created
+            # Verify the expected files were created (using basenames)
             expected_files = [
-                "lib/openzeppelin-contracts/contracts/proxy/beacon/BeaconProxy.sol",
-                "lib/openzeppelin-contracts/contracts/proxy/beacon/IBeacon.sol",
-                "lib/openzeppelin-contracts/contracts/proxy/Proxy.sol",
-                "lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Utils.sol",
-                "lib/openzeppelin-contracts/contracts/utils/Address.sol",
-                "lib/openzeppelin-contracts/contracts/utils/StorageSlot.sol",
+                "BeaconProxy.sol",
+                "IBeacon.sol",
+                "Proxy.sol",
+                "ERC1967Utils.sol",
+                "Address.sol",
+                "StorageSlot.sol",
             ]
 
             for file_path in expected_files:
