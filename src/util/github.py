@@ -29,18 +29,20 @@ async def fetch_github_file(url: str, target_path: str) -> None:
     Fetch a single file from GitHub and store it locally.
 
     Args:
-        url: GitHub URL of the format https://github.com/owner/repo/blob/branch/path/to/file
+        url: GitHub URL of the format:
+             - https://github.com/owner/repo/blob/branch/path/to/file
+             - https://github.com/owner/repo/tree/branch/path/to/file
         target_path: Path where to store the file
     """
     # Convert web URL to raw content URL
-    raw_url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+    raw_url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/").replace("/tree/", "/")
 
     # Fetch file content
     headers = await get_headers()
     async with aiohttp.ClientSession() as session:
         async with session.get(raw_url, headers=headers) as response:
             if response.status != 200:
-                raise Exception(f"GitHub fetch error: Status code {response.status}")
+                raise Exception(f"GitHub fetch error: Status code {response.status} for URL {raw_url}")
             content = await response.text()
 
     # Create target directory if it doesn't exist

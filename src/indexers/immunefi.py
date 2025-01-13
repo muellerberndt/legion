@@ -328,7 +328,11 @@ class ImmunefiIndexer:
                 await self.download_assets(existing_project.id, bounty_data.get("assets", []))
 
                 # Clean up out-of-scope assets
-                await self.cleanup_removed_assets(existing_project, current_asset_urls)
+                try:
+                    await self.cleanup_removed_assets(existing_project, current_asset_urls)
+                except Exception as e:
+                    self.logger.error(f"Error cleaning up assets for {existing_project.name}: {str(e)}")
+                    # Don't re-raise, continue with next project
 
                 # Commit changes
                 self.session.commit()
@@ -341,7 +345,8 @@ class ImmunefiIndexer:
 
         except Exception as e:
             self.logger.error(f"Error processing project {bounty_data.get('project', 'unknown')}: {str(e)}")
-            raise
+            self.session.rollback()
+            # Don't re-raise, continue with next project
 
     async def cleanup_removed_assets(self, project: Project, current_asset_urls: set):
         """Remove assets that are no longer in project scope"""
@@ -351,26 +356,36 @@ class ImmunefiIndexer:
                 if asset.identifier not in current_asset_urls:
                     self.logger.info(f"Asset {asset.identifier} no longer in scope for project {project.name}, removing")
 
-                    # Trigger event BEFORE deletion if not in initialize mode
-                    if not self.initialize_mode:
-                        await self.trigger_event(HandlerTrigger.ASSET_REMOVE, {"asset": asset, "project": project})
+                    try:
+                        # Trigger event BEFORE deletion if not in initialize mode
+                        if not self.initialize_mode:
+                            await self.trigger_event(HandlerTrigger.ASSET_REMOVE, {"asset": asset, "project": project})
 
-                    # Delete local files if they exist
-                    if asset.local_path and os.path.exists(asset.local_path):
-                        if os.path.isdir(asset.local_path):
-                            await self._remove_dir(asset.local_path)
+                        # Delete local files if they exist
+                        if asset.local_path and os.path.exists(asset.local_path):
+                            if os.path.isdir(asset.local_path):
+                                await self._remove_dir(asset.local_path)
+                            else:
+                                await self._remove_file(asset.local_path)
+
+                        # Delete asset from database
+                        self.session.delete(asset)
+                        await self.session.commit()
+
+                    except Exception as e:
+                        if "ForeignKeyViolation" in str(e):
+                            self.logger.warning(f"Asset {asset.identifier} is referenced by other tables, skipping deletion")
+                            await self.session.rollback()
+                            continue
                         else:
-                            await self._remove_file(asset.local_path)
-
-                    # Delete asset from database
-                    self.session.delete(asset)
-
-            self.session.commit()
+                            self.logger.error(f"Failed to remove asset {asset.identifier}: {str(e)}")
+                            await self.session.rollback()
+                            continue
 
         except Exception as e:
             self.logger.error(f"Error cleaning up removed assets for project {project.name}: {str(e)}")
-            self.session.rollback()
-            raise  # Re-raise the exception to handle it in the caller
+            await self.session.rollback()
+            raise
 
     async def _remove_dir(self, path: str):
         """Asynchronously remove a directory"""
@@ -380,7 +395,7 @@ class ImmunefiIndexer:
         """Asynchronously remove a file"""
         await asyncio.to_thread(os.remove, path)
 
-    async def download_assets(self, project_id: int, asset_data): #noqa: C901
+    async def download_assets(self, project_id: int, asset_data):  # noqa: C901
         """Download asset files and create Asset records."""
         if not asset_data:
             return
@@ -455,12 +470,20 @@ class ImmunefiIndexer:
 
                     # Update existing asset
                     if "github.com" in url:
-                        if "/blob/" in url:
+                        # Skip directory-like paths (ending with branch name or no file extension)
+                        if "/tree/" in url and (
+                            url.split("/")[-1].startswith("v")  # version tag like v0.2.x
+                            or "." not in url.split("/")[-1]  # no file extension
+                        ):
+                            self.logger.debug(f"Skipping directory path: {url}")
+                            continue
+
+                        # Handle file paths
+                        if "/blob/" in url or "/tree/" in url:
                             asset_type = AssetType.GITHUB_FILE
                             self.logger.debug(f"Fetching GitHub file: {url} to {target_dir}")
                             try:
                                 await fetch_github_file(url, target_dir)
-                                # No need to check result - fetch_github_file raises on error
                             except Exception as e:
                                 self.logger.error(f"Failed to fetch GitHub file: {url} - {str(e)}")
                                 continue
@@ -469,7 +492,6 @@ class ImmunefiIndexer:
                             self.logger.debug(f"Fetching GitHub repo: {url} to {target_dir}")
                             try:
                                 await fetch_github_repo(url, target_dir)
-                                # No need to check result - fetch_github_repo raises on error
                             except Exception as e:
                                 self.logger.error(f"Failed to fetch GitHub repo: {url} - {str(e)}")
                                 continue
@@ -577,53 +599,61 @@ class ImmunefiIndexer:
                     target_dir, _ = AssetStorage.get_asset_path(base_dir, url)
 
                     # Determine asset type and download content
-                    if "github.com" in url:
-                        if "/blob/" in url:
-                            asset_type = AssetType.GITHUB_FILE
-                            self.logger.debug(f"Fetching GitHub file: {url} to {target_dir}")
-                            try:
-                                await fetch_github_file(url, target_dir)
-                                # No need to check result - fetch_github_file raises on error
-                            except Exception as e:
-                                self.logger.error(f"Failed to fetch GitHub file: {url} - {str(e)}")
+                    try:
+                        if "github.com" in url:
+                            # Skip directory-like paths (ending with branch name or no file extension)
+                            if "/tree/" in url and (
+                                url.split("/")[-1].startswith("v")  # version tag like v0.2.x
+                                or "." not in url.split("/")[-1]  # no file extension
+                            ):
+                                self.logger.debug(f"Skipping directory path: {url}")
                                 continue
-                        else:
-                            asset_type = AssetType.GITHUB_REPO
-                            self.logger.debug(f"Fetching GitHub repo: {url} to {target_dir}")
-                            try:
-                                await fetch_github_repo(url, target_dir)
-                                # No need to check result - fetch_github_repo raises on error
-                            except Exception as e:
-                                self.logger.error(f"Failed to fetch GitHub repo: {url} - {str(e)}")
-                                continue
-                    elif any(explorer in url for explorer in ["etherscan.io", "bscscan.com", "polygonscan.com"]):
-                        asset_type = AssetType.DEPLOYED_CONTRACT
-                        self.logger.debug(f"Fetching contract source from {url} to {target_dir}")
-                        try:
+
+                            # Handle file paths
+                            if "/blob/" in url or "/tree/" in url:
+                                asset_type = AssetType.GITHUB_FILE
+                                self.logger.debug(f"Fetching GitHub file: {url} to {target_dir}")
+                                try:
+                                    await fetch_github_file(url, target_dir)
+                                except Exception as e:
+                                    self.logger.error(f"Failed to fetch GitHub file: {url} - {str(e)}")
+                                    continue
+                            else:
+                                asset_type = AssetType.GITHUB_REPO
+                                self.logger.debug(f"Fetching GitHub repo: {url} to {target_dir}")
+                                try:
+                                    await fetch_github_repo(url, target_dir)
+                                except Exception as e:
+                                    self.logger.error(f"Failed to fetch GitHub repo: {url} - {str(e)}")
+                                    continue
+                        elif any(explorer in url for explorer in ["etherscan.io", "bscscan.com", "polygonscan.com"]):
+                            asset_type = AssetType.DEPLOYED_CONTRACT
+                            self.logger.debug(f"Fetching contract source from {url} to {target_dir}")
                             await fetch_verified_sources(url, target_dir)
-                            # No need to check result - fetch_verified_sources raises on error
-                        except Exception as e:
-                            self.logger.error(f"Failed to fetch contract source: {url} - {str(e)}")
+                        else:
+                            self.logger.warning(f"Unknown asset type for URL: {url}")
                             continue
-                    else:
-                        self.logger.warning(f"Unknown asset type for URL: {url}")
+
+                        # Only create asset if download succeeded
+                        new_asset = Asset(
+                            identifier=url,
+                            project_id=project_id,
+                            asset_type=asset_type,
+                            source_url=url,
+                            local_path=target_dir,
+                            extra_data={"revision": revision} if revision else {},
+                        )
+
+                        self.session.add(new_asset)
+                        await self.session.commit()
+
+                        if not self.initialize_mode:
+                            await self.trigger_event(HandlerTrigger.NEW_ASSET, {"asset": new_asset})
+
+                    except Exception as e:
+                        self.logger.error(f"Failed to process asset {url}: {str(e)}")
+                        self.session.rollback()
                         continue
-
-                    # Create new asset record
-                    new_asset = Asset(
-                        identifier=url,
-                        project_id=project_id,
-                        asset_type=asset_type,
-                        source_url=url,
-                        local_path=target_dir,
-                        extra_data={"revision": revision} if revision else {},
-                    )
-
-                    self.session.add(new_asset)
-                    await self.session.commit()
-
-                    if not self.initialize_mode:
-                        await self.trigger_event(HandlerTrigger.NEW_ASSET, {"asset": new_asset})
 
             except Exception as e:
                 self.logger.warning(f"Error in asset processing loop for {url}: {str(e)}")
