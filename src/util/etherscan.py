@@ -237,11 +237,21 @@ async def fetch_verified_sources(explorer_url: str, target_path: str) -> None:
             for filename, filedata in sources.items():
                 file_content = filedata.get("content", "")
 
-                # Create directories if they don't exist
-                file_path = os.path.join(target_path, filename)
-                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                # Create safe path within target directory
+                file_path = os.path.join(target_path, os.path.basename(filename))
 
-                # Write the content to the file
+                # SECURITY CHECK: Ensure the final path is strictly within target_path
+                real_file_path = os.path.realpath(file_path)
+                real_target_path = os.path.realpath(target_path)
+
+                self.logger.info(f"Security check: real_file_path: {real_file_path}, real_target_path: {real_target_path}")
+                if not real_file_path.startswith(real_target_path):
+                    raise ValueError(
+                        f"Security error: Path traversal attempt detected. File path {real_file_path} is outside target directory {real_target_path}"
+                    )
+
+                # Only proceed if security check passes
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
                 async with aiofiles.open(file_path, "w") as f:
                     await f.write(file_content)
 
