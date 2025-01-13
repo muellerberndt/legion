@@ -179,14 +179,16 @@ class EVMExplorer:
 async def fetch_verified_sources(explorer_url: str, target_path: str) -> None:
     """
     Fetch verified sources from an EVM explorer and store them locally.
-
-    Args:
-        explorer_url: URL of the format https://{explorer_domain}/address/{address}
-        target_path: Path where to store the source files
     """
-    # Check if this is a supported explorer
+    # Clean URL by removing query parameters
+    clean_url = explorer_url.split("?")[0]
+
+    # Extract address from URL and clean it
+    address = clean_url.split("/")[-1].lower()
+
+    # Get API key and URL
     explorer = EVMExplorer()
-    is_supported, explorer_type = explorer.is_supported_explorer(explorer_url)
+    is_supported, explorer_type = explorer.is_supported_explorer(clean_url)
 
     if not is_supported:
         if explorer_type:
@@ -194,17 +196,8 @@ async def fetch_verified_sources(explorer_url: str, target_path: str) -> None:
         else:
             raise ValueError("Unsupported explorer URL")
 
-    # Extract address from URL and clean it
-    address = explorer_url.split("/")[-1].lower()
-    # Remove any extra parts after the address (like #code)
-    address = address.split("#")[0]
-
-    # Get API key and URL
-    api_key = explorer.get_api_key(explorer_type)
-    api_url = explorer.get_api_url(explorer_type)
-
     # Construct API URL
-    full_api_url = f"{api_url}?module=contract&action=getsourcecode&address={address}&apikey={api_key}"
+    full_api_url = f"{explorer.get_api_url(explorer_type)}?module=contract&action=getsourcecode&address={address}&apikey={explorer.get_api_key(explorer_type)}"
 
     # Fetch source code
     async with aiohttp.ClientSession() as session:
@@ -243,8 +236,6 @@ async def fetch_verified_sources(explorer_url: str, target_path: str) -> None:
                 # SECURITY CHECK: Ensure the final path is strictly within target_path
                 real_file_path = os.path.realpath(file_path)
                 real_target_path = os.path.realpath(target_path)
-
-                self.logger.info(f"Security check: real_file_path: {real_file_path}, real_target_path: {real_target_path}")
                 if not real_file_path.startswith(real_target_path):
                     raise ValueError(
                         f"Security error: Path traversal attempt detected. File path {real_file_path} is outside target directory {real_target_path}"
