@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from src.indexers.immunefi import ImmunefiIndexer
 from src.models.base import Project, Asset, AssetType
 from src.handlers.base import HandlerTrigger
+import os
 
 
 class SerializableMock(MagicMock):
@@ -281,3 +282,38 @@ async def test_process_bounty_no_changes(mock_session, mock_handler_registry, mo
 
     # Verify no update event was triggered (no changes)
     mock_handler_registry.trigger_event.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_asset_path_traversal_prevention(mock_session, mock_handler_registry):
+    """Test that asset downloads prevent path traversal attempts"""
+    indexer = ImmunefiIndexer(mock_session)
+    indexer.handler_registry = mock_handler_registry
+
+    # Mock the logger
+    mock_logger = Mock()
+    indexer.logger = mock_logger
+
+    # Create a bounty with malicious asset paths
+    bounty_data = {
+        "project": "Test Project",
+        "description": "Test Description",
+        "assets": [
+            {"url": "../../../etc/passwd", "revision": "1"},  # Path traversal attempt
+            {"url": "..\\..\\Windows\\System32\\config\\SAM", "revision": "1"},  # Windows path traversal
+            {"url": "/etc/shadow", "revision": "1"},  # Absolute path attempt
+        ],
+    }
+
+    # Process the bounty
+    await indexer.process_bounty(bounty_data)
+
+    # Get all warning calls for inspection
+    warning_calls = [call[0][0] for call in mock_logger.warning.call_args_list]
+
+    # Verify each malicious path attempt was caught
+    assert any("../../../etc/passwd" in msg for msg in warning_calls), "Unix path traversal not caught"
+    assert any(
+        "..\\..\\Windows\\System32\\config\\SAM" in msg or "../../Windows/System32/config/SAM" in msg for msg in warning_calls
+    ), "Windows path traversal not caught"
+    assert any("/etc/shadow" in msg for msg in warning_calls), "Absolute path not caught"

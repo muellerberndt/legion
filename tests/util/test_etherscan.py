@@ -121,3 +121,57 @@ async def test_fetch_verified_sources(tmp_path, mock_config, mock_response):
                 with open(os.path.join(target_path, "BeaconProxy.sol")) as f:
                     content = f.read()
                     assert "BeaconProxy" in content, "File content verification failed"
+
+
+@pytest.mark.asyncio
+async def test_path_traversal_prevention(tmp_path, mock_config):
+    """Test that path traversal attempts are blocked"""
+
+    malicious_path = "foo/../../etc/passwd"
+
+    # Modify mock response to include malicious paths
+    malicious_response = {
+        "status": "1",
+        "message": "OK",
+        "result": [
+            {
+                "SourceCode": json.dumps(
+                    {
+                        "sources": {
+                            malicious_path: {"content": "malicious content"},
+                        }
+                    }
+                ),
+                "ABI": "[]",
+                "ContractName": "Test",
+            }
+        ],
+    }
+
+    target_path = str(tmp_path / "sources")
+
+    with patch("src.util.etherscan.Config", return_value=mock_config):
+        mock_explorer = Mock()
+        mock_explorer.is_supported_explorer.return_value = (True, ExplorerType.ETHERSCAN)
+        mock_explorer.get_api_key.return_value = "dummy_key"
+        mock_explorer.get_api_url.return_value = "https://api.etherscan.io/api"
+        mock_explorer.logger = Mock()
+
+        with patch("src.util.etherscan.EVMExplorer", return_value=mock_explorer):
+            with patch("aiohttp.ClientSession", return_value=MockClientSession(malicious_response)):
+                etherscan_url = "https://etherscan.io/address/0x1234567890123456789012345678901234567890"
+
+                # Call the function
+                result = await fetch_verified_sources(etherscan_url, target_path)
+
+                # Function should return False when path traversal is detected
+                assert result is False, "Function should return False when path traversal is detected"
+
+                # Verify error was logged for path traversal
+                mock_explorer.logger.error.assert_called_with(
+                    f"Security error: Path traversal attempt detected for {malicious_path}"
+                )
+
+                # Verify no files were created
+                assert not os.path.exists(os.path.join(target_path, malicious_path))
+                assert len(os.listdir(target_path)) == 0, "No files should be created when path traversal is detected"
