@@ -110,5 +110,66 @@ async def server_start(ctx, interface):
         raise
 
 
+@cli.group()
+def project():
+    """Project management commands"""
+
+
+@project.command(name="create")
+@click.argument("project_name")
+@click.argument("project_type")
+@click.argument("project_source")
+@click.argument("keywords", required=False)
+@click.pass_context
+def project_create(ctx, project_name, project_type, project_source, keywords):
+    """Create a new project"""
+    from src.backend.database import DBSessionMixin
+    from src.models.base import Project
+
+    logger = ctx.obj["logger"]
+
+    # Parse keywords if provided
+    keyword_list = keywords.split(",") if keywords else []
+
+    # Create session handler
+    session_handler = DBSessionMixin()
+
+    try:
+        with session_handler.get_session() as session:
+            project = Project(
+                name=project_name,
+                project_type=project_type,
+                project_source=project_source,
+                source_url=project_source if project_source.startswith("http") else None,
+                keywords=keyword_list,
+            )
+            session.add(project)
+            session.commit()
+            logger.info(f"Created project {project.id}: {project_name}")
+            return project.id
+    except Exception as e:
+        logger.error(f"Failed to create project: {e}")
+        raise
+
+
+@cli.command(name="import_assets")
+@click.argument("project_id", type=int)
+@click.argument("path", type=click.Path(exists=True))
+@click.pass_context
+def import_assets(ctx, project_id, path):
+    """Import assets from a directory into a project"""
+    from src.util.asset_import import AssetImporter
+
+    logger = ctx.obj["logger"]
+
+    try:
+        importer = AssetImporter(project_id)
+        imported_count = importer.import_directory(path)
+        logger.info(f"Successfully imported {imported_count} assets")
+    except Exception as e:
+        logger.error(f"Failed to import assets: {e}")
+        raise
+
+
 if __name__ == "__main__":
     cli(obj={})

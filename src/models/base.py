@@ -43,6 +43,7 @@ class AssetType(str, enum.Enum):
     GITHUB_REPO = "github_repo"
     GITHUB_FILE = "github_file"
     DEPLOYED_CONTRACT = "deployed_contract"
+    LOCAL_IMPORT = "local_import"
 
 
 class Project(Base):

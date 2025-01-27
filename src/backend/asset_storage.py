@@ -7,34 +7,40 @@ class AssetStorage:
     """Utility class for managing asset storage paths"""
 
     @staticmethod
-    def get_asset_path(base_dir: str, url: str) -> Tuple[str, str]:
+    def get_asset_path(base_dir: str, source: str) -> Tuple[str, str]:
         """
         Generate storage path for an asset.
 
         Args:
             base_dir: Base directory for asset storage
-            url: Source URL of the asset
+            source: Source URL or local file path of the asset
 
         Returns:
-            Tuple[str, str]: (target_directory, relative_path)
-
-        Raises:
-            ValueError: If target directory would be outside base directory
+            Tuple[str, str]: (target_directory, target_file)
         """
-        # Basic URL validation
+        # Check if source is a URL
         try:
-            parsed_url = urlparse(url)
-            if not all([parsed_url.scheme, parsed_url.netloc]):
-                raise ValueError(f"Invalid URL format: {url}")
-        except Exception as e:
-            raise ValueError(f"URL parsing failed: {url} - {str(e)}")
+            parsed_url = urlparse(source)
+            if all([parsed_url.scheme, parsed_url.netloc]):
+                # Handle URL paths
+                path_components = [c for c in parsed_url.path.split("/") if c and c != "/"]
+                target_dir = os.path.join(base_dir, parsed_url.netloc, *path_components)
+                relative_path = os.path.join(parsed_url.netloc, *path_components)
+            else:
+                # Handle local file paths
+                path_components = os.path.normpath(source).split(os.sep)
+                # Take last two components of path (parent_dir/filename)
+                path_components = path_components[-2:] if len(path_components) > 1 else path_components[-1:]
+                target_dir = os.path.join(base_dir, *path_components)
+                relative_path = os.path.join(*path_components)
 
-        # Ensure path components don't start with slash
-        path_components = [component for component in parsed_url.path.split("/") if component and component != "/"]
-
-        # Construct target dir relative to base_dir
-        target_dir = os.path.join(base_dir, parsed_url.netloc, *path_components)
-        relative_path = os.path.join(parsed_url.netloc, *path_components)
+        except Exception:
+            # Handle local file paths on parse error
+            path_components = os.path.normpath(source).split(os.sep)
+            # Take last two components of path (parent_dir/filename)
+            path_components = path_components[-2:] if len(path_components) > 1 else path_components[-1:]
+            target_dir = os.path.join(base_dir, *path_components)
+            relative_path = os.path.join(*path_components)
 
         # Verify the target_dir is under base_dir using realpath
         real_base = os.path.realpath(base_dir)
