@@ -160,14 +160,14 @@ class Asset(Base):
         """Get code contents for the asset.
 
         Returns:
-            str: Code contents for GITHUB_FILE and DEPLOYED_CONTRACT assets
+            str: Code contents for GITHUB_FILE, DEPLOYED_CONTRACT, and LOCAL_IMPORT assets
             None: If asset type is not supported or file cannot be read
         """
         if not self.local_path or not os.path.exists(self.local_path):
             return None
 
         try:
-            if self.asset_type == AssetType.GITHUB_FILE:
+            if self.asset_type in [AssetType.GITHUB_FILE, AssetType.LOCAL_IMPORT]:
                 return self._read_file_contents(self.local_path)
             elif self.asset_type == AssetType.DEPLOYED_CONTRACT:
                 if not os.path.isdir(self.local_path):
