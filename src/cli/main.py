@@ -171,5 +171,38 @@ def import_assets(ctx, project_id, path):
         raise
 
 
+@cli.command(name="expand_repos")
+@click.argument("project_id", type=int, required=False)
+@click.option("--all", is_flag=True, help="Process all projects with GitHub repos")
+@click.pass_context
+@async_command
+async def expand_repos(ctx, project_id, all):
+    """Expand GitHub repo assets into individual contract files"""
+    from src.util.asset_import import RepoExpander
+
+    logger = ctx.obj["logger"]
+
+    try:
+        if all:
+            if project_id:
+                logger.warning("Project ID ignored when --all flag is used")
+            results = await RepoExpander.expand_all_projects()
+            total_imported = sum(results.values())
+            logger.info(f"Processed {len(results)} projects, imported {total_imported} files total")
+            # Log individual project results
+            for pid, count in results.items():
+                logger.info(f"Project {pid}: imported {count} files")
+        else:
+            if not project_id:
+                logger.error("Project ID required when not using --all flag")
+                return
+            expander = RepoExpander(project_id)
+            imported_count = expander.expand_repos()
+            logger.info(f"Successfully imported {imported_count} contract files from repos")
+    except Exception as e:
+        logger.error(f"Failed to expand repos: {e}")
+        raise
+
+
 if __name__ == "__main__":
     cli(obj={})
