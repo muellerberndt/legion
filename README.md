@@ -13,8 +13,7 @@ Legion is meant to be used as a base framework for security researchers. By [ext
 
 The base framework contains the following features:
 
-- Telegram chatbot interface
-- Auto-sync data and code from Immunefi bounties
+- Auto-sync data and code from bug bounty platforms (e.g., Immunefi)
 - Auto-tracking of EVM proxy implementations across multiple chains
 - Search bounty code using regex & vector search
 - Auto-review of PRs and commits in GitHub repos associated with bounties
@@ -23,39 +22,15 @@ The base framework contains the following features:
 
 ## Running Legion
 
-You need to set up a Telegram bot, a Postgres database and several API keys first ([Installation Guide](docs/installation.md)).
+First, set up your local environment and API keys by following the [Installation Guide](docs/installation.md).
 
 To start the server, run:
 
 ```bash
-./legion.sh server start --log-level INFO
+python -m src.cli.main server start --log-level INFO
 ```
 
-Sync bounty data from Immunefi with `/immunefi silent`. Then chat away with the bot:
-
-```
-Bernhard Mueller, [25 Dec BE 2567 at 07:55:17]:
-Search all assets for the string 'using SignatureUtil for bytes'. If you find any asset containing this string please run semgrep on it and briefly summarize the asset code and semgrep results, as well as the associated project.
-
-legion, [25 Dec BE 2567 at 07:55:20]:
-🤔 To find assets containing the string 'using SignatureUtil for bytes', I will perform a file search using the /file_search command. If any assets are found, I will proceed to run semgrep on them and summarize the results.
-🛠️ Executing: /file_search 'using SignatureUtil for bytes'
-
-(...)
-
-The asset with ID 4987 is a deployed contract on Etherscan with the identifier https://etherscan.io/address/0x9C07A72177c5A05410cA338823e790876E79D73B. It is part of the DeGate project, which is an audit competition hosted on Immunefi. The target of the bounty is approximately 500 lines of new code designed to allow contract upgrades. The semgrep scan on this asset found no issues.
-
-Bernhard Mueller, [25 Dec BE 2567 at 07:59:26]:
-So is it a proxy? If so, what's the implementation? Can you run semgrep on that as well?
-
-legion, [25 Dec BE 2567 at 07:59:29]:
-🤔 To determine if the asset is a proxy and find its implementation, I need to query the database for the asset's proxy status and implementation details.
-🛠️ Executing: /db_query '{"from": "assets", "select": ["is_proxy", "implementation_id"], "where": [{"field": "id", "op": "=", "value": 4987}]}'
-
-(...)
-
-The asset with ID 4987 is not a proxy contract, so there is no implementation to run semgrep on.
-```
+The server will start and automatically sync bounty data based on your configuration. You can monitor the logs for progress and results. All notifications and events are stored in a local SQLite database.
 
 ## Documentation
 
