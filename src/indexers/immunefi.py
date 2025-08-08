@@ -1,3 +1,4 @@
+import json
 import aiohttp
 from src.models.base import Project, Asset, AssetType
 from src.config.config import Config
@@ -108,12 +109,13 @@ class ImmunefiIndexer:
     async def index(self):
         """Fetch and index bounties"""
         try:
-            url = self.config.get("api", {}).get("immunefi", {}).get("url", "https://immunefi.com/public-api/bounties.json")
+            bounties_file = self.config.get("immunefi.bounties_file", "bounties.json")
+            if not os.path.exists(bounties_file):
+                self.logger.warning(f"Bounties file not found at {bounties_file}. Skipping Immunefi sync.")
+                return
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    response.raise_for_status()
-                    bounty_data = await response.json()
+            with open(bounties_file, "r") as f:
+                bounty_data = json.load(f)
 
             # Normalize asset revisions - keep only latest revision for each asset
             asset_revisions = {}  # url -> latest revision

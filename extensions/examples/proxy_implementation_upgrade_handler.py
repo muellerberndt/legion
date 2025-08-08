@@ -1,5 +1,5 @@
 from src.handlers.base import Handler, HandlerTrigger, HandlerResult
-from src.services.telegram import TelegramService
+from src.services.db_notification_service import DatabaseNotificationService
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 from src.util.etherscan import EVMExplorer
@@ -20,7 +20,7 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
         super().__init__()
         DBSessionMixin.__init__(self)
         self.logger = Logger("ProxyImplementationUpgradeHandler")
-        self.telegram = TelegramService.get_instance()
+        self.notification_service = DatabaseNotificationService.get_instance()
         self.explorer = EVMExplorer()
         self.config = Config()
 
@@ -108,7 +108,7 @@ class ProxyImplementationUpgradeHandler(Handler, DBSessionMixin):
 
             # Send notification
             message = "\n".join(message_lines)
-            await self.telegram.send_message(message)
+            await self.notification_service.send_message(message)
 
             return HandlerResult(
                 success=True,

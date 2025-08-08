@@ -2,22 +2,23 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from src.handlers.proxy_upgrade import ProxyUpgradeHandler
 from src.models.base import Asset, Project
-from src.services.telegram import TelegramService
+from src.services.db_notification_service import DatabaseNotificationService
 
 
 @pytest.fixture
-def mock_telegram():
-    with patch.object(TelegramService, "get_instance") as mock:
-        telegram = Mock()
-        telegram.send_message = AsyncMock()
-        mock.return_value = telegram
-        yield telegram
+def mock_notification_service():
+    with patch.object(DatabaseNotificationService, "get_instance") as mock:
+        notification_service = Mock()
+        notification_service.send_message = AsyncMock()
+        mock.return_value = notification_service
+        yield notification_service
 
 
 @pytest.fixture
-def handler(mock_telegram):
+def handler(mock_notification_service):
     handler = ProxyUpgradeHandler()
     handler.logger = Mock()
+    handler.notification_service = mock_notification_service
     return handler
 
 
@@ -59,7 +60,7 @@ async def test_handler_missing_data(handler, proxy_asset):
 
 
 @pytest.mark.asyncio
-async def test_handler_no_security_impact(handler, proxy_asset, implementation_assets, mock_telegram):
+async def test_handler_no_security_impact(handler, proxy_asset, implementation_assets, mock_notification_service):
     """Test handler when no security impact is detected"""
     old_impl, new_impl = implementation_assets
     event = {"blockNumber": 1234, "timestamp": 1234567890}
@@ -74,11 +75,11 @@ async def test_handler_no_security_impact(handler, proxy_asset, implementation_a
 
         assert result.success
         assert result.data["message"] == "No security impact detected"
-        assert not mock_telegram.send_message.called
+        assert not mock_notification_service.send_message.called
 
 
 @pytest.mark.asyncio
-async def test_handler_with_security_impact(handler, proxy_asset, implementation_assets, mock_telegram):
+async def test_handler_with_security_impact(handler, proxy_asset, implementation_assets, mock_notification_service):
     """Test handler when security impact is detected"""
     old_impl, new_impl = implementation_assets
     event = {"blockNumber": 1234, "timestamp": 1234567890}
@@ -92,10 +93,10 @@ async def test_handler_with_security_impact(handler, proxy_asset, implementation
         result = await handler.handle()
 
         assert result.success
-        assert mock_telegram.send_message.called
+        assert mock_notification_service.send_message.called
 
         # Verify notification content
-        call_args = mock_telegram.send_message.call_args[0][0]
+        call_args = mock_notification_service.send_message.call_args[0][0]
         assert "Security-Relevant Proxy Upgrade" in call_args
         assert proxy_asset.identifier in call_args
         assert new_impl.identifier in call_args
@@ -104,7 +105,7 @@ async def test_handler_with_security_impact(handler, proxy_asset, implementation
 
 
 @pytest.mark.asyncio
-async def test_handler_missing_implementation_code(handler, proxy_asset, implementation_assets, mock_telegram):
+async def test_handler_missing_implementation_code(handler, proxy_asset, implementation_assets, mock_notification_service):
     """Test handler when implementation code cannot be retrieved"""
     old_impl, new_impl = implementation_assets
     new_impl.get_code = Mock(return_value=None)  # Simulate failed code

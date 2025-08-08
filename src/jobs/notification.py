@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict, List
 from datetime import datetime
 from src.util.logging import Logger
-from src.services.telegram import TelegramService
+from src.services.db_notification_service import DatabaseNotificationService
 from src.services.notification_service import NotificationService
 
 
@@ -36,7 +36,6 @@ class JobNotifier:
     def initialize(self):
         """Initialize the notifier"""
         self.logger = Logger("JobNotifier")
-        self.telegram = TelegramService.get_instance()
 
     @classmethod
     def register_service(cls, service: NotificationService):

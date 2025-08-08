@@ -1,6 +1,6 @@
 from typing import List, Union, Dict, Any, Optional
 from src.handlers.base import Handler, HandlerTrigger, HandlerResult
-from src.services.telegram import TelegramService
+from src.services.db_notification_service import DatabaseNotificationService
 from src.util.logging import Logger
 from src.models.base import Asset, AssetType
 import difflib
@@ -14,7 +14,7 @@ class AssetEventHandler(Handler):
     def __init__(self):
         super().__init__()
         self.logger = Logger("AssetEventHandler")
-        self.telegram = TelegramService.get_instance()
+        self.notification_service = DatabaseNotificationService.get_instance()
 
     @classmethod
     def get_triggers(cls) -> List[HandlerTrigger]:
@@ -80,50 +80,14 @@ class AssetEventHandler(Handler):
         if old_revision is not None and new_revision is not None and old_revision != new_revision:
             message_parts.append(f"📝 Revision: {old_revision} → {new_revision}")
 
-            # Only create diff if we have both code versions
             if old_code and new_code and asset_type in [AssetType.GITHUB_FILE, AssetType.DEPLOYED_CONTRACT]:
-                try:
-                    self.logger.debug("Creating diff...")
-                    # Create HTML diff
-                    diff_html = self._create_html_diff(
-                        old_code, new_code, f"Revision {old_revision}", f"Revision {new_revision}", project_name, source_url
-                    )
-
-                    # Create file-like object with the HTML content
-                    html_bytes = diff_html.encode("utf-8")
-                    html_io = io.BytesIO(html_bytes)
-                    html_io.name = f"diff_{project_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-
-                    self.logger.debug("Sending message first...")
-                    # Send the message first
-                    await self.telegram.send_message("\n".join(message_parts))
-
-                    self.logger.debug("Sending document...")
-                    # Then send the HTML file
-                    await self.telegram.send_document(html_io)
-                    return HandlerResult(
-                        success=True,
-                        data={
-                            "event": "asset_updated",
-                            "project": project_name,
-                            "source_url": source_url,
-                            "old_revision": old_revision,
-                            "new_revision": new_revision,
-                            "message": "Asset update processed with diff",
-                        },
-                    )
-
-                except Exception as e:
-                    self.logger.error(f"Failed to generate diff: {e}")
-                    message_parts.append("\nFailed to generate diff")
+                message_parts.append("\nℹ️ Code diff available but not shown in this notification.")
             elif asset_type == AssetType.GITHUB_REPO:
                 message_parts.append("\nℹ️ No diff available for repository updates")
             else:
                 message_parts.append("\nℹ️ Code comparison not available")
 
-        # Only send message if we haven't already sent it with the diff
-        if not (old_code and new_code and asset_type in [AssetType.GITHUB_FILE, AssetType.DEPLOYED_CONTRACT]):
-            await self.telegram.send_message("\n".join(message_parts))
+        await self.notification_service.send_message("\n".join(message_parts))
 
         return HandlerResult(
             success=True,
@@ -233,7 +197,7 @@ class AssetEventHandler(Handler):
         source_url = self._get_asset_attr(asset, "source_url", "N/A")
 
         message = f"❌ Asset Removed\n🔗 Project: {project_name}\n🔗 URL: {source_url}"
-        await self.telegram.send_message(message)
+        await self.notification_service.send_message(message)
 
         return {"event": "asset_removed", "project": project_name, "source_url": source_url}
 
@@ -245,6 +209,6 @@ class AssetEventHandler(Handler):
 
         message = ["🆕 New Asset Added", f"🔗 Project: {project_name}", f"🔗 URL: {source_url}", f"📁 Type: {asset_type}"]
 
-        await self.telegram.send_message("\n".join(message))
+        await self.notification_service.send_message("\n".join(message))
 
         return {"event": "new_asset", "project": project_name, "source_url": source_url}

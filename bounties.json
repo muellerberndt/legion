@@ -1,0 +1,12 @@
+[
+  {
+    "project": "Test Bounty Project",
+    "description": "A test bounty project for local development.",
+    "assets": [
+      {
+        "url": "https://github.com/test-owner/test-repo",
+        "revision": "main"
+      }
+    ]
+  }
+]

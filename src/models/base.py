@@ -217,6 +217,24 @@ class Asset(Base):
         session.commit()
         session.refresh(self)  # Refresh after commit
 
+
+class Notification(Base):
+    """Notification model"""
+
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True)
+    message = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            "id": self.id,
+            "message": self.message,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
     def mark_as_proxy(self, session, implementation=None):
         """Mark asset as proxy and set implementation"""
         self.checked_for_proxy = True

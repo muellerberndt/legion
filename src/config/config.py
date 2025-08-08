@@ -100,21 +100,6 @@ def load_config(config_path: str, test_mode: bool = False) -> Dict[str, Any]:
                 except json.JSONDecodeError as e:
                     raise ValueError(f"Failed to parse config file as YAML or JSON: {e}")
 
-    # Ensure block_explorers structure exists
-    if "block_explorers" not in config:
-        config["block_explorers"] = {}
-    elif config["block_explorers"] is None:  # Handle None value
-        config["block_explorers"] = {}
-
-    # Ensure all block explorer entries exist with proper structure
-    for explorer in ["etherscan", "basescan", "arbiscan", "polygonscan", "bscscan"]:
-        if explorer not in config["block_explorers"] or config["block_explorers"][explorer] is None:
-            config["block_explorers"][explorer] = {"key": None}
-        elif not isinstance(config["block_explorers"][explorer], dict):
-            config["block_explorers"][explorer] = {"key": None}
-        elif "key" not in config["block_explorers"][explorer]:
-            config["block_explorers"][explorer]["key"] = None
-
     # Load from environment variables
     logger.info("Loading environment variables...")
     for config_path, env_info in ENV_MAPPINGS.items():
@@ -149,13 +134,6 @@ def load_config(config_path: str, test_mode: bool = False) -> Dict[str, Any]:
                 current = current[part]
 
             current[final_key] = value
-
-    # Log final block explorer configuration
-    logger.info("Final block explorer configuration:")
-    if isinstance(config.get("block_explorers"), dict):
-        for explorer, data in config["block_explorers"].items():
-            key_status = "present" if data.get("key") else "missing"
-            logger.info(f"{explorer}: API key {key_status}")
 
     return config
 
@@ -219,7 +197,8 @@ class Config:
 
     @property
     def data_dir(self) -> str:
-        return self.get("data_dir", "./data")
+        path = self.get("data_dir", "./data")
+        return os.path.expanduser(path)
 
     @property
     def database_url(self) -> Optional[str]:
@@ -231,18 +210,31 @@ class Config:
 
         # Fall back to config-based URL
         db = self.get("database", {})
+        db_type = db.get("type", "sqlite")  # Default to sqlite
+
+        if db_type == "sqlite":
+            db_name = db.get("name", "legion.db")
+            # Ensure data_dir exists
+            os.makedirs(self.data_dir, exist_ok=True)
+            db_path = os.path.join(self.data_dir, db_name)
+            return f"sqlite:///{db_path}"
+
         if all(key in db for key in ["host", "port", "name", "user", "password"]):
             return f"postgresql://{db['user']}:{db['password']}@{db['host']}:{db['port']}/{db['name']}"
 
         return None
 
     @property
-    def openai_api_key(self) -> Optional[str]:
-        return self.get("llm.openai.key")
+    def llm_api_key(self) -> Optional[str]:
+        return self.get("llm.api_key")
 
     @property
-    def openai_model(self) -> str:
-        return self.get("llm.openai.model")
+    def llm_model(self) -> str:
+        return self.get("llm.model")
+
+    @property
+    def llm_base_url(self) -> Optional[str]:
+        return self.get("llm.base_url")
 
     @property
     def llm_personality(self) -> str:
@@ -266,16 +258,10 @@ ENV_MAPPINGS = {
     # Core config
     "data_dir": "LEGION_DATA_DIR",
     "database.url": "DATABASE_URL",
-    # Block explorer API keys
-    "block_explorers.etherscan.key": "LEGION_ETHERSCAN_KEY",
-    "block_explorers.basescan.key": "LEGION_BASESCAN_KEY",
-    "block_explorers.arbiscan.key": "LEGION_ARBISCAN_KEY",
-    # Telegram config
-    "telegram.bot_token": "LEGION_BOT_TOKEN",
-    "telegram.chat_id": "LEGION_CHAT_ID",
-    # OpenAI config
-    "llm.openai.key": "LEGION_OPENAI_KEY",
-    "llm.openai.model": "LEGION_OPENAI_MODEL",
+    # LLM config
+    "llm.api_key": "LEGION_LLM_KEY",
+    "llm.model": "LEGION_LLM_MODEL",
+    "llm.base_url": "LEGION_LLM_BASE_URL",
     "llm.personality": "Legion_LLM_PERSONALITY",
     # Other config
     "extensions_dir": "LEGION_EXTENSIONS_DIR",
@@ -284,17 +270,24 @@ ENV_MAPPINGS = {
     "github.api_token": "LEGION_GITHUB_TOKEN",
     "embeddings.model": "LEGION_EMBEDDINGS_MODEL",
     "embeddings.dimension": {"env": "LEGION_EMBEDDINGS_DIMENSION", "type": "int"},
+    "immunefi.bounties_file": "LEGION_BOUNTIES_FILE",
 }
 
 # Default configuration
 DEFAULT_CONFIG = {
-    "data_dir": "./data",
+    "data_dir": "~/.legion/data",
+    "database": {
+        "type": "sqlite",
+        "name": "legion.db",
+    },
     "embeddings": {
-        "model": "microsoft/codebert-base",  # Default model
+        "model": "sentence-transformers/all-MiniLM-L6-v2",
         "dimension": 384,
     },
     "llm": {
-        "openai": {"key": None, "model": "gpt-4o"},
+        "api_key": None,
+        "model": "gpt-4o",
+        "base_url": None,
         "personality": (
             "Research assistant of a web3 bug hunter, deeply embedded in web3 culture. "
             'Unironically use terms like "ser", "gm", "wagmi", "chad", "based", "banger". '
@@ -302,8 +295,8 @@ DEFAULT_CONFIG = {
         ),
     },
     "watchers": {"active_watchers": []},
-    "telegram": {"bot_token": None, "chat_id": None},
     "github": {},
     "extensions_dir": "./extensions",
     "active_extensions": [],
+    "immunefi": {"bounties_file": "bounties.json"},
 }
