@@ -28,10 +28,7 @@ def notifier():
     # Reset singleton state
     JobNotifier._instance = None
     JobNotifier._notification_services = []
-    # Mock TelegramService
-    with patch("src.jobs.notification.TelegramService") as mock_telegram:
-        mock_telegram.get_instance.return_value = AsyncMock()
-        return JobNotifier()
+    return JobNotifier()
 
 
 @pytest.mark.asyncio

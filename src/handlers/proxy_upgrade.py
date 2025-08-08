@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from src.handlers.base import Handler, HandlerTrigger, HandlerResult
 from src.util.logging import Logger
-from src.services.telegram import TelegramService
+from src.services.db_notification_service import DatabaseNotificationService
 from src.ai.llm import chat_completion
 
 # Security analysis prompt template
@@ -26,7 +26,7 @@ class ProxyUpgradeHandler(Handler):
     def __init__(self):
         super().__init__()
         self.logger = Logger("ProxyUpgradeHandler")
-        self.telegram = TelegramService.get_instance()
+        self.notification_service = DatabaseNotificationService.get_instance()
 
     @classmethod
     def get_triggers(cls) -> List[HandlerTrigger]:
@@ -127,7 +127,7 @@ Timestamp: {event.get('timestamp')}
                 message_lines.extend([f"\n📁 Project: {proxy.project.name}", f"Type: {proxy.project.project_type}"])
 
             # Send notification
-            await self.telegram.send_message("\n".join(message_lines))
+            await self.notification_service.send_message("\n".join(message_lines))
 
             return HandlerResult(
                 success=True,

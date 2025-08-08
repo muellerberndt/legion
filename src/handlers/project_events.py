@@ -1,6 +1,6 @@
 from typing import List, Union, Dict, Any
 from src.handlers.base import Handler, HandlerTrigger, HandlerResult
-from src.services.telegram import TelegramService
+from src.services.db_notification_service import DatabaseNotificationService
 from src.util.logging import Logger
 from src.models.base import Project
 
@@ -11,10 +11,7 @@ class ProjectEventHandler(Handler):
     def __init__(self):
         super().__init__()
         self.logger = Logger("ProjectEventHandler")
-        self.telegram = TelegramService.get_instance()
-        self.logger.debug(f"Telegram service initialized: {bool(self.telegram)}")
-        self.logger.debug(f"Telegram bot initialized: {bool(self.telegram.bot)}")
-        self.logger.debug(f"Telegram chat_id configured: {bool(self.telegram.chat_id)}")
+        self.notification_service = DatabaseNotificationService.get_instance()
 
     @classmethod
     def get_triggers(cls) -> List[HandlerTrigger]:
@@ -100,14 +97,14 @@ class ProjectEventHandler(Handler):
                 if value is not None:  # Only show non-None values
                     message.append(f"{key}: {self._format_value(value)}")
 
-        await self.telegram.send_message("\n".join(message))
+        await self.notification_service.send_message("\n".join(message))
         return {"event": "new_project", "project_name": project_name, "project_type": project_type}
 
     async def _handle_project_removal(self, project: Union[Project, Dict[str, Any]]) -> dict:
         """Handle project removal"""
         project_name = self._get_project_attr(project, "name")
         message = f"❌ Project Removed: {project_name}"
-        await self.telegram.send_message(message)
+        await self.notification_service.send_message(message)
         return {"event": "project_removed", "project_name": project_name}
 
     async def _handle_project_update(
@@ -158,7 +155,7 @@ class ProjectEventHandler(Handler):
             message = f"📝 Project Updated: {new_name}\n" f"Changes detected:\n- " + "\n- ".join(changes)
 
             self.logger.info(f"Project updated: {new_name}")
-            await self.telegram.send_message(message)
+            await self.notification_service.send_message(message)
             return {"event": "project_updated", "project_name": new_name, "changes": changes}
         else:
             self.logger.debug(f"No significant changes detected for project: {new_name}")

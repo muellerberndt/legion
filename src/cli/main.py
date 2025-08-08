@@ -11,11 +11,9 @@ import threading
 
 def cleanup_thread_pools():
     """Clean up any remaining thread pools"""
-    # Shutdown any remaining thread pools
-    concurrent.futures.thread._threads_queues.clear()
-    # Clear threading._threads set
-    if hasattr(threading, "_threads"):
-        threading._threads.clear()
+    # This is problematic and can cause errors on shutdown.
+    # The default atexit handlers should be sufficient.
+    pass
 
 
 def async_command(f):
@@ -93,17 +91,16 @@ def server():
 
 
 @server.command(name="start")
-@click.option("--interface", "-i", default="telegram", help="Interface to start (default: telegram)")
 @click.pass_context
 @async_command
-async def server_start(ctx, interface):
-    """Start the server with specified interface"""
+async def server_start(ctx):
+    """Start the server"""
     logger = ctx.obj["logger"]
 
     try:
         # Set logging level
         LogConfig.set_log_level(ctx.obj["log_level"])
-        await Server.run([interface])
+        await Server.run()
 
     except Exception as e:
         logger.error(f"Failed to start server: {e}")

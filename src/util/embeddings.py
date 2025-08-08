@@ -1,4 +1,3 @@
-from sentence_transformers import SentenceTransformer
 from src.models.base import Asset
 from typing import List, Dict
 import numpy as np
@@ -26,12 +25,16 @@ class EmbeddingGenerator:
             self._config = Config()
 
         if self._model is None:
+            from sentence_transformers import SentenceTransformer
+
             model_name = self._config.embeddings_model
             logging.info(f"Initializing embedding model: {model_name}")
             self._model = SentenceTransformer(model_name)
 
     def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for text using configured model"""
+        if self._model is None:
+            raise RuntimeError("Embedding model not initialized")
         # Convert text to embedding
         embedding = self._model.encode(text, convert_to_tensor=False)
         return embedding.tolist()

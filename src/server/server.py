@@ -1,30 +1,28 @@
 import asyncio
 from typing import List
-from src.interfaces.telegram import TelegramInterface
-from src.interfaces.base import Interface
 from src.util.logging import Logger
 from src.server.initialization import Initializer
-from src.actions.registry import ActionRegistry
 from src.jobs.manager import JobManager
 from src.server.extension_loader import ExtensionLoader
 from src.webhooks.server import WebhookServer
 from src.jobs.scheduler import Scheduler
 from src.config.config import Config
 from src.webhooks.handlers import QuicknodeWebhookHandler
+from src.jobs.notification import JobNotifier
+from src.services.db_notification_service import DatabaseNotificationService
 
 
 class Server:
     """Main server class that coordinates all components"""
 
     @classmethod
-    async def run(cls, interfaces: List[str]) -> None:
-        """Run the server with specified interfaces"""
+    async def run(cls) -> None:
+        """Run the server"""
         logger = Logger("Server")
         initializer = Initializer()
-        action_registry = ActionRegistry()
         job_manager = JobManager()
-        interface_instances: List[Interface] = []
         config = Config()
+        webhook_enabled = False
 
         try:
             print("Starting server...")  # Direct console output
@@ -56,22 +54,13 @@ class Server:
             logger.info("Starting job manager...")
             await job_manager.start()
 
+            # Register notification services
+            JobNotifier.register_service(DatabaseNotificationService())
+
             # Initialize and start scheduler
             logger.info("Starting scheduler...")
             scheduler = await Scheduler.get_instance()
             await scheduler.start()
-
-            # Initialize interfaces
-            for interface_name in interfaces:
-                if interface_name == "telegram":
-                    interface = TelegramInterface(action_registry=action_registry)
-                    interface_instances.append(interface)
-                else:
-                    logger.warning(f"Unknown interface: {interface_name}")
-
-            # Start interfaces
-            for interface in interface_instances:
-                await interface.start()
 
             logger.info("Server started successfully")
             print("Server is running...")  # Direct console output
@@ -93,13 +82,6 @@ class Server:
             # Cleanup
             logger.info("Cleaning up server resources...")
             print("Cleaning up server resources...")  # Direct console output
-
-            # Stop interfaces
-            for interface in interface_instances:
-                try:
-                    await interface.stop()
-                except Exception as e:
-                    logger.error(f"Error stopping interface: {e}")
 
             # Stop scheduler
             try:

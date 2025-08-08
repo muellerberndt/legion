@@ -26,54 +26,39 @@ class Database:
     def __init__(self):
         if self._engine is None:
             config = Config()
+            database_url = config.database_url
 
-            # Check for Fly's DATABASE_URL first
-            database_url = os.getenv("DATABASE_URL")
-            if database_url:
-                # Parse the URL and its parameters
-                parsed = urlparse(database_url)
-                params = parse_qs(parsed.query)
-
-                # Build base URLs without params
-                base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-
-                # Convert to asyncpg URL for async engine
-                async_url = base_url.replace("postgres://", "postgresql+asyncpg://")
-
-                # Handle SSL parameters for asyncpg
-                connect_args_async = {}
-                if "sslmode" in params:
-                    connect_args_async["ssl"] = params["sslmode"][0] != "disable"
-
-                # Convert to psycopg2 URL for sync engine
-                sync_url = base_url.replace("postgres://", "postgresql://")
-
-                # Handle SSL parameters for psycopg2
-                connect_args_sync = {}
-                if "sslmode" in params:
-                    connect_args_sync["sslmode"] = params["sslmode"][0]
-
-            else:
-                # Fallback to config-based URL
-                db_config = config.get("database", {})
-                if not all(
-                    key in db_config and db_config[key] is not None for key in ["host", "port", "name", "user", "password"]
-                ):
-                    # Use test database URL in test mode
-                    if config._test_mode:
-                        sync_url = "postgresql://test:test@localhost:5432/test_db"
-                        async_url = "postgresql+asyncpg://test:test@localhost:5432/test_db"
-                        connect_args_sync = {}
-                        connect_args_async = {}
-                        # logger.debug("Using test database configuration")
-                    else:
-                        raise ValueError("Database configuration is incomplete")
-                else:
-                    sync_url = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
-                    async_url = f"postgresql+asyncpg://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
+            if not database_url:
+                if config._test_mode:
+                    sync_url = "sqlite:///./test.db"
+                    async_url = "sqlite+aiosqlite:///./test.db"
                     connect_args_sync = {}
                     connect_args_async = {}
-                    # logger.debug("Using config-based database configuration")
+                else:
+                    raise ValueError("Database configuration is incomplete and not in test mode.")
+            else:
+                parsed = urlparse(database_url)
+                if parsed.scheme.startswith("sqlite"):
+                    sync_url = database_url
+                    async_url = database_url.replace("sqlite:///", "sqlite+aiosqlite:///")
+                    connect_args_sync = {}
+                    connect_args_async = {}
+                elif parsed.scheme.startswith("postgres"):
+                    # Handle fly.io postgres URL with params
+                    if "sslmode" in parse_qs(parsed.query):
+                        base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                        async_url = base_url.replace("postgres://", "postgresql+asyncpg://")
+                        sync_url = base_url.replace("postgres://", "postgresql://")
+                        params = parse_qs(parsed.query)
+                        connect_args_async = {"ssl": params["sslmode"][0] != "disable"}
+                        connect_args_sync = {"sslmode": params["sslmode"][0]}
+                    else:  # standard postgres
+                        sync_url = database_url.replace("postgres://", "postgresql://")
+                        async_url = database_url.replace("postgres://", "postgresql+asyncpg://")
+                        connect_args_sync = {}
+                        connect_args_async = {}
+                else:
+                    raise ValueError(f"Unsupported database scheme: {parsed.scheme}")
 
             # Create sync engine
             self._engine = create_engine(sync_url, future=True, connect_args=connect_args_sync)

@@ -17,12 +17,14 @@ async def chat_completion(messages: List[Dict[str, str]], model: str = None, tem
         The response content from the model
     """
     config = Config()
-    api_key = config.get("llm.openai.key")
-    if not api_key:
-        raise ValueError("OpenAI API key not configured")
+    api_key = config.llm_api_key
+    base_url = config.llm_base_url
 
-    client = AsyncOpenAI(api_key=api_key)
-    model = model or config.get("llm.openai.model", "gpt-4")
+    if not api_key:
+        raise ValueError("LLM API key not configured")
+
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    model = model or config.llm_model
 
     response = await client.chat.completions.create(model=model, messages=messages, temperature=temperature)
 

@@ -6,7 +6,7 @@ from src.util.logging import Logger
 from src.models.job import JobRecord
 from src.backend.database import DBSessionMixin
 from abc import ABC, abstractmethod
-from src.services.telegram import TelegramService
+from src.services.db_notification_service import DatabaseNotificationService
 from src.util.formatting import ActionResultFormatter
 from src.actions.result import ActionResult
 
@@ -98,7 +98,7 @@ class Job(DBSessionMixin, ABC):
         self.result: Optional[JobResult] = None
         self.error: Optional[str] = None
         self.logger = Logger(self.__class__.__name__)
-        self.telegram = TelegramService()
+        self.notification_service = DatabaseNotificationService()
 
     def _store_in_db(self) -> None:
         """Store job details in database"""
@@ -127,7 +127,7 @@ class Job(DBSessionMixin, ABC):
     async def _notify_status(self, message: str) -> None:
         """Send a notification about job status"""
         try:
-            await self.telegram.send_message(f"Job {self.id} ({self.type}): {message}")
+            await self.notification_service.send_message(f"Job {self.id} ({self.type}): {message}")
         except Exception as e:
             self.logger.error(f"Failed to send job notification: {e}")
 

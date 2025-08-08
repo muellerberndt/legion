@@ -1,5 +1,5 @@
 from src.handlers.base import Handler, HandlerTrigger, HandlerResult
-from src.services.telegram import TelegramService
+from src.services.db_notification_service import DatabaseNotificationService
 from src.util.logging import Logger
 from src.backend.database import DBSessionMixin
 from src.models.base import Asset, Project
@@ -210,8 +210,8 @@ URL: {commit_data.get('html_url', '')}
 
             # Send notification
             summary = "\n".join(summary_lines)
-            telegram = TelegramService.get_instance()
-            await telegram.send_message(summary)
+            notification_service = DatabaseNotificationService.get_instance()
+            await notification_service.send_message(summary)
 
             return HandlerResult(success=True, data={"message": summary})
 

@@ -3,7 +3,6 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock, call
 from src.jobs.proxy_monitor import ProxyMonitorJob
 from src.models.base import Asset, AssetType
 from src.handlers.base import HandlerTrigger
-from src.services.telegram import TelegramService
 
 
 @pytest.fixture
@@ -29,16 +28,7 @@ def mock_session():
 
 
 @pytest.fixture
-def mock_telegram():
-    with patch.object(TelegramService, "get_instance") as mock:
-        telegram = Mock()
-        telegram.send_message = AsyncMock()
-        mock.return_value = telegram
-        yield telegram
-
-
-@pytest.fixture
-def proxy_monitor(mock_session, mock_telegram):
+def proxy_monitor(mock_session):
     with patch("src.jobs.proxy_monitor.fetch_verified_sources", new_callable=AsyncMock):
         job = ProxyMonitorJob()
         job.get_session = Mock(return_value=mock_session)
