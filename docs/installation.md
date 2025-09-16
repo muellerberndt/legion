@@ -5,6 +5,7 @@ This guide provides detailed instructions for setting up Legion on your system.
 ## Prerequisites
 
 - Python 3.9 or higher
+- Pyenv and pyenv-virtualenv
 - PostgreSQL 13 or higher
 - pgvector extension for PostgreSQL
 
@@ -26,7 +27,7 @@ brew services start postgresql
 ```bash
 # Install PostgreSQL
 sudo apt update
-sudo apt install postgresql postgresql-contrib
+sudo apt install postgresql-server-dev-all postgresql postgresql-contrib
 
 # Install pgvector
 sudo apt install postgresql-common
@@ -91,20 +92,20 @@ cd legion
 1. Create a Python virtual environment:
 
 ```bash
-pyenv virtualenv 3.12 legion
+pyenv virtualenv 3.1.2 legion
 pyenv activate legion
 ```
 
 2. Clone the repository and install requirements:
 
+```bash
 pip install -r requirements.txt
-
-````
+```
 
 3. Create the configuration file:
 
 ```bash
-cp config.example.yml config.yml
+cp config.yml.example config.yml
 ````
 
 4. Configure the following in `config.yml`:
@@ -120,7 +121,7 @@ cp config.example.yml config.yml
 5. Start the service:
 
 ```bash
-legion --log-level INFO server start
+./legion.sh --log-level INFO server start
 ```
 
 ### Deploying to the cloud

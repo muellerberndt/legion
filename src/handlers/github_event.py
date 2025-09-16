@@ -21,7 +21,8 @@ class GitHubEventHandler(Handler, DBSessionMixin):
     """Handler for GitHub events (PR and push)"""
 
     def __init__(self):
-        super().__init__()
+        Handler.__init__(self)
+        DBSessionMixin.__init__(self)
         self.logger = Logger("GitHubEventHandler")
         self.logger.debug("GitHubEventHandler initialized")
 
