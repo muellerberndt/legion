@@ -68,11 +68,4 @@ The asset with ID 4987 is not a proxy contract, so there is no implementation to
 
 Contributions are welcome! To contribute to the base framework, you need to sign the [Contributor License Agreement](https://cla-assistant.io/muellerberndt/legion) and follow the [Development Guide](docs/development.md).
 
-## License
-
-This project is licensed under the Apache 2.0 License with additional commercial terms. 
-
-It is free to use for security research and bug hunting activities, including those generating commercial rewards (e.g., bug bounty programs or audit contests). Any extensions you build on top of Legion belong to you and are not subject to the license.
-
-However, wrapping Legion into a commercial product or service is prohibited without written permission from the author. See [LICENSE](LICENSE.txt) for details.
  
